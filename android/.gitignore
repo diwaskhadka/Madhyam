@@ -1,0 +1,7 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+# Built by cargo-ndk (see README / CI); never commit binaries.
+app/src/main/jniLibs/

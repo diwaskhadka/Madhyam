@@ -62,6 +62,7 @@ jobs:
           path: target/aarch64-pc-windows-msvc/release/madhyam_core_ffi.dll
 
   android:
+    name: android (jniLibs + APK)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -73,12 +74,26 @@ jobs:
         with:
           ndk-version: r27c
       - run: cargo install cargo-ndk --locked
-      - name: Build jniLibs
+      - name: Build jniLibs into the app
         env:
           ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
         # API 21 = Android 5.0, the oldest Android TV release still in the wild.
-        run: cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -P 21 -o jniLibs build --release -p madhyam-core-ffi
+        run: cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -P 21 -o android/app/src/main/jniLibs build --release -p madhyam-core-ffi
       - uses: actions/upload-artifact@v4
         with:
           name: madhyam-core-android-jniLibs
-          path: jniLibs
+          path: android/app/src/main/jniLibs
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build APKs
+        working-directory: android
+        run: ./gradlew --no-daemon assembleDebug assembleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Madhyam-apk
+          path: |
+            android/app/build/outputs/apk/debug/*.apk
+            android/app/build/outputs/apk/release/*.apk
