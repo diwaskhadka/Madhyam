@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- LibraryImport (P/Invoke source generator) marshals byte[] through pointers. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>Madhyam</AssemblyName>
+    <RootNamespace>Madhyam.Windows</RootNamespace>
+    <Version>0.1.0</Version>
+    <Product>Madhyam</Product>
+    <!-- LibVLC for Windows ships x64/x86 only; x64 also runs on Windows on ARM (emulated). -->
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="LibVLCSharp.WPF" Version="3.9.0" />
+    <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.21" />
+  </ItemGroup>
+
+  <!-- One copy of the C# binding, shared with other .NET hosts. -->
+  <ItemGroup>
+    <Compile Include="..\..\bindings\csharp\MadhyamCore.cs" Link="MadhyamCore.cs" />
+  </ItemGroup>
+
+  <!-- The Rust engine must be built first (cargo build, release profile, package madhyam-core-ffi). -->
+  <PropertyGroup>
+    <IptvNativeDir Condition="'$(IptvNativeDir)' == ''">$(MSBuildThisFileDirectory)..\..\target\release\</IptvNativeDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="$(IptvNativeDir)madhyam_core_ffi.dll" Link="madhyam_core_ffi.dll"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="CheckIptvNative" BeforeTargets="Build" Condition="!Exists('$(IptvNativeDir)madhyam_core_ffi.dll')">
+    <Error Text="madhyam_core_ffi.dll not found in $(IptvNativeDir). Run: cargo build --release -p madhyam-core-ffi (from the repository root)." />
+  </Target>
+
+</Project>

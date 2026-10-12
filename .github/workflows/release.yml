@@ -54,6 +54,45 @@ jobs:
           name: windows-${{ matrix.arch }}
           path: madhyam-core-*.zip
 
+  windows-app:
+    name: windows app (Madhyam.exe)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - run: cargo build --release -p madhyam-core-ffi
+      - name: Publish (self-contained, no .NET install needed)
+        shell: pwsh
+        # Errors are re-emitted as annotations so they are visible via the API, not only in raw logs.
+        run: |
+          dotnet publish windows/Madhyam.Windows/Madhyam.Windows.csproj -c Release -r win-x64 --self-contained true -o publish/Madhyam 2>&1 | Tee-Object -FilePath build.log
+          if ($LASTEXITCODE -ne 0) {
+            Select-String -Path build.log -Pattern ': error |error NU|error MSB|error CS' | Select-Object -First 40 | ForEach-Object { Write-Host "::error::$($_.Line.Trim())" }
+            exit 1
+          }
+      - name: Smoke test - starts without errors
+        shell: pwsh
+        run: |
+          $log = Join-Path $env:LOCALAPPDATA "Madhyam\error.log"
+          Remove-Item $log -ErrorAction SilentlyContinue
+          $p = Start-Process publish/Madhyam/Madhyam.exe -PassThru
+          Start-Sleep -Seconds 20
+          $alive = -not $p.HasExited
+          if ($alive) { Stop-Process -Id $p.Id -Force }
+          if (Test-Path $log) { Get-Content $log | Select-Object -First 30 | ForEach-Object { Write-Host "::error::$_" }; throw "Madhyam reported an error at startup" }
+          if (-not $alive) { throw "Madhyam exited during startup (code $($p.ExitCode))" }
+          Write-Host "Madhyam.exe started and stayed up for 20 s"
+      - name: Zip
+        shell: pwsh
+        run: Compress-Archive -Path publish/Madhyam -DestinationPath Madhyam-${{ env.TAG }}-windows-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-app
+          path: Madhyam-${{ env.TAG }}-windows-x64.zip
+
   android:
     runs-on: ubuntu-latest
     steps:
@@ -90,7 +129,7 @@ jobs:
             madhyam-core-*-android-jniLibs.zip
 
   publish:
-    needs: [windows, android]
+    needs: [windows, windows-app, android]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -108,8 +147,10 @@ jobs:
             **Android TV:** `Madhyam-${{ env.TAG }}-androidtv.apk`. Install with `adb install -r <file>`.
             The APK is signed with a debug key: fine for sideloading, not for the Play Store.
 
-            **Windows:** `madhyam-core-${{ env.TAG }}-windows-x64.zip` / `-arm64.zip` contain the engine as a DLL
-            (`madhyam_core_ffi.dll` + import/static libs + C header + C# binding) and `iptv.exe`, a command-line
-            tool to inspect playlists/guides and benchmark. There is no Windows player app yet.
+            **Windows:** `Madhyam-${{ env.TAG }}-windows-x64.zip`. Unzip anywhere and run `Madhyam\Madhyam.exe`
+            (no installer, no .NET install needed; also runs on Windows on ARM).
+
+            **Developers:** `madhyam-core-${{ env.TAG }}-windows-x64.zip` / `-arm64.zip` contain the engine as a DLL
+            (`madhyam_core_ffi.dll` + import/static libs + C header + C# binding) and `iptv.exe`, a command-line tool.
 
             **Developers:** `madhyam-core-${{ env.TAG }}-android-jniLibs.zip` has the native libraries for your own Android app.
