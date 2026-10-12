@@ -1,0 +1,12 @@
+[package]
+name = "madhyam-core"
+description = "Platform-independent IPTV engine: M3U/XMLTV/Xtream parsing, catalog, search, EPG."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+# Deliberately zero dependencies: everything here is plain `std`, so the crate
+# builds for any target Rust supports (Windows, Android, Linux, macOS, iOS, WASM).
+
+[dependencies]

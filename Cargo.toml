@@ -1,0 +1,17 @@
+[workspace]
+resolver = "3"
+members = ["crates/madhyam-core", "crates/madhyam-core-ffi", "crates/madhyam-core-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.85"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
+# Smaller binaries matter on Android TV boxes with little storage.
+strip = true
+panic = "unwind" # FFI layer relies on catch_unwind, so do NOT switch to "abort".

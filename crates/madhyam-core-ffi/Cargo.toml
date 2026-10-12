@@ -1,0 +1,17 @@
+[package]
+name = "madhyam-core-ffi"
+description = "C ABI for madhyam-core: JSON in, JSON out. Callable from Kotlin (JNA), C#, Swift, Dart, Python, C/C++."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "madhyam_core_ffi"
+# cdylib  -> .dll (Windows) / .so (Android, Linux) / .dylib (macOS)
+# staticlib -> .lib / .a for linking into C++ or iOS apps
+# rlib    -> lets Rust tests call the dispatcher directly
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+madhyam-core = { path = "../madhyam-core" }

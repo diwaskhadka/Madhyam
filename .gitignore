@@ -1,0 +1,4 @@
+/target
+/jniLibs
+**/__pycache__
+*.jsonl
