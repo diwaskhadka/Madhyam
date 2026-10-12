@@ -15,6 +15,14 @@
     <!-- LibVLC for Windows ships x64/x86 only; x64 also runs on Windows on ARM (emulated). -->
     <PlatformTarget>x64</PlatformTarget>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <!-- Publish as one Madhyam.exe (.NET runtime + managed code inside) instead of hundreds of
+         loose DLLs. Native DLLs stay beside it on purpose: libvlc.dll must sit next to its plugins
+         folder, which breaks if it is packed into the exe (IncludeNativeLibrariesForSelfExtract). -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <DebugType>none</DebugType>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- Only ship the 64-bit VLC build; the 32-bit copy is never loaded. -->
+    <VlcWindowsX86Enabled>false</VlcWindowsX86Enabled>
   </PropertyGroup>
 
   <ItemGroup>

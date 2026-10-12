@@ -76,18 +76,29 @@ jobs:
       - name: Smoke test - starts without errors
         shell: pwsh
         run: |
+          $top = Get-ChildItem publish/Madhyam | ForEach-Object { if ($_.PSIsContainer) { "$($_.Name)/" } else { $_.Name } }
+          Write-Host "::notice::Publish folder: $($top -join ', ')"
+          Write-Host "::notice::libvlc/win-x64 present: $(Test-Path publish/Madhyam/libvlc/win-x64/libvlc.dll)"
           $log = Join-Path $env:LOCALAPPDATA "Madhyam\error.log"
           Remove-Item $log -ErrorAction SilentlyContinue
           $p = Start-Process publish/Madhyam/Madhyam.exe -PassThru
           Start-Sleep -Seconds 20
           $alive = -not $p.HasExited
           if ($alive) { Stop-Process -Id $p.Id -Force }
-          if (Test-Path $log) { Get-Content $log | Select-Object -First 30 | ForEach-Object { Write-Host "::error::$_" }; throw "Madhyam reported an error at startup" }
-          if (-not $alive) { throw "Madhyam exited during startup (code $($p.ExitCode))" }
+          if (Test-Path $log) { Get-Content $log | Select-Object -First 30 | ForEach-Object { Write-Host "::error::$_" }; exit 1 }
+          if (-not $alive) { Write-Host "::error::Madhyam exited during startup (code $($p.ExitCode))"; exit 1 }
           Write-Host "Madhyam.exe started and stayed up for 20 s"
-      - name: Zip
+      - name: Check layout and zip
         shell: pwsh
-        run: Compress-Archive -Path publish/Madhyam -DestinationPath Madhyam-${{ env.TAG }}-windows-x64.zip
+        run: |
+          Copy-Item windows/README-FIRST.txt publish/Madhyam/
+          if (-not (Test-Path publish/Madhyam/Madhyam.exe)) { Write-Host "::error::Madhyam.exe missing from publish output"; exit 1 }
+          $top = Get-ChildItem publish/Madhyam | Select-Object -ExpandProperty Name
+          Write-Host "::notice::Top-level files: $($top -join ', ')"
+          if ($top.Count -gt 12) { Write-Host "::error::Too many top-level files ($($top.Count)); single-file publish did not apply"; exit 1 }
+          $mb = [math]::Round(((Get-ChildItem publish/Madhyam -Recurse -File | Measure-Object Length -Sum).Sum / 1MB), 1)
+          Write-Host "::notice::Unpacked size: $mb MB"
+          Compress-Archive -Path publish/Madhyam -DestinationPath Madhyam-${{ env.TAG }}-windows-x64.zip
       - uses: actions/upload-artifact@v4
         with:
           name: windows-app
