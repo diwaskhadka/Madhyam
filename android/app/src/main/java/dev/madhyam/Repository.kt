@@ -84,6 +84,12 @@ class Repository(context: Context) {
     private val snapshot = File(context.filesDir, "catalog.jsonl")
     private val cache = context.cacheDir
 
+    /** Downloaded guides, re-imported at start-up (the snapshot deliberately excludes EPG). */
+    private val epgDir = File(context.filesDir, "epg")
+    private fun epgFile(source: Int, index: Int) = File(epgDir, "source-$source-$index.xml")
+    private fun epgFiles(source: Int): List<File> =
+        epgDir.listFiles { f -> f.name.startsWith("source-$source-") && f.name.endsWith(".xml") }?.toList() ?: emptyList()
+
     val http: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(120, TimeUnit.SECONDS)
@@ -109,7 +115,20 @@ class Repository(context: Context) {
                 snapshot.delete()
             }
         }
+        epgDir.listFiles { f -> f.name.endsWith(".xml") }?.forEach { f ->
+            try {
+                core.call("import_xmltv_file", args("path" to f.path))
+            } catch (e: IptvException) {
+                Log.w(TAG, "cached guide ${f.name} unreadable", e)
+            }
+        }
     }
+
+    /** Age of the cached guide in ms, or null if none is cached. */
+    fun epgAgeMs(source: Int): Long? =
+        epgFiles(source).minOfOrNull { it.lastModified() }?.let { System.currentTimeMillis() - it }
+
+    suspend fun hasEpg(source: Int): Boolean = io { core.arr("epg_fetch_urls", args("source" to source)).length() > 0 }
 
     private fun save() {
         try {
@@ -156,6 +175,7 @@ class Repository(context: Context) {
 
     suspend fun removeSource(id: Int) = io {
         core.call("remove_source", args("source" to id))
+        epgFiles(id).forEach { it.delete() }
         save()
     }
 
@@ -188,6 +208,8 @@ class Repository(context: Context) {
 
     suspend fun refreshEpg(id: Int) = io {
         val urls = core.arr("epg_fetch_urls", args("source" to id))
+        epgDir.mkdirs()
+        var index = 0
         for (i in 0 until urls.length()) {
             val file = try {
                 download(urls.getString(i), "guide")
@@ -197,10 +219,15 @@ class Repository(context: Context) {
             }
             try {
                 core.call("import_xmltv_file", args("path" to file.path))
+                // Keep it for the next start (already decompressed).
+                val dest = epgFile(id, index++)
+                if (!file.renameTo(dest)) file.copyTo(dest, overwrite = true)
             } finally {
-                file.delete()
+                if (file.exists()) file.delete()
             }
         }
+        val keep = (0 until index).map { epgFile(id, it).name }.toSet()
+        epgFiles(id).filter { it.name !in keep }.forEach { it.delete() }
         save()
     }
 

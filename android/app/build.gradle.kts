@@ -13,8 +13,8 @@ android {
         // Android 5.0: the oldest Android TV release still found on cheap boxes.
         minSdk = 21
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
         ndk {
             // Must match the ABIs built by cargo-ndk (see .github/workflows/ci.yml).
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")

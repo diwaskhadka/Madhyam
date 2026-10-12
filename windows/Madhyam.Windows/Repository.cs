@@ -15,13 +15,28 @@ public sealed record Group(string Name, int Count)
     public string Label => $"{Name}  ({Count})";
 }
 
-public sealed record Programme(string Title, long Start, long Stop)
+public sealed record Programme(string Title, long Start, long Stop, string Desc = "")
 {
     public double Progress(long now) => Stop <= Start ? 0 : Math.Clamp((double)(now - Start) / (Stop - Start), 0, 1);
 }
 
-/// <summary>A channel, film, series or episode as shown in the list.</summary>
-public sealed class ItemVm : INotifyPropertyChanged
+/// <summary>Base for small view models: raise PropertyChanged without boilerplate.</summary>
+public abstract class Observable : INotifyPropertyChanged
+{
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    protected void Set<T>(ref T field, T value, [System.Runtime.CompilerServices.CallerMemberName] string? name = null)
+    {
+        if (EqualityComparer<T>.Default.Equals(field, value)) return;
+        field = value;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+    }
+
+    protected void Raise(string name) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+}
+
+/// <summary>A channel, film, series or episode as shown in lists and grids.</summary>
+public sealed class ItemVm : Observable
 {
     public required string Id { get; init; }
     public required string Kind { get; init; }
@@ -32,21 +47,75 @@ public sealed class ItemVm : INotifyPropertyChanged
     public string? UserAgent { get; init; }
     public string? Referrer { get; init; }
     public string? Plot { get; init; }
+    public string? Rating { get; init; }
+    public string? Year { get; init; }
+    public string? Genre { get; init; }
+    public string? Season { get; init; }
+    public string? Episode { get; init; }
 
     public bool IsLive => Kind == "live";
     public bool IsSeries => Kind == "series";
-
-    private string _detail = "";
-    /// <summary>Second line: what's on now (live), or plot/category.</summary>
-    public string Detail
-    {
-        get => _detail;
-        set { _detail = value; PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Detail))); }
-    }
-
+    public bool HasRating => !string.IsNullOrEmpty(Rating) && Rating != "0";
     public string Initials => Name.Length >= 2 ? Name[..2].ToUpperInvariant() : Name.ToUpperInvariant();
 
-    public event PropertyChangedEventHandler? PropertyChanged;
+    private int _number;
+    /// <summary>Position in the current list, shown as "12. Channel".</summary>
+    public int Number { get => _number; set { Set(ref _number, value); Raise(nameof(Title)); } }
+    public string Title => Number > 0 && IsLive ? $"{Number}. {Name}" : Name;
+
+    private bool _favorite;
+    public bool IsFavorite { get => _favorite; set { Set(ref _favorite, value); Raise(nameof(StarGlyph)); } }
+    /// <summary>Filled or outline star (Segoe Fluent Icons).</summary>
+    public string StarGlyph => IsFavorite ? "\uE735" : "\uE734";
+
+    // ---- what's on now (live channels) ----
+    private string _nowTitle = "";
+    public string NowTitle { get => _nowTitle; set => Set(ref _nowTitle, value); }
+    private string _startText = "";
+    public string StartText { get => _startText; set => Set(ref _startText, value); }
+    private string _endText = "";
+    public string EndText { get => _endText; set => Set(ref _endText, value); }
+    private double _progress;
+    public double Progress { get => _progress; set => Set(ref _progress, value); }
+    private bool _hasNow;
+    public bool HasNow { get => _hasNow; set => Set(ref _hasNow, value); }
+
+    /// <summary>Second line under the name for films/episodes.</summary>
+    public string Subtitle => Kind switch
+    {
+        "episode" => Plot ?? "",
+        _ => string.Join("  ·  ", new[] { Year, Genre }.Where(x => !string.IsNullOrEmpty(x))),
+    };
+
+    public void SetNow(Programme? now, long unixNow)
+    {
+        if (now == null)
+        {
+            HasNow = false;
+            NowTitle = "No programme information";
+            return;
+        }
+        HasNow = true;
+        NowTitle = now.Title;
+        StartText = DateTimeOffset.FromUnixTimeSeconds(now.Start).LocalDateTime.ToString("HH:mm");
+        EndText = DateTimeOffset.FromUnixTimeSeconds(now.Stop).LocalDateTime.ToString("HH:mm");
+        Progress = now.Progress(unixNow);
+    }
+}
+
+/// <summary>One guide entry under the video ("12:15 – 13:00  LIVE").</summary>
+public sealed class ProgrammeVm
+{
+    public required Programme P { get; init; }
+    public required long Now { get; init; }
+    public bool IsLive => P.Start <= Now && Now < P.Stop;
+    public bool IsPast => P.Stop <= Now;
+    public double Progress => P.Progress(Now);
+    public string TimeRange =>
+        $"{DateTimeOffset.FromUnixTimeSeconds(P.Start).LocalDateTime:HH:mm} – {DateTimeOffset.FromUnixTimeSeconds(P.Stop).LocalDateTime:HH:mm}";
+    public string Title => P.Title;
+    public string Desc => P.Desc;
+    public bool HasDesc => !string.IsNullOrWhiteSpace(P.Desc);
 }
 
 /// <summary>
@@ -61,6 +130,14 @@ public sealed class Repository : IDisposable
     private readonly MadhyamCore _core = new();
     private readonly HttpClient _http;
     private string SnapshotPath => Path.Combine(App.DataDir, "catalog.jsonl");
+    /// <summary>
+    /// Downloaded guides are kept here and re-imported at start-up: the catalog
+    /// snapshot deliberately excludes EPG (it is large and goes stale).
+    /// </summary>
+    private static string EpgDir => Path.Combine(App.DataDir, "epg");
+    private static string EpgFile(int source, int index) => Path.Combine(EpgDir, $"source-{source}-{index}.xml");
+    private static IEnumerable<string> EpgFiles(int source) =>
+        Directory.Exists(EpgDir) ? Directory.EnumerateFiles(EpgDir, $"source-{source}-*.xml") : Enumerable.Empty<string>();
 
     public Repository()
     {
@@ -88,6 +165,8 @@ public sealed class Repository : IDisposable
         var extra = o.TryGetProperty("extra", out var x) ? x : default;
         var kind = Str(o, "kind") ?? "live";
         var plot = Str(extra, "plot");
+        var year = Str(extra, "year");
+        if (year is { Length: > 4 }) year = year[..4]; // "2024-05-01" -> "2024"
         return new ItemVm
         {
             Id = Str(o, "id") ?? "",
@@ -99,7 +178,11 @@ public sealed class Repository : IDisposable
             UserAgent = Str(extra, "user_agent"),
             Referrer = Str(extra, "referrer"),
             Plot = plot,
-            Detail = plot ?? Str(o, "group") ?? "",
+            Rating = Str(extra, "rating"),
+            Year = year,
+            Genre = Str(extra, "genre"),
+            Season = Str(extra, "season"),
+            Episode = Str(extra, "episode"),
         };
     }
 
@@ -121,14 +204,32 @@ public sealed class Repository : IDisposable
 
     public Task Init() => Bg(() =>
     {
-        if (!File.Exists(SnapshotPath)) return;
-        try { _core.Call("load_snapshot", new { path = SnapshotPath }); }
-        catch (IptvException e)
+        if (File.Exists(SnapshotPath))
         {
-            Log($"snapshot unreadable, starting empty: {e.Message}");
-            File.Delete(SnapshotPath);
+            try { _core.Call("load_snapshot", new { path = SnapshotPath }); }
+            catch (IptvException e)
+            {
+                Log($"snapshot unreadable, starting empty: {e.Message}");
+                File.Delete(SnapshotPath);
+            }
+        }
+        if (!Directory.Exists(EpgDir)) return;
+        foreach (var f in Directory.EnumerateFiles(EpgDir, "*.xml"))
+        {
+            try { _core.Call("import_xmltv_file", new { path = f }); }
+            catch (IptvException e) { Log($"cached guide {Path.GetFileName(f)} unreadable: {e.Message}"); }
         }
     });
+
+    /// <summary>Age of the cached guide for a source, or null if none is cached.</summary>
+    public TimeSpan? EpgAge(int source)
+    {
+        var files = EpgFiles(source).ToList();
+        return files.Count == 0 ? null : DateTime.Now - files.Min(File.GetLastWriteTime);
+    }
+
+    /// <summary>Does this source announce any guide URL (playlist header or Xtream)?</summary>
+    public Task<bool> HasEpg(int source) => Bg(() => _core.Call("epg_fetch_urls", new { source }).GetArrayLength() > 0);
 
     public Task<List<Source>> Sources() => Bg(() =>
         _core.Call("sources").EnumerateArray()
@@ -164,6 +265,7 @@ public sealed class Repository : IDisposable
     public Task RemoveSource(int id) => Bg(() =>
     {
         _core.Call("remove_source", new { source = id });
+        foreach (var f in EpgFiles(id).ToList()) File.Delete(f);
         Save();
     });
 
@@ -191,14 +293,24 @@ public sealed class Repository : IDisposable
     public async Task RefreshEpg(int id)
     {
         var urls = await Bg(() => _core.Call("epg_fetch_urls", new { source = id }).EnumerateArray().Select(u => u.GetString() ?? "").ToList());
+        Directory.CreateDirectory(EpgDir);
+        var index = 0;
         foreach (var url in urls.Where(u => u.Length > 0))
         {
             string file;
             try { file = await Download(url, "guide"); }
             catch (Exception e) { Log($"guide download failed: {e.Message}"); continue; }
-            try { await Bg(() => _core.Call("import_xmltv_file", new { path = file })); }
-            finally { File.Delete(file); }
+            try
+            {
+                await Bg(() => _core.Call("import_xmltv_file", new { path = file }));
+                // Keep it for the next start (plain XML, already decompressed).
+                File.Move(file, EpgFile(id, index++), overwrite: true);
+            }
+            finally { if (File.Exists(file)) File.Delete(file); }
         }
+        // Drop cached guides of URLs the source no longer lists.
+        foreach (var stale in EpgFiles(id).Where(f => !Enumerable.Range(0, index).Select(i => EpgFile(id, i)).Contains(f)).ToList())
+            File.Delete(stale);
         await Bg(Save);
     }
 
@@ -258,8 +370,14 @@ public sealed class Repository : IDisposable
     public Task<List<ItemVm>> List(int source, string kind, string group) =>
         Bg(() => Items(_core.Call("list", new { source, kind, group, limit = 5000 })));
 
-    public Task<List<ItemVm>> Search(string query) =>
-        string.IsNullOrWhiteSpace(query) ? Task.FromResult(new List<ItemVm>()) : Bg(() => Items(_core.Call("search", new { query, limit = 200 })));
+    public Task<List<ItemVm>> Search(string query, string? kind = null) =>
+        string.IsNullOrWhiteSpace(query)
+            ? Task.FromResult(new List<ItemVm>())
+            : Bg(() => Items(_core.Call("search", new { query, kind, limit = 300 })));
+
+    /// <summary>Total items of one kind in a source (for "677 channels" under the playlist name).</summary>
+    public Task<int> CountKind(int source, string kind) => Bg(() =>
+        _core.Call("groups", new { source, kind }).EnumerateArray().Sum(g => g.GetProperty("count").GetInt32()));
 
     public Task<List<ItemVm>> Favorites() => Bg(() => Items(_core.Call("favorites")));
     public Task<List<ItemVm>> Recent() => Bg(() => Items(_core.Call("recent", new { limit = 30 })));
@@ -302,8 +420,24 @@ public sealed class Repository : IDisposable
 
     private static Programme? Prog(JsonElement o, string key) =>
         o.TryGetProperty(key, out var p) && p.ValueKind == JsonValueKind.Object
-            ? new Programme(Str(p, "title") ?? "", p.GetProperty("start").GetInt64(), p.GetProperty("stop").GetInt64())
+            ? ParseProgramme(p)
             : null;
+
+    private static Programme ParseProgramme(JsonElement p) =>
+        new(Str(p, "title") ?? "", p.GetProperty("start").GetInt64(), p.GetProperty("stop").GetInt64(), Str(p, "desc") ?? "");
+
+    /// <summary>Guide for one channel between two Unix times (for the EPG list under the video).</summary>
+    public Task<List<Programme>> Guide(string id, long from, long to) => Bg(() =>
+    {
+        var res = _core.Call("guide", new { ids = new[] { id }, from, to });
+        return res.TryGetProperty(id, out var list) && list.ValueKind == JsonValueKind.Array
+            ? list.EnumerateArray().Select(ParseProgramme).ToList()
+            : new List<Programme>();
+    });
+
+    /// <summary>Ids of all favorites, to draw filled stars in lists.</summary>
+    public Task<HashSet<string>> FavoriteIds() => Bg(() =>
+        _core.Call("favorites").EnumerateArray().Select(f => Str(f, "id") ?? "").ToHashSet());
 
     // -------------------------------------------------------------- playback
 

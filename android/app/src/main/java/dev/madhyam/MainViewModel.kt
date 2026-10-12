@@ -73,12 +73,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 screen = Screen.Browse
                 selectSource(sources.first())
             }
+            refreshStaleGuides()
         }
         // Keep "now playing" fresh while the app is open.
         viewModelScope.launch {
             while (isActive) {
                 delay(60_000)
                 refreshNowNext()
+            }
+        }
+    }
+
+    /** Re-download guides older than 12 h in the background; never blocks watching. */
+    private suspend fun refreshStaleGuides() {
+        for (s in sources) {
+            try {
+                val age = repo.epgAgeMs(s.id)
+                if (age != null && age < 12 * 3600_000L) continue
+                if (!repo.hasEpg(s.id)) continue
+                repo.refreshEpg(s.id)
+                refreshNowNext()
+            } catch (e: Exception) {
+                android.util.Log.w(Repository.TAG, "background guide refresh failed for ${s.name}", e)
             }
         }
     }

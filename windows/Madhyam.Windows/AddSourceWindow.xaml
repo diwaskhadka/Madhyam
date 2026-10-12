@@ -1,9 +1,11 @@
 <Window x:Class="Madhyam.Windows.AddSourceWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Add a TV source" Width="520" SizeToContent="Height" ResizeMode="NoResize"
-        WindowStartupLocation="CenterOwner" Background="{StaticResource Bg}">
-    <StackPanel Margin="20">
+        Title="Add a playlist" Width="540" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" Background="{StaticResource Bg}"
+        Foreground="{StaticResource Fg}" FontFamily="{StaticResource UiFont}">
+    <StackPanel Margin="24">
+        <TextBlock Text="Add a playlist" FontSize="22" FontWeight="SemiBold" Margin="0,0,0,8" />
         <TextBlock Text="Madhyam plays your own Xtream Codes account or M3U playlist. It ships with no channels."
                    Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,0,0,12" />
 
@@ -28,15 +30,15 @@
         <StackPanel x:Name="M3uFields" Visibility="Collapsed">
             <TextBlock Text="Playlist URL (http://… .m3u) or a file path" Foreground="{StaticResource Muted}" />
             <DockPanel Margin="0,2,0,10">
-                <Button DockPanel.Dock="Right" Content="Browse…" Margin="6,0,0,0" Click="Browse_Click" />
+                <Button DockPanel.Dock="Right" Content="Browse…" Margin="8,0,0,0" Padding="14,6" Style="{StaticResource SecondaryButton}" Click="Browse_Click" />
                 <TextBox x:Name="UrlBox" />
             </DockPanel>
         </StackPanel>
 
         <TextBlock x:Name="Error" Foreground="#FF7A7A" TextWrapping="Wrap" Margin="0,0,0,6" />
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Content="Cancel" IsCancel="True" Margin="0,0,8,0" Padding="16,5" />
-            <Button Content="Add source" IsDefault="True" Padding="16,5" Click="Ok_Click" />
+            <Button Content="Cancel" IsCancel="True" Margin="0,0,10,0" Style="{StaticResource SecondaryButton}" />
+            <Button Content="Add playlist" IsDefault="True" Style="{StaticResource PrimaryButton}" Click="Ok_Click" />
         </StackPanel>
     </StackPanel>
 </Window>

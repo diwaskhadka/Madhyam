@@ -72,6 +72,8 @@ jobs:
   windows-app:
     name: windows app (Madhyam.exe)
     runs-on: windows-latest
+    permissions:
+      contents: write # upload UI screenshots to the "ci-screenshots" draft release
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -103,6 +105,33 @@ jobs:
           if (Test-Path $log) { Get-Content $log | Select-Object -First 30 | ForEach-Object { Write-Host "::error::$_" }; exit 1 }
           if (-not $alive) { Write-Host "::error::Madhyam exited during startup (code $($p.ExitCode))"; exit 1 }
           Write-Host "Madhyam.exe started and stayed up for 20 s"
+      - name: UI screenshots (demo data, rendered off-screen)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $data = Join-Path $env:LOCALAPPDATA "Madhyam"
+          python windows/ci/make_demo_snapshot.py target/release/madhyam_core_ffi.dll $data
+          New-Item -ItemType Directory -Force shots | Out-Null
+          $cases = [ordered]@{
+            "1-live"           = @("--mode", "Live")
+            "2-movies"         = @("--mode", "Movies")
+            "3-movie-details"  = @("--mode", "Movies", "--open-first")
+            "4-series-details" = @("--mode", "Series", "--open-first")
+            "5-favorites"      = @("--mode", "Favorites")
+            "6-search"         = @("--mode", "Live", "--search", "news")
+          }
+          foreach ($name in $cases.Keys) {
+            $out = Join-Path (Resolve-Path shots) "$name.png"
+            $p = Start-Process publish/Madhyam/Madhyam.exe -ArgumentList ($cases[$name] + @("--screenshot", "`"$out`"")) -PassThru
+            if (-not $p.WaitForExit(45000)) { Stop-Process -Id $p.Id -Force; Write-Host "::warning::$name timed out" }
+            if (Test-Path $out) { Write-Host "::notice::screenshot $name ok" } else { Write-Host "::warning::screenshot $name missing" }
+          }
+          $err = Join-Path $data "error.log"
+          if (Test-Path $err) { Get-Content $err | Select-Object -First 20 | ForEach-Object { Write-Host "::warning::$_" } }
+          gh release view ci-screenshots 2>$null | Out-Null
+          if ($LASTEXITCODE -ne 0) { gh release create ci-screenshots --draft --title "CI screenshots (not a release)" --notes "UI screenshots rendered by CI with demo data." }
+          gh release upload ci-screenshots (Get-ChildItem shots/*.png).FullName --clobber
       - name: Check layout and zip
         shell: pwsh
         run: |
