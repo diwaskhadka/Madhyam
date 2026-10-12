@@ -1,0 +1,115 @@
+name: Release
+
+# Push a tag like `v0.1.0` (or use "Run workflow" with a tag name) to build
+# every platform and publish a GitHub Release with the files attached.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to create/publish, e.g. v0.1.1"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  windows:
+    name: windows (${{ matrix.target }})
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            arch: x64
+          - target: aarch64-pc-windows-msvc
+            arch: arm64
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Test (x64 only; arm64 cannot run on this runner)
+        if: matrix.arch == 'x64'
+        run: cargo test --workspace --release
+      - run: cargo build --release --workspace --target ${{ matrix.target }}
+      - name: Package
+        shell: pwsh
+        run: |
+          $out = "madhyam-core-$env:TAG-windows-${{ matrix.arch }}"
+          $bin = "target/${{ matrix.target }}/release"
+          New-Item -ItemType Directory -Force "$out/include", "$out/bindings" | Out-Null
+          Copy-Item "$bin/madhyam_core_ffi.dll", "$bin/madhyam_core_ffi.dll.lib", "$bin/madhyam_core_ffi.lib", "$bin/iptv.exe" $out
+          Copy-Item include/madhyam_core.h "$out/include/"
+          Copy-Item -Recurse bindings/csharp, bindings/python "$out/bindings/"
+          Copy-Item README.md, LICENSE, docs/API.md $out
+          Compress-Archive -Path "$out/*" -DestinationPath "$out.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-${{ matrix.arch }}
+          path: madhyam-core-*.zip
+
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+      - uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r27c
+      - run: cargo install cargo-ndk --locked
+      - name: Build jniLibs
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 -P 21 -o android/app/src/main/jniLibs build --release -p madhyam-core-ffi
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build release APK
+        working-directory: android
+        run: ./gradlew --no-daemon assembleRelease
+      - name: Package
+        run: |
+          cp android/app/build/outputs/apk/release/app-release.apk "Madhyam-$TAG-androidtv.apk"
+          (cd android/app/src/main && zip -qr "$GITHUB_WORKSPACE/madhyam-core-$TAG-android-jniLibs.zip" jniLibs)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: |
+            Madhyam-*.apk
+            madhyam-core-*-android-jniLibs.zip
+
+  publish:
+    needs: [windows, android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - run: ls -la dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: Madhyam ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
+          files: dist/*
+          body: |
+            **Android TV:** `Madhyam-${{ env.TAG }}-androidtv.apk`. Install with `adb install -r <file>`.
+            The APK is signed with a debug key: fine for sideloading, not for the Play Store.
+
+            **Windows:** `madhyam-core-${{ env.TAG }}-windows-x64.zip` / `-arm64.zip` contain the engine as a DLL
+            (`madhyam_core_ffi.dll` + import/static libs + C header + C# binding) and `iptv.exe`, a command-line
+            tool to inspect playlists/guides and benchmark. There is no Windows player app yet.
+
+            **Developers:** `madhyam-core-${{ env.TAG }}-android-jniLibs.zip` has the native libraries for your own Android app.
