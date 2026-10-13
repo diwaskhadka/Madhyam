@@ -97,7 +97,10 @@ public partial class MainWindow
             _ => visible,
         };
         if (field != null) visible = visible.OrderBy(g => g.Name == "Undefined" ? 1 : 0).ToList(); // channels with no country last
-        _allCategories = new List<CategoryRow> { new("All items", visible.Sum(g => g.Count), true) };
+        // By country a channel counts once per country, so "All items" takes the real channel count.
+        var allCount = field != null && _source != null ? await _repo.CountKind(_source.Id, kind) : visible.Sum(g => g.Count);
+        if (version != _loadVersion) return;
+        _allCategories = new List<CategoryRow> { new("All items", allCount, true) };
         _allCategories.AddRange(visible.Select(g => new CategoryRow(g.Name, g.Count)));
         ApplyCategoryFilter(select);
     }
