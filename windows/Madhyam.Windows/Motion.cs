@@ -244,4 +244,10 @@ internal static class NativeMethods
 
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     public static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    public static extern int SetWindowRgn(IntPtr hwnd, IntPtr region, bool redraw);
+
+    [System.Runtime.InteropServices.DllImport("gdi32.dll")]
+    public static extern IntPtr CreateRectRgn(int left, int top, int right, int bottom);
 }

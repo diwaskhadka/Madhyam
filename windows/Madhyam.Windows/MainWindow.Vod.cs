@@ -385,8 +385,9 @@ public partial class MainWindow
             VodContent.Children.Add(About(it, info, poster));
         }
 
-        if (info?.Trailer is { } yt) VodContent.Children.Add(Trailer(it, yt));
+        // Seasons and episodes first, the trailer after them.
         if (it.IsSeries) VodContent.Children.Add(Seasons(it));
+        if (info?.Trailer is { } yt) VodContent.Children.Add(Trailer(it, yt));
         if (_detailsLoading)
         {
             var t = Text(it.IsSeries ? "Loading details and episodes…" : "Loading details…", 13, "Muted");

@@ -419,8 +419,10 @@ public static class UiKit
             {
                 Background = new ImageBrush(img) { Stretch = Stretch.UniformToFill },
                 Opacity = opacity,
-                Effect = new BlurEffect { Radius = 30 },
+                Effect = new BlurEffect { Radius = 30, RenderingBias = RenderingBias.Performance },
                 Margin = new Thickness(-40),
+                // Blur once and reuse the bitmap: re-blurring a page-sized image on every frame made clicks feel slow.
+                CacheMode = new BitmapCache(),
             });
         }
         g.Children.Add(new Border

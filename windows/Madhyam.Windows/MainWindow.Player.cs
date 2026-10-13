@@ -98,6 +98,77 @@ public partial class MainWindow
             VodPlayerBox.VerticalAlignment = VerticalAlignment.Top;
             VodVideoFrame.Height = vw * 9 / 16;
         }
+        UpdatePlayerScroll();
+    }
+
+    // ================================================================ player scrolls with the page
+
+    private bool _videoClipped;
+
+    private void VodScroll_ScrollChanged(object sender, ScrollChangedEventArgs e) => UpdatePlayerScroll();
+
+    /// <summary>
+    /// Outside full screen the movie / episode player moves up with the page. WPF parts are
+    /// clipped by the layout; the native video (VLC, WebView2) and VLC's control overlay are
+    /// separate windows, so their part above the page is cut away with a window region.
+    /// </summary>
+    private void UpdatePlayerScroll()
+    {
+        var active = (_vodPlaying || _trailerOpen) && !_fullscreen;
+        var off = active ? VodScroll.VerticalOffset : 0;
+        if (!_fullscreen) VodPlayerBox.Margin = new Thickness(18, 6 - off, 18, 14);
+        var spacer = active && VodPlayerBox.ActualHeight > 0 ? VodPlayerBox.ActualHeight + 26 : 14;
+        if (Math.Abs(VodContent.Margin.Top - spacer) > 0.5) VodContent.Margin = new Thickness(34, spacer, 34, 30);
+        Dispatcher.BeginInvoke(ClipNativeVideo, DispatcherPriority.Render);
+    }
+
+    private void VodPlayerBox_SizeChanged(object sender, SizeChangedEventArgs e) => UpdatePlayerScroll();
+
+    private void ClipNativeVideo()
+    {
+        var active = (_vodPlaying || _trailerOpen) && !_fullscreen && VodPlayerBox.IsVisible;
+        var hosts = new List<System.Windows.Interop.HwndHost>();
+        if (Video.Parent == VodVideoHost && UiKit.FindChild<System.Windows.Interop.HwndHost>(Video) is { } vlc) hosts.Add(vlc);
+        if (_trailerView is { Parent: not null } tv && tv.Parent == VodVideoHost) hosts.Add(tv);
+        double hidden = 0;
+        if (active && hosts.Count > 0)
+        {
+            try { hidden = Math.Max(0, -VodVideoFrame.TranslatePoint(new Point(0, 0), VodScroll).Y); }
+            catch (InvalidOperationException) { hidden = 0; }
+        }
+        if (!active || hidden <= 0)
+        {
+            if (!_videoClipped) return;
+            _videoClipped = false;
+            foreach (var h in hosts) if (h.Handle != IntPtr.Zero) NativeMethods.SetWindowRgn(h.Handle, IntPtr.Zero, true);
+            if (OverlayHandle() is { } o0) NativeMethods.SetWindowRgn(o0, IntPtr.Zero, true);
+            return;
+        }
+        _videoClipped = true;
+        var dpi = VisualTreeHelper.GetDpi(VodVideoFrame);
+        var w = (int)Math.Ceiling(VodVideoFrame.ActualWidth * dpi.DpiScaleX) + 2;
+        var hgt = (int)Math.Ceiling(VodVideoFrame.ActualHeight * dpi.DpiScaleY) + 2;
+        var top = (int)Math.Round(hidden * dpi.DpiScaleY);
+        IntPtr Region() => top >= hgt ? NativeMethods.CreateRectRgn(0, 0, 0, 0) : NativeMethods.CreateRectRgn(0, top, w, hgt);
+        foreach (var h in hosts) if (h.Handle != IntPtr.Zero) NativeMethods.SetWindowRgn(h.Handle, Region(), true);
+        if (OverlayHandle() is { } o) NativeMethods.SetWindowRgn(o, Region(), true);
+    }
+
+    private IntPtr? OverlayHandle()
+    {
+        if (Video.Parent != VodVideoHost || Window.GetWindow(VideoOverlay) is not { } w || w == this) return null;
+        var h = new System.Windows.Interop.WindowInteropHelper(w).Handle;
+        return h == IntPtr.Zero ? null : h;
+    }
+
+    /// <summary>The wheel over the video goes to VLC's overlay window: scroll the page from there.</summary>
+    private void Overlay_MouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (_fullscreen || !_vodPlaying) return;
+        e.Handled = true;
+        var pe = new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta) { RoutedEvent = UIElement.PreviewMouseWheelEvent };
+        VodScroll.RaiseEvent(pe);
+        if (!pe.Handled) VodScroll.ScrollToVerticalOffset(VodScroll.VerticalOffset - e.Delta);
     }
 
     // ================================================================ overlay: click, hover, keys
@@ -119,6 +190,8 @@ public partial class MainWindow
     /// briefly 0×0, the scale becomes infinite / NaN and WPF throws on every frame
     /// ("Border should not return NaN values as its DesiredSize"). Replace such a scale at once.
     /// </summary>
+    private static readonly HashSet<ScaleTransform> _watchedScales = new();
+
     private static void GuardOverlayScale(Window w)
     {
         void Hook()
@@ -126,17 +199,17 @@ public partial class MainWindow
             if (VisualTreeHelper.GetChildrenCount(w) == 0 || VisualTreeHelper.GetChild(w, 0) is not FrameworkElement root) return;
             void Check()
             {
-                if (root.LayoutTransform is ScaleTransform st)
+                try
                 {
-                    if (!st.IsFrozen)
-                    {
-                        st.Changed -= OnChanged;
-                        st.Changed += OnChanged;
-                    }
+                    if (root.LayoutTransform is not ScaleTransform st) return;
+                    if (!st.IsFrozen && _watchedScales.Add(st)) st.Changed += (_, _) => Check(); // in-place edits too
                     if (!Sane(st.ScaleX) || !Sane(st.ScaleY)) root.LayoutTransform = Transform.Identity;
                 }
+                catch (Exception ex)
+                {
+                    Repository.Log($"overlay scale guard: {ex.Message}"); // never let the guard itself crash
+                }
             }
-            void OnChanged(object? s, EventArgs e) => Check();
             System.ComponentModel.DependencyPropertyDescriptor
                 .FromProperty(FrameworkElement.LayoutTransformProperty, typeof(FrameworkElement))
                 .AddValueChanged(root, (_, _) => Check());

@@ -245,6 +245,9 @@
                         </Grid.RowDefinitions>
                         <Grid x:Name="LiveCardBox" VerticalAlignment="Top" HorizontalAlignment="Center">
                             <Border x:Name="LiveCardShadow" CornerRadius="18" Background="{StaticResource Panel}">
+                                <Border.CacheMode>
+                                    <BitmapCache />
+                                </Border.CacheMode>
                                 <Border.Effect>
                                     <DropShadowEffect BlurRadius="34" ShadowDepth="10" Direction="270" Opacity="0.36" />
                                 </Border.Effect>
@@ -283,7 +286,7 @@
                                         <Grid x:Name="LiveVideoHost">
                                             <vlc:VideoView x:Name="Video" Visibility="Collapsed">
                                                 <!-- Drawn in VLC's overlay window above the video: click = pause, double-click = full screen. -->
-                                                <Grid x:Name="VideoOverlay" Visibility="Collapsed" Background="#01000000" Loaded="Overlay_Loaded"
+                                                <Grid x:Name="VideoOverlay" Visibility="Collapsed" Background="#01000000" Loaded="Overlay_Loaded" MouseWheel="Overlay_MouseWheel"
                                                       MouseLeftButtonDown="Overlay_MouseLeftButtonDown" MouseMove="Overlay_MouseMove">
                                                     <Border x:Name="Osd" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,22,0,0" CornerRadius="10"
                                                             Background="#CC000000" Padding="16,8" Visibility="Collapsed" IsHitTestVisible="False">
@@ -547,8 +550,11 @@
                         </Grid>
 
                         <!-- Raised player card (16:9 video sized in code). Only the area below scrolls: native video cannot be clipped. -->
-                        <Grid x:Name="VodPlayerBox" Grid.Row="1" Margin="18,6,18,14" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Top">
+                        <Grid x:Name="VodPlayerBox" Grid.Row="1" Panel.ZIndex="1" SizeChanged="VodPlayerBox_SizeChanged" Margin="18,6,18,14" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Top">
                             <Border x:Name="VodCardShadow" CornerRadius="18" Background="{StaticResource Panel}">
+                                <Border.CacheMode>
+                                    <BitmapCache />
+                                </Border.CacheMode>
                                 <Border.Effect>
                                     <DropShadowEffect BlurRadius="36" ShadowDepth="12" Direction="270" Opacity="0.38" />
                                 </Border.Effect>
@@ -578,7 +584,8 @@
                             </Border>
                         </Grid>
 
-                        <ScrollViewer x:Name="VodScroll" Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                        <!-- The player card scrolls with this page (moved in code), except in full screen. -->
+                        <ScrollViewer x:Name="VodScroll" Grid.Row="1" Grid.RowSpan="2" VerticalScrollBarVisibility="Auto" ScrollChanged="VodScroll_ScrollChanged">
                             <StackPanel x:Name="VodContent" Margin="34,14,34,30" />
                         </ScrollViewer>
                     </Grid>

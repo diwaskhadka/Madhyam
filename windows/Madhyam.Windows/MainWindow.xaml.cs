@@ -82,6 +82,14 @@ public partial class MainWindow : Window
         ElasticScroll.Attach(GuideList);
         ElasticScroll.Attach(GridScroll);
         ElasticScroll.Attach(VodScroll);
+        // The player card sits above the page's scroll area: wheel over it scrolls the page.
+        VodPlayerBox.PreviewMouseWheel += (_, e) =>
+        {
+            if (_fullscreen) return;
+            e.Handled = true;
+            var pe = new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta) { RoutedEvent = UIElement.PreviewMouseWheelEvent };
+            VodScroll.RaiseEvent(pe);
+        };
         _perPage = S.PerPage is 25 or 50 or 100 ? S.PerPage : 50;
         HighlightPerPage();
         RestoreWindowPlacement();
@@ -646,7 +654,7 @@ public partial class MainWindow : Window
             header.Visibility = fs ? Visibility.Collapsed : Visibility.Visible;
             frame.CornerRadius = new CornerRadius(fs ? 0 : 12);
         }
-        VodPlayerBox.Margin = fs ? new Thickness(0) : new Thickness(18, 6, 18, 14);
+        VodPlayerBox.Margin = fs ? new Thickness(0) : new Thickness(18, 6 - VodScroll.VerticalOffset * (_vodPlaying || _trailerOpen ? 1 : 0), 18, 14);
         LiveCloseBtn.Visibility = Playing is { IsLive: true } ? Visibility.Visible : Visibility.Collapsed;
         LiveBadge.Visibility = Playing is { IsLive: true } ? Visibility.Visible : Visibility.Collapsed;
         Grid.SetRowSpan(VodPlayerBox, fs ? 3 : 1);
