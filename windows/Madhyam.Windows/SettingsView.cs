@@ -333,7 +333,7 @@ public sealed class SettingsView : UserControl
             status.Visibility = Visibility.Visible;
             status.Text = v ? "Downloading the channel list…" : "Removing Free TV…";
             await _host.ApplyFreeTv(v);
-            status.Text = v ? "Free TV is on. Open it with the globe in the left bar." : "Free TV removed.";
+            status.Text = v ? "Free TV is on. Pick it from the playlist menu at the top." : "Free TV removed.";
         });
         toggle.HorizontalAlignment = HorizontalAlignment.Right;
         toggle.VerticalAlignment = VerticalAlignment.Top;

@@ -362,67 +362,6 @@ public partial class MainWindow : Window
         .Where(s => s.Kind == "m3u" && (s.Id == S.FreeTvSourceId || FreeTv.IsFreeTv(s.Location))).ToList();
 
     /// <summary>
-    /// Rail shortcut to Free TV, shown while it is on. Regular playlists have no icon: their content
-    /// already lives in Movies, Live TV and Series. Clicking opens Free TV in Live TV from any page.
-    /// </summary>
-    private void RebuildPlaylistRail()
-    {
-        PlaylistRail.Children.Clear();
-        var free = FreeTvSources.FirstOrDefault(s => s.Id == S.FreeTvSourceId) ?? FreeTvSources.FirstOrDefault();
-        PlaylistRailLine.Visibility = free != null ? Visibility.Visible : Visibility.Collapsed;
-        if (free == null) return;
-        var tint = Color.FromRgb(0x4C, 0xC2, 0x8A);
-        var current = free.Id == _source?.Id && _mode == Mode.Live;
-        var b = new Button
-        {
-            Content = new Border
-            {
-                Width = 32,
-                Height = 32,
-                CornerRadius = new CornerRadius(9),
-                Background = new SolidColorBrush(Color.FromArgb(0x33, tint.R, tint.G, tint.B)),
-                BorderBrush = new SolidColorBrush(tint),
-                BorderThickness = new Thickness(current ? 1.5 : 0),
-                Child = new TextBlock
-                {
-                    Text = "\uE774",
-                    FontFamily = UiKit.Icons,
-                    FontSize = 14,
-                    Foreground = new SolidColorBrush(tint),
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center,
-                },
-            },
-            Style = (Style)FindResource("IconButton"),
-            Width = 44,
-            Height = 44,
-            Margin = new Thickness(0, 2, 0, 2),
-            ToolTip = "Free TV · live channels",
-        };
-        b.Click += async (_, _) => await OpenFreeTv(free);
-        PlaylistRail.Children.Add(b);
-    }
-
-    /// <summary>Switch to the Free TV playlist and show it in Live TV (also from Settings or any other page).</summary>
-    private async Task OpenFreeTv(Source free)
-    {
-        if (free.Id != _source?.Id)
-        {
-            if (Playing != null && Playing.SourceId != free.Id) StopPlayback();
-            _source = free;
-            _group = null;
-            await UpdatePlaylistHeader();
-            if (_mode == Mode.Live)
-            {
-                await ShowMode();
-                return;
-            }
-        }
-        if (_mode != Mode.Live) NavLive.IsChecked = true; // → Nav_Checked → ShowMode
-        RebuildPlaylistRail();
-    }
-
-    /// <summary>
     /// Keep exactly one Free TV playlist, on the all-channels list: 0.4.8 could add a second one
     /// for "only these countries". Countries are now a filter inside that single playlist.
     /// </summary>
@@ -455,13 +394,6 @@ public partial class MainWindow : Window
         if (!changed) return;
         AppSettings.Save();
         await ReloadSources(_source?.Id);
-    }
-
-    private static Color HslColor(double h, double s, double l)
-    {
-        double c = (1 - Math.Abs(2 * l - 1)) * s, x = c * (1 - Math.Abs(h / 60 % 2 - 1)), m = l - c / 2;
-        var (r, g, b) = h < 60 ? (c, x, 0d) : h < 120 ? (x, c, 0d) : h < 180 ? (0d, c, x) : h < 240 ? (0d, x, c) : h < 300 ? (x, 0d, c) : (c, 0d, x);
-        return Color.FromRgb((byte)((r + m) * 255), (byte)((g + m) * 255), (byte)((b + m) * 255));
     }
 
     private bool _freeTvBusy;
@@ -522,7 +454,6 @@ public partial class MainWindow : Window
 
     private async Task UpdatePlaylistHeader()
     {
-        RebuildPlaylistRail();
         if (_source == null)
         {
             PlaylistName.Text = "No playlist";
@@ -891,7 +822,6 @@ public partial class MainWindow : Window
     {
         var version = ++_loadVersion;
         Layout();
-        RebuildPlaylistRail(); // Free TV icon is highlighted while it is open in Live TV
         switch (_mode)
         {
             case Mode.Live or Mode.Movies or Mode.Series:

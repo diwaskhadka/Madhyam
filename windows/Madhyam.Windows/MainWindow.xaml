@@ -31,8 +31,6 @@
                 <RadioButton x:Name="NavSeries" Style="{StaticResource RailButton}" Content="&#xE8F1;" ToolTip="Series" Tag="Series" Checked="Nav_Checked" />
                 <RadioButton x:Name="NavAdded" Style="{StaticResource RailButton}" Content="&#xE823;" ToolTip="Recently added" Tag="Added" Checked="Nav_Checked" />
                 <!-- One icon per playlist: switches every section to that playlist. -->
-                <Border x:Name="PlaylistRailLine" Height="1" Width="28" Background="{StaticResource Line}" Margin="0,8" Visibility="Collapsed" />
-                <StackPanel x:Name="PlaylistRail" />
             </StackPanel>
             <StackPanel DockPanel.Dock="Bottom" Margin="0,0,0,10" HorizontalAlignment="Center">
                 <RadioButton x:Name="NavSettings" Style="{StaticResource RailButton}" Content="&#xE713;" ToolTip="Settings" Tag="Settings" Checked="Nav_Checked" />

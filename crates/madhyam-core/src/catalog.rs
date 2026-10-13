@@ -297,6 +297,16 @@ fn item_groups<'a>(i: &'a Item, field: Option<&'a str>) -> Box<dyn Iterator<Item
     }
 }
 
+/// Is the item hidden by `q.hidden_groups`? By an `extra` field, only when every one of its
+/// values is hidden (a channel of Nepal and India stays while either is shown).
+fn hidden_out(i: &Item, q: &ListQuery) -> bool {
+    if q.hidden_groups.is_empty() {
+        return false;
+    }
+    let mut groups = item_groups(i, q.group_field.as_deref()).peekable();
+    groups.peek().is_some() && groups.all(|g| q.hidden_groups.contains(g))
+}
+
 /// When the provider added the item (Unix seconds), 0 if unknown.
 /// Xtream sends `added` for live/VOD and `last_modified` for series.
 pub fn item_added(i: &Item) -> i64 {
@@ -676,7 +686,9 @@ impl Catalog {
                     && q.group
                         .as_deref()
                         .is_none_or(|g| item_groups(i, q.group_field.as_deref()).any(|x| x == g))
-                    && (q.group_field.is_some() || !q.hidden_groups.contains(&i.group))
+                    && !hidden_out(i, q)
+                    // By a field, repeat listings of one stream ("<hash>#2") show once.
+                    && (q.group_field.is_none() || !i.remote_id.contains('#'))
                     && (q.min_rating <= 0.0 || item_rating(i) >= q.min_rating)
             })
             .collect();
@@ -1450,6 +1462,13 @@ mod tests {
         let (n, v) = c.query(&q);
         assert_eq!(n, 2);
         assert_eq!(v[0].name, "A");
+        q.group = None;
+        q.hidden_groups = ["India".to_string()].into();
+        let (n, _) = c.query(&q);
+        assert_eq!(
+            n, 2,
+            "A (Nepal too) and untagged C stay; B (India only) goes"
+        );
         // Re-tagging replaces the old values.
         c.tag_from_m3u(s, "country", "#EXTM3U\n".as_bytes())
             .unwrap();

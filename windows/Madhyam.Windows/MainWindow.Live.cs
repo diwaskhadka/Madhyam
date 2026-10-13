@@ -49,7 +49,7 @@ public partial class MainWindow
     {
         var show = _mode == Mode.Live && IsFreeTvSource;
         CatModeBox.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-        CatManageBtn.Visibility = GroupFieldNow == null ? Visibility.Visible : Visibility.Collapsed;
+        CatManageBtn.ToolTip = GroupFieldNow == null ? "Manage categories (show / hide)" : "Manage countries (show / hide)";
         if (!show) return;
         CatModeBox.Content = UiKit.Segments(new[] { ("category", "Categories"), ("country", "Countries") },
             S.FreeTvGroupBy == "country" ? "country" : "category", v =>
@@ -85,8 +85,8 @@ public partial class MainWindow
             if (version != _loadVersion) return;
             CatsTitle.Text = "Countries";
         }
-        // Hidden categories are category names; they don't apply to the country list.
-        var hidden = _source == null || field != null ? new HashSet<string>() : S.Hidden(_source.Id, kind);
+        // Countries keep their own hidden list (key "live:country"), separate from hidden categories.
+        var hidden = _source == null ? new HashSet<string>() : S.Hidden(_source.Id, HiddenKind);
         var visible = groups.Where(g => !hidden.Contains(g.Name)).ToList();
         var order = S.CategorySort.TryGetValue(kind, out var o) ? o : "provider";
         if (field != null && order == "provider") order = "name_asc"; // countries have no provider order worth keeping
@@ -98,7 +98,9 @@ public partial class MainWindow
         };
         if (field != null) visible = visible.OrderBy(g => g.Name == "Undefined" ? 1 : 0).ToList(); // channels with no country last
         // By country a channel counts once per country, so "All items" takes the real channel count.
-        var allCount = field != null && _source != null ? await _repo.CountKind(_source.Id, kind) : visible.Sum(g => g.Count);
+        var allCount = field != null && _source != null
+            ? (await _repo.Query(kind, _source.Id, null, hidden, "provider", 0, 0, 1, field)).Total
+            : visible.Sum(g => g.Count);
         if (version != _loadVersion) return;
         _allCategories = new List<CategoryRow> { new("All items", allCount, true) };
         _allCategories.AddRange(visible.Select(g => new CategoryRow(g.Name, g.Count)));
@@ -159,12 +161,13 @@ public partial class MainWindow
     private async void CatManage_Click(object sender, RoutedEventArgs e)
     {
         if (_source == null) return;
-        var kind = KindNow;
-        var all = await _repo.Groups(_source.Id, kind);
-        var hidden = S.Hidden(_source.Id, kind);
-        var result = ManageCategoriesWindow.Show(this, all, hidden);
+        var field = GroupFieldNow;
+        var all = await _repo.Groups(_source.Id, KindNow, field);
+        if (field != null) all = all.OrderBy(g => g.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+        var hidden = S.Hidden(_source.Id, HiddenKind);
+        var result = ManageCategoriesWindow.Show(this, all, hidden, field != null ? "countries" : "categories");
         if (result == null) return;
-        S.HiddenCategories[AppSettings.HiddenKey(_source.Id, kind)] = result.ToList();
+        S.HiddenCategories[AppSettings.HiddenKey(_source.Id, HiddenKind)] = result.ToList();
         AppSettings.Save();
         if (_group != null && result.Contains(_group)) _group = null;
         await LoadCategories(++_loadVersion, _group);
@@ -193,7 +196,10 @@ public partial class MainWindow
         else if (_mode is Mode.Movies or Mode.Series) await LoadGrid(resetPage: true);
     }
 
-    private HashSet<string> HiddenNow => _source == null ? new HashSet<string>() : S.Hidden(_source.Id, KindNow);
+    /// <summary>Key part for hidden groups: the kind, or "live:country" for Free TV's countries.</summary>
+    private string HiddenKind => GroupFieldNow is { } f ? $"{KindNow}:{f}" : KindNow;
+
+    private HashSet<string> HiddenNow => _source == null ? new HashSet<string>() : S.Hidden(_source.Id, HiddenKind);
 
     // ================================================================ live list
 

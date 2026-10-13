@@ -103,16 +103,16 @@ public static class InfoWindow
 public static class ManageCategoriesWindow
 {
     /// <returns>The new set of hidden category names, or null when cancelled.</returns>
-    public static HashSet<string>? Show(Window owner, List<Group> groups, HashSet<string> hidden)
+    public static HashSet<string>? Show(Window owner, List<Group> groups, HashSet<string> hidden, string noun = "categories")
     {
-        var w = DialogKit.Make(owner, "Manage categories", 560);
+        var w = DialogKit.Make(owner, $"Manage {noun}", 560);
         var root = new StackPanel { Margin = new Thickness(24) };
-        root.Children.Add(Text("Manage categories", 21, "Fg", FontWeights.SemiBold));
-        var sub = Text("Unticked categories are hidden from the list, from “All items” and from search.", 13, "Muted", wrap: true);
+        root.Children.Add(Text($"Manage {noun}", 21, "Fg", FontWeights.SemiBold));
+        var sub = Text($"Unticked {noun} are hidden from the list and from “All items”" + (noun == "categories" ? " and from search." : "."), 13, "Muted", wrap: true);
         sub.Margin = new Thickness(0, 4, 0, 12);
         root.Children.Add(sub);
 
-        var filter = new TextBox { ToolTip = "Search categories" };
+        var filter = new TextBox { ToolTip = $"Search {noun}" };
         var checks = groups.Select(gr => new CheckBox
         {
             Content = $"{gr.Name}   ({gr.Count:N0})",
