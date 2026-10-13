@@ -67,6 +67,97 @@
             </Setter>
         </Style>
 
+        <!-- Buttons on the video (always white on the dark gradient, whatever the theme). -->
+        <Style x:Key="PlayerButton" TargetType="Button">
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="FontFamily" Value="{StaticResource Icons}" />
+            <Setter Property="FontSize" Value="17" />
+            <Setter Property="Width" Value="40" />
+            <Setter Property="Height" Value="40" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" CornerRadius="20" Background="Transparent">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#33FFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="SliderRepeat" TargetType="RepeatButton">
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="IsTabStop" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RepeatButton">
+                        <Grid Background="Transparent">
+                            <Border Height="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}" CornerRadius="2"
+                                    Background="{TemplateBinding Background}" VerticalAlignment="Center" />
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Seek / volume bar: thin track, accent fill for the played part, round thumb that grows on hover. -->
+        <Style x:Key="SeekSlider" TargetType="Slider">
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Height" Value="22" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="IsMoveToPointEnabled" Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Slider">
+                        <Grid Background="Transparent">
+                            <Track x:Name="PART_Track">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton x:Name="Played" Style="{StaticResource SliderRepeat}" Command="Slider.DecreaseLarge"
+                                                  Background="{DynamicResource Accent}" Tag="4" />
+                                </Track.DecreaseRepeatButton>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton x:Name="Rest" Style="{StaticResource SliderRepeat}" Command="Slider.IncreaseLarge"
+                                                  Background="#55FFFFFF" Tag="4" />
+                                </Track.IncreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb x:Name="Knob">
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Ellipse x:Name="Dot" Width="12" Height="12" Fill="White">
+                                                    <Ellipse.Effect>
+                                                        <DropShadowEffect BlurRadius="6" ShadowDepth="0" Opacity="0.6" />
+                                                    </Ellipse.Effect>
+                                                </Ellipse>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Played" Property="Tag" Value="6" />
+                                <Setter TargetName="Rest" Property="Tag" Value="6" />
+                                <Setter TargetName="Knob" Property="RenderTransformOrigin" Value="0.5,0.5" />
+                                <Setter TargetName="Knob" Property="RenderTransform">
+                                    <Setter.Value>
+                                        <ScaleTransform ScaleX="1.35" ScaleY="1.35" />
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- Left navigation rail item (one checked at a time). -->
         <Style x:Key="RailButton" TargetType="RadioButton">
             <Setter Property="GroupName" Value="Rail" />

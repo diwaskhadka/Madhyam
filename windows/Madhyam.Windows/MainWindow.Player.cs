@@ -1,0 +1,365 @@
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
+using System.Windows.Threading;
+using LibVLCSharp.Shared;
+using Microsoft.Win32;
+
+namespace Madhyam.Windows;
+
+/// <summary>
+/// Player chrome drawn over the video: click to pause,
+/// double-click for full screen, controls that hide after a few seconds and
+/// come back on mouse movement, styled pop-ups for audio / subtitles / speed,
+/// audio and subtitle delay, subtitle files and online subtitle search.
+/// </summary>
+public partial class MainWindow
+{
+    private readonly DispatcherTimer _barTimer = new() { Interval = TimeSpan.FromSeconds(2.8) };
+    private readonly DispatcherTimer _osdTimer = new() { Interval = TimeSpan.FromSeconds(1.6) };
+    private readonly HashSet<Window> _hookedOverlays = new();
+    private Popup? _openPopup;
+    private bool _muted;
+    private int _audioDelayMs;
+    private int _subDelayMs;
+    private bool _barTimersReady;
+
+    private void EnsureBarTimers()
+    {
+        if (_barTimersReady) return;
+        _barTimersReady = true;
+        _barTimer.Tick += (_, _) =>
+        {
+            _barTimer.Stop();
+            if (PlayerBar.IsMouseOver || _openPopup is { IsOpen: true } || Playing == null || !_player.IsPlaying) return;
+            HideBar();
+        };
+        _osdTimer.Tick += (_, _) =>
+        {
+            _osdTimer.Stop();
+            Osd.Visibility = Visibility.Collapsed;
+            BigPlay.Visibility = Visibility.Collapsed;
+        };
+    }
+
+    // ================================================================ sizing (16:9)
+
+    private void Players_SizeChanged(object sender, SizeChangedEventArgs e) => SizePlayers();
+
+    /// <summary>Keep the video 16:9 instead of stretching it over the whole page.</summary>
+    private void SizePlayers()
+    {
+        var fs = _fullscreen && Playing != null;
+        // Live: video on top at 16:9 of the column width, guide below it.
+        if (fs)
+        {
+            VideoRow.Height = new GridLength(1, GridUnitType.Star);
+            GuideRow.Height = new GridLength(0);
+            LiveVideoBox.Width = double.NaN;
+        }
+        else if (PlayerPanel.ActualWidth > 0)
+        {
+            var w = PlayerPanel.ActualWidth;
+            var guide = TimelinePanel.Visibility == Visibility.Visible ? 175 : GuidePanel.Visibility == Visibility.Visible ? 220 : 0;
+            var h = Math.Max(200, Math.Min(w * 9 / 16, PlayerPanel.ActualHeight - guide));
+            VideoRow.Height = new GridLength(h);
+            GuideRow.Height = new GridLength(1, GridUnitType.Star);
+            LiveVideoBox.Width = Math.Min(w, h * 16 / 9);
+            LiveVideoBox.HorizontalAlignment = HorizontalAlignment.Center;
+        }
+
+        // Movie / episode: a centred 16:9 card, leaving room to peek at "About" below.
+        if (fs)
+        {
+            VodPlayerBox.Width = double.NaN;
+            VodPlayerBox.Height = double.NaN;
+            VodPlayerBox.HorizontalAlignment = HorizontalAlignment.Stretch;
+            VodPlayerBox.VerticalAlignment = VerticalAlignment.Stretch;
+        }
+        else if (VodPage.ActualWidth > 0)
+        {
+            var availW = VodPage.ActualWidth - 36;
+            var availH = VodPage.ActualHeight - 70 - 110;
+            var vw = Math.Max(320, Math.Min(Math.Min(availW, 1280), availH * 16 / 9));
+            VodPlayerBox.Width = vw;
+            VodPlayerBox.Height = vw * 9 / 16;
+            VodPlayerBox.HorizontalAlignment = HorizontalAlignment.Center;
+            VodPlayerBox.VerticalAlignment = VerticalAlignment.Top;
+        }
+    }
+
+    // ================================================================ overlay: click, hover, keys
+
+    private void Overlay_Loaded(object sender, RoutedEventArgs e)
+    {
+        EnsureBarTimers();
+        // The overlay lives in VLC's own transparent window: forward its keys to ours.
+        if (Window.GetWindow(VideoOverlay) is { } w && w != this && _hookedOverlays.Add(w))
+            w.PreviewKeyDown += Window_PreviewKeyDown;
+    }
+
+    private void Overlay_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.OriginalSource != VideoOverlay) return; // clicks on the control bar
+        e.Handled = true;
+        if (e.ClickCount == 2)
+        {
+            TogglePause(silent: true); // undo the first click's pause
+            ToggleFullscreen();
+            return;
+        }
+        TogglePause();
+    }
+
+    private void Overlay_MouseMove(object sender, MouseEventArgs e) => ShowBar();
+
+    private void ShowBar()
+    {
+        EnsureBarTimers();
+        PlayerBar.Opacity = 1;
+        PlayerBar.IsHitTestVisible = true;
+        VideoOverlay.Cursor = null;
+        _barTimer.Stop();
+        _barTimer.Start();
+    }
+
+    private void HideBar()
+    {
+        PlayerBar.Opacity = 0;
+        PlayerBar.IsHitTestVisible = false;
+        VideoOverlay.Cursor = Cursors.None;
+        SeekTip.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>Short message over the video ("Subtitle delay +100 ms").</summary>
+    private void ShowOsd(string text)
+    {
+        EnsureBarTimers();
+        OsdText.Text = text;
+        Osd.Visibility = Visibility.Visible;
+        _osdTimer.Stop();
+        _osdTimer.Start();
+    }
+
+    /// <summary>Called by PlayAt when a new stream starts.</summary>
+    private void OnNewMedia(ItemVm it)
+    {
+        var vod = !it.IsLive;
+        SeekRow.Visibility = vod ? Visibility.Visible : Visibility.Collapsed;
+        TimeRow.Visibility = vod ? Visibility.Visible : Visibility.Collapsed;
+        Back10Btn.Visibility = vod ? Visibility.Visible : Visibility.Collapsed;
+        Fwd10Btn.Visibility = vod ? Visibility.Visible : Visibility.Collapsed;
+        SpeedBtn.Visibility = vod ? Visibility.Visible : Visibility.Collapsed;
+        BarTitle.Text = it.IsLive ? it.DisplayName : "";
+        _audioDelayMs = 0;
+        _subDelayMs = 0;
+        _player.Mute = _muted;
+        ShowBar();
+    }
+
+    // ================================================================ transport
+
+    private void PlayPause_Click(object sender, RoutedEventArgs e) => TogglePause();
+
+    private void TogglePause(bool silent = false)
+    {
+        if (Playing == null) return;
+        var willPause = _player.IsPlaying;
+        _player.SetPause(willPause);
+        if (silent) return;
+        BigPlayGlyph.Text = willPause ? "" : "";
+        BigPlay.Visibility = Visibility.Visible;
+        _osdTimer.Stop();
+        _osdTimer.Start();
+        ShowBar();
+    }
+
+    private void Back10_Click(object sender, RoutedEventArgs e) => SeekBy(-10_000);
+
+    private void Fwd10_Click(object sender, RoutedEventArgs e) => SeekBy(10_000);
+
+    private void SeekBy(long ms)
+    {
+        if (Playing is { IsLive: false } && _player.Length > 0)
+        {
+            _player.Time = Math.Clamp(_player.Time + ms, 0, _player.Length);
+            ShowOsd(ms > 0 ? $"+{ms / 1000} s   {Fmt(_player.Time)}" : $"−{-ms / 1000} s   {Fmt(_player.Time)}");
+            ShowBar();
+        }
+    }
+
+    private async void NextEpisode_Click(object sender, RoutedEventArgs e)
+    {
+        if (_playIndex < _playlist.Count - 1) await PlayAt(_playIndex + 1);
+    }
+
+    private void SeekBar_PreviewMouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (Playing is { IsLive: false } && _player.Length > 0)
+            _player.Time = (long)(SeekBar.Value * _player.Length);
+    }
+
+    /// <summary>Time preview above the seek bar where the mouse is.</summary>
+    private void SeekBar_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (_player.Length <= 0 || SeekBar.ActualWidth <= 0) return;
+        var x = e.GetPosition(SeekBar).X;
+        var ratio = Math.Clamp(x / SeekBar.ActualWidth, 0, 1);
+        SeekTipText.Text = Fmt((long)(ratio * _player.Length));
+        SeekTip.Visibility = Visibility.Visible;
+        SeekTip.Margin = new Thickness(Math.Max(0, x - 24), -26, 0, 0);
+        SeekBar.MouseLeave -= HideSeekTip;
+        SeekBar.MouseLeave += HideSeekTip;
+    }
+
+    private void HideSeekTip(object sender, MouseEventArgs e) => SeekTip.Visibility = Visibility.Collapsed;
+
+    private void VodClose_Click(object sender, RoutedEventArgs e) => StopPlayback();
+
+    // ================================================================ volume and mute
+
+    private void Mute_Click(object sender, RoutedEventArgs e) => ToggleMute();
+
+    /// <summary>Our own flag is the truth: libVLC applies mute asynchronously, so reading it back right away is stale.</summary>
+    private void ToggleMute()
+    {
+        _muted = !_muted;
+        _player.Mute = _muted;
+        UpdateMuteGlyphs();
+        ShowOsd(_muted ? "Muted" : $"Volume {(int)VolumeBar.Value}%");
+    }
+
+    private void UpdateMuteGlyphs()
+    {
+        var glyph = _muted || VolumeBar.Value == 0 ? "" : "";
+        LiveMute.Content = glyph;
+        VodMute.Content = glyph;
+    }
+
+    private void VolumeBar_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        // Raised once during InitializeComponent, before the player exists.
+        if (_player == null || LiveMute == null) return;
+        _player.Volume = (int)e.NewValue;
+        if (_muted && e.NewValue > e.OldValue)
+        {
+            _muted = false;
+            _player.Mute = false;
+        }
+        UpdateMuteGlyphs();
+    }
+
+    private void ChangeVolume(int delta)
+    {
+        VolumeBar.Value = Math.Clamp(VolumeBar.Value + delta, 0, 100);
+        ShowOsd($"Volume {(int)VolumeBar.Value}%");
+        ShowBar();
+    }
+
+    // ================================================================ delays
+
+    private void ChangeAudioDelay(int ms)
+    {
+        _audioDelayMs = ms == 0 ? 0 : _audioDelayMs + ms;
+        _player.SetAudioDelay(_audioDelayMs * 1000L);
+        ShowOsd($"Audio delay {Delay(_audioDelayMs)}");
+    }
+
+    private void ChangeSubDelay(int ms)
+    {
+        _subDelayMs = ms == 0 ? 0 : _subDelayMs + ms;
+        _player.SetSpuDelay(_subDelayMs * 1000L);
+        ShowOsd($"Subtitle delay {Delay(_subDelayMs)}");
+    }
+
+    private static string Delay(int ms) => ms == 0 ? "0 ms" : $"{ms:+0;−0} ms";
+
+    // ================================================================ pop-ups
+
+    private void TrackPopup(Popup p)
+    {
+        _openPopup = p;
+        p.Closed += (_, _) => ShowBar();
+    }
+
+    private void AudioTracks_Click(object sender, RoutedEventArgs e)
+    {
+        var tracks = _player.AudioTrackDescription;
+        var cur = _player.AudioTrack;
+        var rows = tracks.Where(t => t.Id >= 0)
+            .Select(t => new UiKit.MenuRow("", string.IsNullOrEmpty(t.Name) ? $"Track {t.Id}" : t.Name, t.Id == cur, () => _player.SetAudioTrack(t.Id)))
+            .ToList();
+        if (rows.Count == 0) rows.Add(new UiKit.MenuRow("", "Default audio", true, () => { }));
+        var extra = new UIElement[]
+        {
+            new Border { Height = 1, Background = UiKit.B("Line"), Margin = new Thickness(6, 5, 6, 5) },
+            UiKit.Stepper("", "Audio delay  (J / K)", () => Delay(_audioDelayMs), () => ChangeAudioDelay(-50), () => ChangeAudioDelay(50), () => ChangeAudioDelay(0)),
+        };
+        TrackPopup(UiKit.PopMenu(AudioBtn, "Audio", rows, extra, above: true, width: 300));
+    }
+
+    private void Subtitles_Click(object sender, RoutedEventArgs e)
+    {
+        var tracks = _player.SpuDescription;
+        var cur = _player.Spu;
+        var rows = new List<UiKit.MenuRow> { new("", "Off", cur < 0, () => _player.SetSpu(-1)) };
+        rows.AddRange(tracks.Where(t => t.Id >= 0)
+            .Select(t => new UiKit.MenuRow("", string.IsNullOrEmpty(t.Name) ? $"Track {t.Id}" : t.Name, t.Id == cur, () => _player.SetSpu(t.Id))));
+        rows.Add(new UiKit.MenuRow("", "-", false, () => { }));
+        rows.Add(new UiKit.MenuRow("", "Load subtitle file…", false, LoadSubtitleFile));
+        rows.Add(new UiKit.MenuRow("", "Search subtitles online…", false, SearchSubtitlesOnline, "OpenSubtitles.com"));
+        var extra = new UIElement[]
+        {
+            new Border { Height = 1, Background = UiKit.B("Line"), Margin = new Thickness(6, 5, 6, 5) },
+            UiKit.Stepper("", "Subtitle delay  (G / H)", () => Delay(_subDelayMs), () => ChangeSubDelay(-50), () => ChangeSubDelay(50), () => ChangeSubDelay(0)),
+        };
+        TrackPopup(UiKit.PopMenu(SubsBtn, "Subtitles", rows, extra, above: true, width: 320));
+    }
+
+    private void Speed_Click(object sender, RoutedEventArgs e)
+    {
+        var cur = _player.Rate;
+        var speeds = new[] { 0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f };
+        TrackPopup(UiKit.PopMenu(SpeedBtn, "Playback speed", speeds.Select(s => new UiKit.MenuRow(
+            s < 1 ? "" : s == 1 ? "" : "", s == 1f ? "Normal (1×)" : $"{s:0.##}×", Math.Abs(s - cur) < 0.01,
+            () => { _player.SetRate(s); ShowOsd($"Speed {s:0.##}×"); })), above: true, width: 220));
+    }
+
+    // ================================================================ subtitle files
+
+    private void LoadSubtitleFile()
+    {
+        var dlg = new OpenFileDialog { Filter = "Subtitles (*.srt;*.ass;*.ssa;*.vtt;*.sub;*.idx)|*.srt;*.ass;*.ssa;*.vtt;*.sub;*.idx|All files|*.*" };
+        if (dlg.ShowDialog(this) != true) return;
+        UseSubtitle(dlg.FileName);
+    }
+
+    private void UseSubtitle(string path)
+    {
+        if (Playing == null) return;
+        var ok = _player.AddSlave(MediaSlaveType.Subtitle, new Uri(path).AbsoluteUri, true);
+        ShowOsd(ok ? $"Subtitles: {System.IO.Path.GetFileName(path)}" : "These subtitles could not be loaded.");
+    }
+
+    private void SearchSubtitlesOnline()
+    {
+        if (Playing is not { } it) return;
+        var query = it.Kind == "episode" && _details != null ? $"{_details.Name}" : it.Name;
+        int? season = null, episode = null;
+        if (it.Kind == "episode" && int.TryParse(it.Season, out var sn) && int.TryParse(it.Episode, out var en))
+        {
+            season = sn;
+            episode = en;
+        }
+        if (SubtitleSearchWindow.Show(this, CleanTitle(query), season, episode) is { } file) UseSubtitle(file);
+    }
+
+    /// <summary>"EN - The Movie (2024) [4K]" → "The Movie".</summary>
+    private static string CleanTitle(string name)
+    {
+        var s = System.Text.RegularExpressions.Regex.Replace(name, @"^\s*[A-Z]{2,4}\s*[-|:]\s+", "");
+        s = System.Text.RegularExpressions.Regex.Replace(s, @"[\(\[].*?[\)\]]", "");
+        return s.Trim();
+    }
+}

@@ -64,6 +64,7 @@ public partial class MainWindow : Window
         {
             PlayPause.Content = "";
             if (!S.ShowSubtitles) _player.SetSpu(-1);
+            _player.Mute = _muted; // a new audio output starts unmuted
         });
         _player.Paused += (_, _) => Dispatcher.InvokeAsync(() => PlayPause.Content = "");
         _player.EndReached += (_, _) => Dispatcher.InvokeAsync(OnEndReached);
@@ -363,39 +364,23 @@ public partial class MainWindow : Window
 
     private void PlaylistButton_Click(object sender, MouseButtonEventArgs e)
     {
-        var menu = new ContextMenu { PlacementTarget = PlaylistButton, Placement = PlacementMode.Bottom, MinWidth = 300 };
-        menu.Items.Add(new MenuItem { Header = "MY PLAYLISTS", IsEnabled = false });
-        foreach (var s in _sources)
+        var rows = new List<UiKit.MenuRow>();
+        foreach (var src in _sources)
         {
-            var item = new MenuItem
-            {
-                Header = $"{s.Name}   ·   {s.KindLabel}",
-                IsCheckable = true,
-                IsChecked = s.Id == _source?.Id,
-            };
-            item.Click += async (_, _) => await SwitchSource(s);
-            menu.Items.Add(item);
+            var when = src.UpdatedAt > 0 ? $" · {DateTimeOffset.FromUnixTimeSeconds(src.UpdatedAt).LocalDateTime:MMM d, HH:mm}" : "";
+            rows.Add(new UiKit.MenuRow(src.Kind == "xtream" ? "\uE774" : "\uE8FD", src.Name, src.Id == _source?.Id,
+                () => _ = SwitchSource(src), $"{src.KindLabel}{when}"));
         }
-        menu.Items.Add(new Separator());
-        if (_source != null)
+        if (rows.Count > 0) rows.Add(new UiKit.MenuRow("", "-", false, () => { }));
+        if (_source is { } cur)
         {
-            var info = new MenuItem { Header = "Playlist info" };
-            info.Click += async (_, _) => await ShowPlaylistInfo(_source);
-            menu.Items.Add(info);
-            if (_source.Kind == "xtream")
-            {
-                var acc = new MenuItem { Header = "Account info" };
-                acc.Click += async (_, _) => await ShowAccountInfo(_source);
-                menu.Items.Add(acc);
-            }
+            rows.Add(new UiKit.MenuRow("\uE946", "Playlist info", false, () => _ = ShowPlaylistInfo(cur)));
+            if (cur.Kind == "xtream") rows.Add(new UiKit.MenuRow("\uE77B", "Account info", false, () => _ = ShowAccountInfo(cur)));
+            rows.Add(new UiKit.MenuRow("\uE72C", "Refresh playlist", false, () => _ = RefreshSource(cur)));
         }
-        var add = new MenuItem { Header = "Add playlist…" };
-        add.Click += (_, _) => OpenAddSource();
-        menu.Items.Add(add);
-        var manage = new MenuItem { Header = "Manage sources…" };
-        manage.Click += (_, _) => OpenSettings("Sources");
-        menu.Items.Add(manage);
-        menu.IsOpen = true;
+        rows.Add(new UiKit.MenuRow("\uE710", "Add playlist", false, OpenAddSource));
+        rows.Add(new UiKit.MenuRow("\uE713", "Manage sources", false, () => OpenSettings("Sources")));
+        UiKit.PopMenu(PlaylistButton, "My playlists", rows, width: 300);
     }
 
     public async Task SwitchSource(Source s)
@@ -472,14 +457,12 @@ public partial class MainWindow : Window
 
     public async Task RefreshSource(Source s)
     {
-        RefreshButton.IsEnabled = false;
         await Run($"Refreshing {s.Name}…", async () =>
         {
             await _repo.Refresh(s.Id);
             await ReloadSources(_source?.Id);
             if (_mode != Mode.Settings) await ShowMode();
         });
-        RefreshButton.IsEnabled = true;
     }
 
     public async Task RemoveSource(Source s)
@@ -530,16 +513,21 @@ public partial class MainWindow : Window
         GridPanel.Visibility = vod && !details && !fs ? Visibility.Visible : Visibility.Collapsed;
         VodPage.Visibility = details || (fs && _vodPlaying) ? Visibility.Visible : Visibility.Collapsed;
         VodPlayerBox.Visibility = _vodPlaying ? Visibility.Visible : Visibility.Collapsed;
-        VodPlayerRow.Height = _vodPlaying ? new GridLength(fs ? 1 : 1.5, GridUnitType.Star) : new GridLength(0);
+        VodPlayerRow.Height = fs ? new GridLength(1, GridUnitType.Star) : GridLength.Auto;
         VodScroll.Visibility = fs ? Visibility.Collapsed : Visibility.Visible;
-        ((FrameworkElement)VodHeaderTitle.Parent).Visibility = fs ? Visibility.Collapsed : Visibility.Visible;
-        VodPlayerBox.Margin = fs ? new Thickness(0) : new Thickness(18, 10, 18, 8);
+        VodHeader.Visibility = fs ? Visibility.Collapsed : Visibility.Visible;
+        VodNowLabel.Visibility = _vodPlaying ? Visibility.Visible : Visibility.Collapsed;
+        VodCloseBtn.Visibility = _vodPlaying ? Visibility.Visible : Visibility.Collapsed;
+        VodPlayerBox.Margin = fs ? new Thickness(0) : new Thickness(18, 12, 18, 10);
+        VodPlayerBox.CornerRadius = new CornerRadius(fs ? 0 : 12);
+        VodPlayerBox.BorderThickness = new Thickness(fs ? 0 : 1);
         Grid.SetRowSpan(VodPlayerBox, fs ? 3 : 1);
         Grid.SetRow(VodPlayerBox, fs ? 0 : 1);
 
         RailCol.Width = new GridLength(fs ? 0 : 64);
         TopRow.Height = new GridLength(fs ? 0 : 62);
         Body.Margin = fs ? new Thickness(0) : new Thickness(12, 6, 12, 12);
+        SizePlayers();
 
         UpdateSearchPill();
     }
@@ -575,7 +563,14 @@ public partial class MainWindow : Window
         _mode = mode;
         _details = null;
         _group = null;
+        // A search belongs to the section it was typed in: leaving the section forgets it.
+        _vodSearch = null;
+        _searchHits = null;
+        _liveSearch = null;
+        CatFilter.Text = "";
+        CatFilter.Visibility = Visibility.Collapsed;
         if (mode != Mode.Search) SearchBox.Text = "";
+        _searchDebounce.Stop();
         if (mode is not (Mode.Search or Mode.Settings)) S.LastView = mode.ToString();
         await ShowMode();
         if (mode == Mode.Search) SearchBox.Focus();
@@ -752,7 +747,31 @@ public partial class MainWindow : Window
                 e.Handled = true;
                 break;
             case Key.Space when !typing && Playing != null:
-                _player.Pause();
+                TogglePause();
+                e.Handled = true;
+                break;
+            case Key.Up when !typing && _vodPlaying:
+                ChangeVolume(5);
+                e.Handled = true;
+                break;
+            case Key.Down when !typing && _vodPlaying:
+                ChangeVolume(-5);
+                e.Handled = true;
+                break;
+            case Key.J when !typing && Playing != null:
+                ChangeAudioDelay(-50);
+                e.Handled = true;
+                break;
+            case Key.K when !typing && !ctrl && Playing != null:
+                ChangeAudioDelay(50);
+                e.Handled = true;
+                break;
+            case Key.G when !typing && Playing != null:
+                ChangeSubDelay(-50);
+                e.Handled = true;
+                break;
+            case Key.H when !typing && Playing != null:
+                ChangeSubDelay(50);
                 e.Handled = true;
                 break;
             case Key.M when !typing && Playing != null:
@@ -796,6 +815,7 @@ public partial class MainWindow : Window
             WindowStyle = WindowStyle.SingleBorderWindow;
             WindowState = _savedState;
         }
+        FullBtn.Content = _fullscreen ? "\uE73F" : "\uE740";
         Layout();
     }
 

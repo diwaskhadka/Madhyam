@@ -100,8 +100,6 @@
                 </Border>
 
                 <Button Style="{StaticResource IconButton}" Content="&#xE710;" ToolTip="Add a playlist" Click="Add_Click" Margin="8,0,0,0" />
-                <Button x:Name="RefreshButton" Style="{StaticResource IconButton}" Content="&#xE72C;" ToolTip="Refresh this playlist" Click="Refresh_Click" />
-                <Button Style="{StaticResource IconButton}" Content="&#xE740;" ToolTip="Full screen (F11)" Click="Fullscreen_Click" />
                 <TextBlock x:Name="Status" Foreground="{StaticResource Accent}" VerticalAlignment="Center" Margin="12,0,0,0" MaxWidth="520"
                            TextTrimming="CharacterEllipsis" FontSize="12.5" />
             </StackPanel>
@@ -230,23 +228,88 @@
                     </DockPanel>
 
                     <!-- Player + guide -->
-                    <Grid x:Name="PlayerPanel" Grid.Column="1">
+                    <Grid x:Name="PlayerPanel" Grid.Column="1" SizeChanged="Players_SizeChanged">
                         <Grid.RowDefinitions>
                             <RowDefinition x:Name="VideoRow" Height="*" MinHeight="200" />
-                            <RowDefinition x:Name="GuideRow" Height="Auto" />
+                            <RowDefinition x:Name="GuideRow" Height="*" />
                         </Grid.RowDefinitions>
-                        <Grid x:Name="LiveVideoBox" Background="Black">
+                        <Grid x:Name="LiveVideoBox" Background="Black" ClipToBounds="True">
                             <StackPanel x:Name="VideoHint" HorizontalAlignment="Center" VerticalAlignment="Center">
                                 <TextBlock Text="&#xE7F4;" FontFamily="{StaticResource Icons}" FontSize="40" Foreground="{StaticResource Thumb}" HorizontalAlignment="Center" />
                                 <TextBlock Text="Select a channel to start watching" Foreground="{StaticResource Muted}" Margin="0,12,0,0" />
                             </StackPanel>
                             <Grid x:Name="LiveVideoHost">
-                                <vlc:VideoView x:Name="Video" Visibility="Collapsed" />
+                                <vlc:VideoView x:Name="Video" Visibility="Collapsed">
+                                    <!-- Drawn in VLC's overlay window above the video: click = pause, double-click = full screen. -->
+                                    <Grid x:Name="VideoOverlay" Background="#01000000" Loaded="Overlay_Loaded"
+                                          MouseLeftButtonDown="Overlay_MouseLeftButtonDown" MouseMove="Overlay_MouseMove">
+                                        <Border x:Name="Osd" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,22,0,0" CornerRadius="10"
+                                                Background="#CC000000" Padding="16,8" Visibility="Collapsed" IsHitTestVisible="False">
+                                            <TextBlock x:Name="OsdText" Foreground="White" FontSize="14" />
+                                        </Border>
+                                        <Border x:Name="BigPlay" Width="76" Height="76" CornerRadius="38" Background="#99000000" IsHitTestVisible="False"
+                                                HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed">
+                                            <TextBlock x:Name="BigPlayGlyph" Text="&#xE768;" FontFamily="{StaticResource Icons}" FontSize="30" Foreground="White"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        </Border>
+                                        <Border x:Name="PlayerBar" VerticalAlignment="Bottom" Padding="16,40,16,8">
+                                            <Border.Background>
+                                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                                    <GradientStop Color="#00000000" Offset="0" />
+                                                    <GradientStop Color="#D9000000" Offset="1" />
+                                                </LinearGradientBrush>
+                                            </Border.Background>
+                                            <StackPanel>
+                                                <Grid x:Name="SeekRow" Margin="4,0">
+                                                    <Slider x:Name="SeekBar" Style="{StaticResource SeekSlider}" Minimum="0" Maximum="1"
+                                                            PreviewMouseUp="SeekBar_PreviewMouseUp" MouseMove="SeekBar_MouseMove" />
+                                                    <Border x:Name="SeekTip" CornerRadius="6" Background="#E6000000" Padding="7,2" HorizontalAlignment="Left"
+                                                            VerticalAlignment="Top" Margin="0,-26,0,0" Visibility="Collapsed" IsHitTestVisible="False">
+                                                        <TextBlock x:Name="SeekTipText" Foreground="White" FontSize="11.5" />
+                                                    </Border>
+                                                </Grid>
+                                                <Grid x:Name="TimeRow" Margin="6,0,6,2">
+                                                    <TextBlock x:Name="TimePos" Foreground="#D9FFFFFF" FontSize="12" />
+                                                    <TextBlock x:Name="TimeLen" Foreground="#D9FFFFFF" FontSize="12" HorizontalAlignment="Right" />
+                                                </Grid>
+                                                <Grid>
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <Button x:Name="PlayPause" Style="{StaticResource PlayerButton}" Content="&#xE769;" ToolTip="Play / pause (Space, or click the picture)" Click="PlayPause_Click" />
+                                                        <Button x:Name="Back10Btn" Style="{StaticResource PlayerButton}" ToolTip="Back 10 s (←)" Click="Back10_Click">
+                                                            <Grid>
+                                                                <TextBlock Text="&#xE7A7;" FontFamily="{StaticResource Icons}" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                                <TextBlock Text="10" FontFamily="{StaticResource UiFont}" FontSize="8" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,3,0,0" />
+                                                            </Grid>
+                                                        </Button>
+                                                        <Button x:Name="Fwd10Btn" Style="{StaticResource PlayerButton}" ToolTip="Forward 10 s (→)" Click="Fwd10_Click">
+                                                            <Grid>
+                                                                <TextBlock Text="&#xE7A6;" FontFamily="{StaticResource Icons}" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                                <TextBlock Text="10" FontFamily="{StaticResource UiFont}" FontSize="8" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,3,0,0" />
+                                                            </Grid>
+                                                        </Button>
+                                                        <Button x:Name="NextEpisodeBtn" Style="{StaticResource PlayerButton}" Content="&#xE893;" ToolTip="Next episode" Click="NextEpisode_Click" Visibility="Collapsed" />
+                                                        <TextBlock x:Name="BarTitle" Foreground="White" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" Margin="12,0,0,0"
+                                                                   TextTrimming="CharacterEllipsis" MaxWidth="420" />
+                                                    </StackPanel>
+                                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                                        <Button x:Name="VodMute" Style="{StaticResource PlayerButton}" Content="&#xE767;" ToolTip="Mute (M)" Click="Mute_Click" />
+                                                        <Slider x:Name="VolumeBar" Style="{StaticResource SeekSlider}" Width="90" Minimum="0" Maximum="100" Value="100"
+                                                                VerticalAlignment="Center" ValueChanged="VolumeBar_ValueChanged" Margin="0,0,8,0" ToolTip="Volume (↑ / ↓)" />
+                                                        <Button x:Name="AudioBtn" Style="{StaticResource PlayerButton}" Content="&#xE8D6;" ToolTip="Audio track and delay" Click="AudioTracks_Click" />
+                                                        <Button x:Name="SubsBtn" Style="{StaticResource PlayerButton}" Content="&#xE7F0;" ToolTip="Subtitles" Click="Subtitles_Click" />
+                                                        <Button x:Name="SpeedBtn" Style="{StaticResource PlayerButton}" Content="&#xEC4A;" ToolTip="Playback speed" Click="Speed_Click" />
+                                                        <Button x:Name="FullBtn" Style="{StaticResource PlayerButton}" Content="&#xE740;" ToolTip="Full screen (F11 or double-click)" Click="Fullscreen_Click" />
+                                                    </StackPanel>
+                                                </Grid>
+                                            </StackPanel>
+                                        </Border>
+                                    </Grid>
+                                </vlc:VideoView>
                             </Grid>
                         </Grid>
 
                         <!-- EPG list (Settings → Programme guide → List) -->
-                        <DockPanel x:Name="GuidePanel" Grid.Row="1" Margin="0,12,0,0" Visibility="Collapsed">
+                        <DockPanel x:Name="GuidePanel" Grid.Row="1" Margin="0,12,0,0" Visibility="Collapsed" VerticalAlignment="Top">
                             <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
                                 <Button Style="{StaticResource IconButton}" Content="&#xE76B;" HorizontalAlignment="Left" Click="GuidePrev_Click" ToolTip="Previous day" />
                                 <TextBlock x:Name="GuideDay" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="14" FontWeight="SemiBold" />
@@ -287,7 +350,7 @@
                         </DockPanel>
 
                         <!-- EPG timeline ribbon (default) -->
-                        <Border x:Name="TimelinePanel" Grid.Row="1" Margin="0,10,0,0" CornerRadius="12"
+                        <Border x:Name="TimelinePanel" Grid.Row="1" Margin="0,10,0,0" CornerRadius="12" VerticalAlignment="Top"
                                 Background="{StaticResource Panel}" Padding="0,8,0,6">
                             <DockPanel>
                                 <Grid DockPanel.Dock="Top" Margin="14,0,8,4">
@@ -409,68 +472,38 @@
                 </DockPanel>
 
                 <!-- ===== Movie / series page: details, or in-page player + About below ===== -->
-                <Grid x:Name="VodPage" Grid.Column="1" Visibility="Collapsed">
+                <Grid x:Name="VodPage" Grid.Column="1" Visibility="Collapsed" SizeChanged="Players_SizeChanged">
                     <Border CornerRadius="16" Background="{StaticResource Panel}" ClipToBounds="True">
                         <ContentControl x:Name="VodBackdrop" />
                     </Border>
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
-                            <RowDefinition x:Name="VodPlayerRow" Height="0" />
+                            <RowDefinition x:Name="VodPlayerRow" Height="Auto" />
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
-                        <StackPanel Orientation="Horizontal" Margin="18,14,18,0">
-                            <Button Style="{StaticResource IconButton}" Content="&#xE72B;" ToolTip="Back (Esc)" Click="VodBack_Click"
-                                    Width="40" Height="40" FontSize="16" Background="{StaticResource Badge}" />
-                            <TextBlock x:Name="VodHeaderTitle" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" Margin="12,0,0,0"
-                                       TextTrimming="CharacterEllipsis" MaxWidth="900" />
-                        </StackPanel>
+                        <Grid x:Name="VodHeader" Margin="18,14,18,0">
+                            <StackPanel Orientation="Horizontal">
+                                <Button Style="{StaticResource IconButton}" Content="&#xE72B;" ToolTip="Back (Esc)" Click="VodBack_Click"
+                                        Width="40" Height="40" FontSize="16" />
+                                <StackPanel VerticalAlignment="Center" Margin="12,0,0,0">
+                                    <TextBlock x:Name="VodNowLabel" Text="NOW PLAYING" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource Muted}" Visibility="Collapsed" />
+                                    <TextBlock x:Name="VodHeaderTitle" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxWidth="900" />
+                                </StackPanel>
+                            </StackPanel>
+                            <Button x:Name="VodCloseBtn" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    Click="VodClose_Click" Visibility="Collapsed" ToolTip="Stop and show the details (Esc)">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="&#xE711;" FontFamily="{StaticResource Icons}" FontSize="11" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                    <TextBlock Text="Close player" />
+                                </StackPanel>
+                            </Button>
+                        </Grid>
 
-                        <!-- Player (fixed; only the area below scrolls, because native video cannot be clipped by a ScrollViewer) -->
-                        <Border x:Name="VodPlayerBox" Grid.Row="1" Margin="18,10,18,8" CornerRadius="12" Background="Black" BorderThickness="1"
-                                BorderBrush="{StaticResource Line}" Visibility="Collapsed">
-                            <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="*" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
-                                <Grid x:Name="VodVideoHost" Background="Black" />
-                                <Border x:Name="VodControls" Grid.Row="1" Background="{StaticResource Panel}" Padding="10,6" CornerRadius="0,0,12,12">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Orientation="Horizontal">
-                                            <Button x:Name="PlayPause" Style="{StaticResource IconButton}" Content="&#xE769;" ToolTip="Play / pause (Space)" Click="PlayPause_Click" />
-                                            <Button Style="{StaticResource IconButton}" Content="−10" FontFamily="{StaticResource UiFont}" FontSize="12" ToolTip="Back 10 s (←)" Click="Back10_Click" />
-                                            <Button Style="{StaticResource IconButton}" Content="+10" FontFamily="{StaticResource UiFont}" FontSize="12" ToolTip="Forward 10 s (→)" Click="Fwd10_Click" />
-                                            <Button x:Name="NextEpisodeBtn" Style="{StaticResource IconButton}" Content="&#xE893;" ToolTip="Next episode" Click="NextEpisode_Click" Visibility="Collapsed" />
-                                        </StackPanel>
-                                        <Grid Grid.Column="1" Margin="10,0">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto" />
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock x:Name="TimePos" Foreground="{StaticResource Muted}" VerticalAlignment="Center" FontSize="12" MinWidth="52" />
-                                            <Slider x:Name="SeekBar" Grid.Column="1" Margin="8,0" VerticalAlignment="Center" Minimum="0" Maximum="1"
-                                                    IsMoveToPointEnabled="True" PreviewMouseUp="SeekBar_PreviewMouseUp" />
-                                            <TextBlock x:Name="TimeLen" Grid.Column="2" Foreground="{StaticResource Muted}" VerticalAlignment="Center" FontSize="12" MinWidth="52" />
-                                        </Grid>
-                                        <StackPanel Grid.Column="2" Orientation="Horizontal">
-                                            <Button x:Name="VodMute" Style="{StaticResource IconButton}" Content="&#xE767;" ToolTip="Mute (M)" Click="Mute_Click" />
-                                            <Slider x:Name="VolumeBar" Width="80" Minimum="0" Maximum="100" Value="100" VerticalAlignment="Center"
-                                                    ValueChanged="VolumeBar_ValueChanged" IsMoveToPointEnabled="True" />
-                                            <Button x:Name="AudioBtn" Style="{StaticResource IconButton}" Content="&#xE8D6;" ToolTip="Audio track" Click="AudioTracks_Click" />
-                                            <Button x:Name="SubsBtn" Style="{StaticResource IconButton}" Content="&#xE7F0;" ToolTip="Subtitles" Click="Subtitles_Click" />
-                                            <Button x:Name="SpeedBtn" Style="{StaticResource IconButton}" Content="&#xEC4A;" ToolTip="Playback speed" Click="Speed_Click" />
-                                            <Button Style="{StaticResource IconButton}" Content="&#xE740;" ToolTip="Full screen (F11)" Click="Fullscreen_Click" />
-                                        </StackPanel>
-                                    </Grid>
-                                </Border>
-                            </Grid>
+                        <!-- Player card (16:9, sized in code; fixed: only the area below scrolls, native video cannot be clipped) -->
+                        <Border x:Name="VodPlayerBox" Grid.Row="1" Margin="18,12,18,10" CornerRadius="12" Background="Black" BorderThickness="1"
+                                BorderBrush="{StaticResource Line}" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Top">
+                            <Grid x:Name="VodVideoHost" Background="Black" />
                         </Border>
 
                         <ScrollViewer x:Name="VodScroll" Grid.Row="2" VerticalScrollBarVisibility="Auto">

@@ -466,6 +466,52 @@ public sealed class SettingsView : UserControl
         Row("Preferred subtitle language", "",
             LanguageChoice(S.SubtitleLanguage, v => { S.SubtitleLanguage = v; Save(); }), controlBelow: true);
 
+        // Online subtitles (VLsub-like search)
+        var os = new StackPanel();
+        Grid Pair(string label, Control box)
+        {
+            var g = new Grid { Margin = new Thickness(0, 0, 0, 8) };
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
+            g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            g.Children.Add(new TextBlock { Text = label, Foreground = Brush("Muted"), VerticalAlignment = VerticalAlignment.Center });
+            Grid.SetColumn(box, 1);
+            g.Children.Add(box);
+            return g;
+        }
+        var key = new TextBox { Text = S.OsApiKey, MaxWidth = 420, HorizontalAlignment = HorizontalAlignment.Left, MinWidth = 320 };
+        key.LostFocus += (_, _) => { S.OsApiKey = key.Text.Trim(); Save(); };
+        var user = new TextBox { Text = S.OsUsername, MaxWidth = 420, HorizontalAlignment = HorizontalAlignment.Left, MinWidth = 320 };
+        user.LostFocus += (_, _) => { S.OsUsername = user.Text.Trim(); Save(); };
+        var pass = new PasswordBox { MaxWidth = 420, HorizontalAlignment = HorizontalAlignment.Left, MinWidth = 320, ToolTip = S.OsPassword.Length > 0 ? "Saved (encrypted). Type to replace." : "" };
+        pass.LostFocus += (_, _) => { if (pass.Password.Length > 0) { S.OsPassword = Secret.Protect(pass.Password); Save(); } };
+        var langs = new TextBox { Text = S.OsLanguages, MaxWidth = 420, HorizontalAlignment = HorizontalAlignment.Left, MinWidth = 320 };
+        langs.LostFocus += (_, _) => { S.OsLanguages = langs.Text.Trim(); Save(); };
+        os.Children.Add(Pair("API key", key));
+        os.Children.Add(Pair("Username (optional)", user));
+        os.Children.Add(Pair("Password (optional)", pass));
+        os.Children.Add(Pair("Languages", langs));
+        os.Children.Add(Buttons(
+            Btn("Get a free API key", () =>
+            {
+                Process.Start(new ProcessStartInfo("https://www.opensubtitles.com/en/consumers") { UseShellExecute = true });
+                return Task.CompletedTask;
+            }),
+            Btn("Forget login", () =>
+            {
+                S.OsUsername = "";
+                S.OsPassword = "";
+                user.Text = "";
+                pass.Password = "";
+                Save();
+                return Task.CompletedTask;
+            })));
+        Row("Online subtitles (OpenSubtitles.com)",
+            "Search and download subtitles from the player's CC menu, like VLC's VLsub. Needs a free API key; logging in gives more downloads per day. Languages: comma-separated codes such as en, fr, es.",
+            os, controlBelow: true);
+
+        Row("Keyboard", "Space or click the picture: pause · ←/→ 10 s · ↑/↓ volume · M mute · J/K audio delay · G/H subtitle delay · double-click or F11 full screen",
+            new TextBlock());
+
         _content.Children.Add(Note("Playback changes apply to the next channel or film you open."));
     }
 
@@ -646,6 +692,6 @@ public sealed class SettingsView : UserControl
                 return Task.CompletedTask;
             })));
         Row("Content", "Madhyam ships with no channels. It plays the Xtream Codes or M3U playlists you add from a provider you are entitled to use.", new TextBlock());
-        Row("Keyboard", "Ctrl+K search · F11 full screen · Space pause · PgUp/PgDn change channel · Ctrl+←/→ seek 10 s · Esc back", new TextBlock());
+        Row("Keyboard", "Ctrl+K search · F11 full screen · Space pause · PgUp/PgDn change channel · ←/→ seek 10 s · ↑/↓ volume · J/K audio delay · G/H subtitle delay · Esc back", new TextBlock());
     }
 }

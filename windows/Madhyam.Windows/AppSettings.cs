@@ -35,6 +35,11 @@ public sealed class AppSettings
     public bool ShowSubtitles { get; set; } = true;
     public string AudioLanguage { get; set; } = "";
     public string SubtitleLanguage { get; set; } = "";
+    /// <summary>OpenSubtitles.com: API key (required), optional login (password DPAPI-encrypted), languages.</summary>
+    public string OsApiKey { get; set; } = "";
+    public string OsUsername { get; set; } = "";
+    public string OsPassword { get; set; } = "";
+    public string OsLanguages { get; set; } = "en";
 
     // ---- Guide
     public string GuideView { get; set; } = "Timeline";    // Timeline | List

@@ -99,12 +99,12 @@ public partial class MainWindow
             AppSettings.Save();
             _ = LoadCategories(++_loadVersion, _group);
         }
-        UiKit.Menu(CatSortBtn, new (string, bool, Action)[]
+        UiKit.Menu(CatSortBtn, new (string, string, bool, Action)[]
         {
-            ("Provider order", cur == "provider", () => Set("provider")),
-            ("Name A–Z", cur == "name_asc", () => Set("name_asc")),
-            ("Name Z–A", cur == "name_desc", () => Set("name_desc")),
-        });
+            ("\uE8FD", "Provider order", cur == "provider", () => Set("provider")),
+            ("\uE74A", "Name A–Z", cur == "name_asc", () => Set("name_asc")),
+            ("\uE74B", "Name Z–A", cur == "name_desc", () => Set("name_desc")),
+        }, "Sort categories");
     }
 
     private async void CatManage_Click(object sender, RoutedEventArgs e)
@@ -124,10 +124,13 @@ public partial class MainWindow
     private async void GroupList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_groupSilent || GroupList.SelectedItem is not CategoryRow row) return;
-        if (SearchBox.Text.Length > 0)
+        if (SearchBox.Text.Length > 0 || _vodSearch != null)
         {
-            _searchDebounce.Stop();
             SearchBox.Text = "";
+            _searchDebounce.Stop();
+            _vodSearch = null;
+            _searchHits = null;
+            _liveSearch = null;
         }
         CloseDetailsSilently();
         await ShowGroup(row.IsAll ? null : row.Name);
@@ -235,10 +238,18 @@ public partial class MainWindow
 
     private void LiveSort_Click(object sender, RoutedEventArgs e)
     {
-        S.LiveSortAz = !S.LiveSortAz;
-        AppSettings.Save();
-        LiveSortBtn.ToolTip = S.LiveSortAz ? "Sorted A–Z (click for provider order)" : "Sort A–Z";
-        _ = LoadLive(reset: true);
+        void Set(bool az)
+        {
+            S.LiveSortAz = az;
+            AppSettings.Save();
+            LiveSortBtn.ToolTip = S.LiveSortAz ? "Sorted A–Z" : "Provider order";
+            _ = LoadLive(reset: true);
+        }
+        UiKit.Menu(LiveSortBtn, new (string, string, bool, Action)[]
+        {
+            ("\uE8FD", "Provider order", !S.LiveSortAz, () => Set(false)),
+            ("\uE74A", "Name A–Z", S.LiveSortAz, () => Set(true)),
+        }, "Sort channels");
     }
 
     public async Task UpdateNowNext(IReadOnlyList<ItemVm> items)
@@ -318,6 +329,9 @@ public partial class MainWindow
     {
         StopPlayback();
         SearchBox.Text = "";
+        _searchDebounce.Stop();
+        _vodSearch = null;
+        _searchHits = null;
         SetNav(Mode.Live);
         _details = null;
         if (_source?.Id != it.SourceId && _sources.FirstOrDefault(s => s.Id == it.SourceId) is { } src)
@@ -390,6 +404,7 @@ public partial class MainWindow
         Layout();
         _player.Play(media);
         _player.SetRate(1);
+        OnNewMedia(it);
         _ = _repo.RecordPlay(it.Id);
         SetStatus("");
 
@@ -440,22 +455,6 @@ public partial class MainWindow
         if (Playing is not { IsLive: false } it) return;
         var len = _player.Length;
         if (len > 0) _ = _repo.SetProgress(it.Id, _player.Time / 1000.0, len / 1000.0);
-    }
-
-    private void SeekBy(long ms)
-    {
-        if (Playing is { IsLive: false } && _player.Length > 0)
-            _player.Time = Math.Clamp(_player.Time + ms, 0, _player.Length);
-    }
-
-    private void Mute_Click(object sender, RoutedEventArgs e) => ToggleMute();
-
-    private void ToggleMute()
-    {
-        _player.Mute = !_player.Mute;
-        var glyph = _player.Mute ? "" : "";
-        LiveMute.Content = glyph;
-        VodMute.Content = glyph;
     }
 
     private async void OnEndReached()

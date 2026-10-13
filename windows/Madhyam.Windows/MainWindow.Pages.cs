@@ -318,11 +318,12 @@ public partial class MainWindow
             body.Children.Add(SectionHeader("Live TV", live.Count));
             body.Children.Add(Wrap(live.Take(60).Select(i => LiveCard(i, Open))));
         }
-        var vod = hits.Where(h => !h.IsLive).ToList();
-        if (vod.Count > 0)
+        foreach (var (kind, label) in new[] { ("movie", "Movies"), ("series", "Series") })
         {
-            body.Children.Add(SectionHeader("Movies and series", vod.Count));
-            body.Children.Add(Wrap(vod.Take(200).Select(i => Poster(i, Open, i.Group, typeBadge: true))));
+            var part = hits.Where(h => h.Kind == kind).ToList();
+            if (part.Count == 0) continue;
+            body.Children.Add(SectionHeader(label, part.Count));
+            body.Children.Add(Wrap(part.Take(200).Select(i => Poster(i, Open, i.Group))));
         }
     }
 
@@ -418,16 +419,16 @@ public partial class MainWindow
         if (live.Count > 0)
         {
             await UpdateNowNext(live);
-            if (vod.Count > 0) body.Children.Add(SectionHeader("Live TV", live.Count));
-            else body.Children.Add(new Border { Height = 14 });
+            body.Children.Add(SectionHeader("Live TV", live.Count));
             body.Children.Add(Wrap(live.Select(i => LiveCard(i, Open, remove))));
         }
-        if (vod.Count > 0)
+        foreach (var (kinds, label) in new[] { (new[] { "movie" }, "Movies"), (new[] { "series", "episode" }, "Series") })
         {
-            if (live.Count > 0) body.Children.Add(SectionHeader("Movies and series", vod.Count));
-            else body.Children.Add(new Border { Height = 14 });
-            body.Children.Add(Wrap(vod.Select(i => Poster(i, Open,
-                i.Kind == "episode" ? ProgressSubtitle(i) : subtitle(i), typeBadge: true, remove: remove))));
+            var part = vod.Where(i => kinds.Contains(i.Kind)).ToList();
+            if (part.Count == 0) continue;
+            body.Children.Add(SectionHeader(label, part.Count));
+            body.Children.Add(Wrap(part.Select(i => Poster(i, Open,
+                i.Kind == "episode" ? ProgressSubtitle(i) : subtitle(i), typeBadge: i.Kind == "episode", remove: remove))));
         }
     }
 

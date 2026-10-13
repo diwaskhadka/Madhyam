@@ -124,26 +124,38 @@ public partial class MainWindow
         if ((sender as FrameworkElement)?.Tag is ItemVm it) await ShowDetails(it);
     }
 
+    private static string SortGlyph(string v) => v switch
+    {
+        "provider" => "\uE8FD",
+        "added_desc" => "\uE787",
+        "added_asc" => "\uE787",
+        "name_asc" => "\uE74A",
+        "name_desc" => "\uE74B",
+        "rating_desc" => "\uE735",
+        _ => "\uE734",
+    };
+
     private void Sort_Click(object sender, RoutedEventArgs e)
     {
-        UiKit.Menu(SortBtn, SortOptions.Select(o => (o.Label, o.Value == S.VodSort, (Action)(() =>
+        UiKit.Menu(SortBtn, SortOptions.Select(o => (SortGlyph(o.Value), o.Label, o.Value == S.VodSort, (Action)(() =>
         {
             S.VodSort = o.Value;
             AppSettings.Save();
+            _searchHits = null;
             _ = LoadGrid(resetPage: true);
-        }))));
+        }))), "Sort by");
     }
 
     private void Refine_Click(object sender, RoutedEventArgs e)
     {
         var options = new (double Value, string Label)[] { (0, "Any rating"), (9, "9 and up"), (8, "8 and up"), (7, "7 and up"), (6, "6 and up"), (5, "5 and up") };
-        UiKit.Menu(RefineBtn, options.Select(o => (o.Label, Math.Abs(o.Value - S.VodMinRating) < 0.01, (Action)(() =>
+        UiKit.Menu(RefineBtn, options.Select(o => (o.Value == 0 ? "\uE71C" : "\uE735", o.Label, Math.Abs(o.Value - S.VodMinRating) < 0.01, (Action)(() =>
         {
             S.VodMinRating = o.Value;
             AppSettings.Save();
             _searchHits = null;
             _ = LoadGrid(resetPage: true);
-        }))));
+        }))), "Minimum rating");
     }
 
     private async void PerPage_Click(object sender, RoutedEventArgs e)
@@ -293,6 +305,7 @@ public partial class MainWindow
         }
         StopPlayback();
         SearchBox.Text = "";
+        _searchDebounce.Stop();
         _vodSearch = null;
         _searchHits = null;
         SetNav(target.IsSeries || target.Kind == "episode" ? Mode.Series : Mode.Movies);
@@ -531,16 +544,11 @@ public partial class MainWindow
         return s;
     }
 
-    private static void OpenTrailer(string youtubeId)
+    /// <summary>Play the trailer in Madhyam's own window (pauses the film if it is playing).</summary>
+    private void OpenTrailer(string youtubeId)
     {
-        try
-        {
-            Process.Start(new ProcessStartInfo($"https://www.youtube.com/watch?v={youtubeId}") { UseShellExecute = true });
-        }
-        catch (Exception ex)
-        {
-            Repository.Log($"could not open trailer: {ex.Message}");
-        }
+        if (Playing != null && _player.IsPlaying) _player.SetPause(true);
+        TrailerWindow.Open(youtubeId, _details?.Name ?? "Trailer");
     }
 
     private FrameworkElement Trailer(ItemVm it, string youtubeId)
@@ -572,7 +580,7 @@ public partial class MainWindow
         thumb.Children.Add(label);
         var hover = new Border { CornerRadius = new CornerRadius(12), BorderThickness = new Thickness(2), BorderBrush = Brushes.Transparent };
         thumb.Children.Add(hover);
-        var btn = new Button { Content = thumb, Template = BareTemplate(), Cursor = Cursors.Hand, Focusable = false, ToolTip = "Opens the trailer in your browser", HorizontalAlignment = HorizontalAlignment.Left };
+        var btn = new Button { Content = thumb, Template = BareTemplate(), Cursor = Cursors.Hand, Focusable = false, ToolTip = "Play the trailer", HorizontalAlignment = HorizontalAlignment.Left };
         btn.MouseEnter += (_, _) => hover.BorderBrush = B("Accent");
         btn.MouseLeave += (_, _) => hover.BorderBrush = Brushes.Transparent;
         btn.Click += (_, _) => OpenTrailer(youtubeId);
@@ -691,75 +699,19 @@ public partial class MainWindow
         card.MouseEnter += (_, _) => hover.BorderBrush = B("Accent");
         card.MouseLeave += (_, _) => hover.BorderBrush = playing ? B("Accent") : Brushes.Transparent;
         card.Click += (_, _) => _ = PlayEpisode(ep);
-        var menu = new ContextMenu();
-        var watched = new MenuItem { Header = ep.IsWatched ? "Mark as unwatched" : "Mark as watched" };
-        watched.Click += async (_, _) =>
+        card.MouseRightButtonUp += (_, e) =>
         {
-            await _repo.SetWatched(ep, !ep.IsWatched);
-            await ReloadDetailsProgress();
+            e.Handled = true;
+            UiKit.PopMenu(card, $"{SE(ep)}", new[]
+            {
+                new UiKit.MenuRow("\uE768", "Play", false, () => _ = PlayEpisode(ep)),
+                new UiKit.MenuRow(ep.IsWatched ? "\uE7BA" : "\uE73E", ep.IsWatched ? "Mark as unwatched" : "Mark as watched", false, async () =>
+                {
+                    await _repo.SetWatched(ep, !ep.IsWatched);
+                    await ReloadDetailsProgress();
+                }),
+            });
         };
-        menu.Items.Add(watched);
-        card.ContextMenu = menu;
         return card;
-    }
-
-    // ================================================================ player controls
-
-    private void PlayPause_Click(object sender, RoutedEventArgs e)
-    {
-        if (Playing != null) _player.Pause();
-    }
-
-    private void Back10_Click(object sender, RoutedEventArgs e) => SeekBy(-10_000);
-
-    private void Fwd10_Click(object sender, RoutedEventArgs e) => SeekBy(10_000);
-
-    private async void NextEpisode_Click(object sender, RoutedEventArgs e)
-    {
-        if (_playIndex < _playlist.Count - 1) await PlayAt(_playIndex + 1);
-    }
-
-    private void SeekBar_PreviewMouseUp(object sender, MouseButtonEventArgs e)
-    {
-        if (Playing is { IsLive: false } && _player.Length > 0)
-            _player.Time = (long)(SeekBar.Value * _player.Length);
-    }
-
-    private void VolumeBar_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
-    {
-        // Raised once during InitializeComponent, before the player exists.
-        if (_player == null) return;
-        _player.Volume = (int)e.NewValue;
-    }
-
-    private void AudioTracks_Click(object sender, RoutedEventArgs e)
-    {
-        var tracks = _player.AudioTrackDescription;
-        if (tracks.Length == 0)
-        {
-            SetStatus("This stream has no selectable audio tracks.");
-            return;
-        }
-        var cur = _player.AudioTrack;
-        UiKit.Menu(AudioBtn, tracks.Select(t => (string.IsNullOrEmpty(t.Name) ? $"Track {t.Id}" : t.Name, t.Id == cur, (Action)(() => _player.SetAudioTrack(t.Id)))));
-    }
-
-    private void Subtitles_Click(object sender, RoutedEventArgs e)
-    {
-        var tracks = _player.SpuDescription;
-        if (tracks.Length == 0)
-        {
-            SetStatus("This stream has no subtitles.");
-            return;
-        }
-        var cur = _player.Spu;
-        UiKit.Menu(SubsBtn, tracks.Select(t => (t.Id < 0 ? "Off" : string.IsNullOrEmpty(t.Name) ? $"Track {t.Id}" : t.Name, t.Id == cur, (Action)(() => _player.SetSpu(t.Id)))));
-    }
-
-    private void Speed_Click(object sender, RoutedEventArgs e)
-    {
-        var cur = _player.Rate;
-        var speeds = new[] { 0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f };
-        UiKit.Menu(SpeedBtn, speeds.Select(s => (s == 1f ? "Normal" : $"{s:0.##}×", Math.Abs(s - cur) < 0.01, (Action)(() => _player.SetRate(s)))));
     }
 }

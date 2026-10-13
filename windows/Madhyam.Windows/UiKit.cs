@@ -396,21 +396,133 @@ public static class UiKit
         return g;
     }
 
-    /// <summary>Drop-down menu anchored to a button.</summary>
-    public static void Menu(FrameworkElement anchor, IEnumerable<(string Label, bool Checked, Action Run)> items)
+    // ----------------------------------------------------------- pop-up menus
+
+    /// <summary>One row of a pop-up menu. Label "-" draws a separator; Glyph may be empty.</summary>
+    public sealed record MenuRow(string Glyph, string Label, bool Checked, Action Run, string? Sub = null, string? GlyphBrush = null);
+
+    /// <summary>
+    /// pop-up: optional caps header, rows with a leading icon and a
+    /// trailing check mark, plus optional extra controls (delay steppers, chips).
+    /// It is a real window, so it also draws above the video surface.
+    /// </summary>
+    public static Popup PopMenu(FrameworkElement anchor, string? title, IEnumerable<MenuRow> rows, IEnumerable<UIElement>? extra = null,
+                                bool above = false, double width = 250)
     {
-        var m = new ContextMenu { PlacementTarget = anchor, Placement = PlacementMode.Bottom };
-        foreach (var (label, on, run) in items)
+        var popup = new Popup
         {
-            if (label == "-")
+            PlacementTarget = anchor,
+            Placement = above ? PlacementMode.Top : PlacementMode.Bottom,
+            StaysOpen = false,
+            AllowsTransparency = true,
+            PopupAnimation = PopupAnimation.Fade,
+            VerticalOffset = above ? -6 : 6,
+        };
+        var stack = new StackPanel();
+        if (title != null) stack.Children.Add(MenuHeader(title));
+        foreach (var r in rows)
+        {
+            if (r.Label == "-")
             {
-                m.Items.Add(new Separator());
+                stack.Children.Add(new Border { Height = 1, Background = B("Line"), Margin = new Thickness(6, 5, 6, 5) });
                 continue;
             }
-            var mi = new MenuItem { Header = label, IsCheckable = true, IsChecked = on };
-            mi.Click += (_, _) => run();
-            m.Items.Add(mi);
+            stack.Children.Add(MenuRowElement(r, () => popup.IsOpen = false));
         }
-        m.IsOpen = true;
+        if (extra != null)
+            foreach (var e in extra) stack.Children.Add(e);
+        popup.Child = new Border
+        {
+            Width = width,
+            CornerRadius = new CornerRadius(12),
+            Background = B("Panel"),
+            BorderBrush = B("Line"),
+            BorderThickness = new Thickness(1),
+            Padding = new Thickness(6),
+            Margin = new Thickness(10),
+            Effect = new DropShadowEffect { BlurRadius = 18, ShadowDepth = 3, Opacity = 0.45 },
+            Child = new ScrollViewer { Content = stack, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, MaxHeight = 520 },
+        };
+        popup.IsOpen = true;
+        return popup;
+    }
+
+    public static TextBlock MenuHeader(string title) => new()
+    {
+        Text = title.ToUpperInvariant(),
+        FontSize = 10.5,
+        FontWeight = FontWeights.Bold,
+        Foreground = B("Muted"),
+        Margin = new Thickness(10, 6, 10, 6),
+    };
+
+    public static FrameworkElement MenuRowElement(MenuRow r, Action close)
+    {
+        var g = new Grid { Margin = new Thickness(10, 7, 10, 7) };
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        if (r.Glyph.Length > 0)
+            g.Children.Add(new TextBlock { Text = r.Glyph, FontFamily = Icons, FontSize = 14, Foreground = B(r.GlyphBrush ?? (r.Checked ? "Accent" : "Fg")), VerticalAlignment = VerticalAlignment.Center });
+        var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        text.Children.Add(Text(r.Label, 13.5, r.Checked ? "Accent" : "Fg", r.Checked ? FontWeights.SemiBold : FontWeights.Normal));
+        if (r.Sub != null) text.Children.Add(Text(r.Sub, 11.5, "Muted"));
+        Grid.SetColumn(text, 1);
+        g.Children.Add(text);
+        if (r.Checked)
+        {
+            var check = new TextBlock { Text = "\uE73E", FontFamily = Icons, FontSize = 12, Foreground = B("Accent"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(10, 0, 0, 0) };
+            Grid.SetColumn(check, 2);
+            g.Children.Add(check);
+        }
+        var row = new Border { CornerRadius = new CornerRadius(8), Background = r.Checked ? B("CardSelected") : Brushes.Transparent, Child = g, Cursor = Cursors.Hand };
+        var normal = row.Background;
+        row.MouseEnter += (_, _) => row.Background = B("CardHover");
+        row.MouseLeave += (_, _) => row.Background = normal;
+        row.MouseLeftButtonUp += (_, e) =>
+        {
+            e.Handled = true;
+            close();
+            r.Run();
+        };
+        return row;
+    }
+
+    /// <summary>"Label   [−]  value  [+]" stepper row for pop-ups (audio / subtitle delay).</summary>
+    public static FrameworkElement Stepper(string glyph, string label, Func<string> value, Action minus, Action plus, Action? reset = null)
+    {
+        var g = new Grid { Margin = new Thickness(10, 6, 6, 6) };
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        g.Children.Add(new TextBlock { Text = glyph, FontFamily = Icons, FontSize = 14, Foreground = B("Fg"), VerticalAlignment = VerticalAlignment.Center });
+        var t = Text(label, 13.5);
+        t.VerticalAlignment = VerticalAlignment.Center;
+        Grid.SetColumn(t, 1);
+        g.Children.Add(t);
+        var val = new TextBlock { Text = value(), MinWidth = 64, TextAlignment = TextAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Foreground = B("Fg"), FontSize = 12.5 };
+        if (reset != null)
+        {
+            val.Cursor = Cursors.Hand;
+            val.ToolTip = "Click to reset";
+            val.MouseLeftButtonUp += (_, _) => { reset(); val.Text = value(); };
+        }
+        var p = new StackPanel { Orientation = Orientation.Horizontal };
+        var m = IconButton("\uE738", "Earlier", () => { minus(); val.Text = value(); }, 28);
+        m.FontSize = 11;
+        var pl = IconButton("\uE710", "Later", () => { plus(); val.Text = value(); }, 28);
+        pl.FontSize = 11;
+        p.Children.Add(m);
+        p.Children.Add(val);
+        p.Children.Add(pl);
+        Grid.SetColumn(p, 2);
+        g.Children.Add(p);
+        return g;
+    }
+
+    /// <summary>Back-compat helper: simple menu with icons below a button.</summary>
+    public static void Menu(FrameworkElement anchor, IEnumerable<(string Glyph, string Label, bool Checked, Action Run)> items, string? title = null)
+    {
+        PopMenu(anchor, title, items.Select(i => new MenuRow(i.Glyph, i.Label, i.Checked, i.Run)));
     }
 }

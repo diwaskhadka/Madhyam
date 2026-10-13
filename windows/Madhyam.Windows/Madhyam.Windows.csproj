@@ -23,11 +23,18 @@
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
     <!-- Only ship the 64-bit VLC build; the 32-bit copy is never loaded. -->
     <VlcWindowsX86Enabled>false</VlcWindowsX86Enabled>
+    <!-- Package XML docs are not needed next to the exe. -->
+    <PublishReferencesDocumentationFiles>false</PublishReferencesDocumentationFiles>
+    <AllowedReferenceRelatedFileExtensions>.pdb</AllowedReferenceRelatedFileExtensions>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="LibVLCSharp.WPF" Version="3.9.0" />
     <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.21" />
+    <!-- In-app YouTube trailers (Edge WebView2, preinstalled on Windows 10/11). -->
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2792.45" />
+    <!-- Encrypts the optional OpenSubtitles password for the current Windows user. -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
   </ItemGroup>
 
   <!-- One copy of the C# binding, shared with other .NET hosts. -->
@@ -45,6 +52,12 @@
   </ItemGroup>
   <Target Name="CheckIptvNative" BeforeTargets="Build" Condition="!Exists('$(IptvNativeDir)madhyam_core_ffi.dll')">
     <Error Text="madhyam_core_ffi.dll not found in $(IptvNativeDir). Run: cargo build --release -p madhyam-core-ffi (from the repository root)." />
+  </Target>
+
+  <!-- WebView2 also copies loaders for other CPUs into runtimes\; the x64 one already sits beside the exe. -->
+  <Target Name="TrimWebView2Runtimes" AfterTargets="Publish">
+    <RemoveDir Directories="$(PublishDir)runtimes" Condition="Exists('$(PublishDir)WebView2Loader.dll')" />
+    <Delete Files="$(PublishDir)Microsoft.Web.WebView2.Core.xml;$(PublishDir)Microsoft.Web.WebView2.WinForms.xml;$(PublishDir)Microsoft.Web.WebView2.Wpf.xml" />
   </Target>
 
 </Project>
