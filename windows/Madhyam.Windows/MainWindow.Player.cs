@@ -115,6 +115,11 @@ public partial class MainWindow
         var active = (_vodPlaying || _trailerOpen) && !_fullscreen;
         var off = active ? VodScroll.VerticalOffset : 0;
         if (!_fullscreen) VodPlayerBox.Margin = new Thickness(18, 6 - off, 18, 14);
+        // Cut the card at the top of the page area so it never paints over the bar above it.
+        var cut = active ? off - 6 : 0;
+        VodPlayerBox.Clip = cut > 0 && VodPlayerBox.ActualHeight > 0
+            ? new RectangleGeometry(new Rect(-30, cut, VodPlayerBox.ActualWidth + 60, Math.Max(0, VodPlayerBox.ActualHeight - cut + 40)))
+            : null;
         var spacer = active && VodPlayerBox.ActualHeight > 0 ? VodPlayerBox.ActualHeight + 26 : 14;
         if (Math.Abs(VodContent.Margin.Top - spacer) > 0.5) VodContent.Margin = new Thickness(34, spacer, 34, 30);
         Dispatcher.BeginInvoke(ClipNativeVideo, DispatcherPriority.Render);
