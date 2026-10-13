@@ -56,12 +56,25 @@ public sealed class ItemVm : Observable
     public bool IsLive => Kind == "live";
     public bool IsSeries => Kind == "series";
     public bool HasRating => !string.IsNullOrEmpty(Rating) && Rating != "0";
-    public string Initials => Name.Length >= 2 ? Name[..2].ToUpperInvariant() : Name.ToUpperInvariant();
+    public string Initials => DisplayName.Length >= 2 ? DisplayName[..2].ToUpperInvariant() : DisplayName.ToUpperInvariant();
 
     private int _number;
     /// <summary>Position in the current list, shown as "12. Channel".</summary>
     public int Number { get => _number; set { Set(ref _number, value); Raise(nameof(Title)); } }
-    public string Title => Number > 0 && IsLive ? $"{Number}. {Name}" : Name;
+    public string Title => Number > 0 && IsLive ? $"{Number}. {DisplayName}" : DisplayName;
+
+    /// <summary>"CA EN: CBC Calgary" → "CBC Calgary" when Settings → Strip country prefixes is on.</summary>
+    public string DisplayName => AppSettings.Current.StripPrefixes && IsLive ? StripPrefix(Name) : Name;
+
+    private static readonly System.Text.RegularExpressions.Regex Prefix = new(
+        @"^\s*(?:[A-Z0-9]{2,4})(?:[ \-]?[A-Z]{2,3})?\s*[|:\-–]\s+",
+        System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    public static string StripPrefix(string name)
+    {
+        var m = Prefix.Match(name);
+        return m.Success && m.Length < name.Length - 1 ? name[m.Length..] : name;
+    }
 
     private bool _favorite;
     public bool IsFavorite { get => _favorite; set { Set(ref _favorite, value); Raise(nameof(StarGlyph)); } }
@@ -379,6 +392,55 @@ public sealed class Repository : IDisposable
     public Task<int> CountKind(int source, string kind) => Bg(() =>
         _core.Call("groups", new { source, kind }).EnumerateArray().Sum(g => g.GetProperty("count").GetInt32()));
 
+    // ----------------------------------------------------------- guide data
+
+    private static string CustomEpgFile(int index) => Path.Combine(EpgDir, $"custom-{index}.xml");
+
+    /// <summary>Download the extra XMLTV URLs from Settings → Guide (in addition to each playlist's own).</summary>
+    public async Task RefreshCustomEpg(IReadOnlyList<string> urls)
+    {
+        Directory.CreateDirectory(EpgDir);
+        var index = 0;
+        foreach (var url in urls.Where(u => !string.IsNullOrWhiteSpace(u)))
+        {
+            string file;
+            try { file = await Download(url.Trim(), "guide"); }
+            catch (Exception e) { Log($"extra guide {url} failed: {e.Message}"); continue; }
+            try
+            {
+                await Bg(() => _core.Call("import_xmltv_file", new { path = file }));
+                File.Move(file, CustomEpgFile(index++), overwrite: true);
+            }
+            finally { if (File.Exists(file)) File.Delete(file); }
+        }
+        foreach (var stale in Directory.EnumerateFiles(EpgDir, "custom-*.xml")
+                     .Where(f => !Enumerable.Range(0, index).Select(CustomEpgFile).Contains(f)).ToList())
+            File.Delete(stale);
+    }
+
+    public static TimeSpan? CustomEpgAge() =>
+        Directory.Exists(EpgDir) && Directory.EnumerateFiles(EpgDir, "custom-*.xml").ToList() is { Count: > 0 } files
+            ? DateTime.Now - files.Min(File.GetLastWriteTime)
+            : null;
+
+    /// <summary>Forget every downloaded guide (memory and disk).</summary>
+    public Task ClearEpg() => Bg(() =>
+    {
+        _core.Call("clear_epg");
+        if (Directory.Exists(EpgDir)) Directory.Delete(EpgDir, recursive: true);
+    });
+
+    // ---------------------------------------------------------------- backup
+
+    /// <summary>Favorites, watch progress and history as JSON (no passwords).</summary>
+    public Task<string> ExportUserState() => Bg(() => _core.Call("export_user_state").GetRawText());
+
+    public Task ImportUserState(byte[] json) => Bg(() =>
+    {
+        _core.Import("user_state", json);
+        Save();
+    });
+
     public Task<List<ItemVm>> Favorites() => Bg(() => Items(_core.Call("favorites")));
     public Task<List<ItemVm>> Recent() => Bg(() => Items(_core.Call("recent", new { limit = 30 })));
 
@@ -409,7 +471,7 @@ public sealed class Repository : IDisposable
     {
         var result = new Dictionary<string, (Programme? Now, Programme? Next)>();
         if (ids.Count == 0) return result;
-        var res = _core.Call("now_next_many", new { ids });
+        var res = _core.Call("now_next_many", new { ids, now = DateTimeOffset.UtcNow.ToUnixTimeSeconds() - Offset });
         foreach (var id in ids)
         {
             if (!res.TryGetProperty(id, out var o)) continue;
@@ -423,13 +485,16 @@ public sealed class Repository : IDisposable
             ? ParseProgramme(p)
             : null;
 
+    /// <summary>Settings → Guide → time offset, in seconds (positive = programmes shown later).</summary>
+    private static long Offset => AppSettings.Current.EpgOffsetMinutes * 60L;
+
     private static Programme ParseProgramme(JsonElement p) =>
-        new(Str(p, "title") ?? "", p.GetProperty("start").GetInt64(), p.GetProperty("stop").GetInt64(), Str(p, "desc") ?? "");
+        new(Str(p, "title") ?? "", p.GetProperty("start").GetInt64() + Offset, p.GetProperty("stop").GetInt64() + Offset, Str(p, "desc") ?? "");
 
     /// <summary>Guide for one channel between two Unix times (for the EPG list under the video).</summary>
     public Task<List<Programme>> Guide(string id, long from, long to) => Bg(() =>
     {
-        var res = _core.Call("guide", new { ids = new[] { id }, from, to });
+        var res = _core.Call("guide", new { ids = new[] { id }, from = from - Offset, to = to - Offset });
         return res.TryGetProperty(id, out var list) && list.ValueKind == JsonValueKind.Array
             ? list.EnumerateArray().Select(ParseProgramme).ToList()
             : new List<Programme>();

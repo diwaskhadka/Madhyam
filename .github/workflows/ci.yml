@@ -120,9 +120,14 @@ jobs:
             "4-series-details" = @("--mode", "Series", "--open-first")
             "5-favorites"      = @("--mode", "Favorites")
             "6-search"         = @("--mode", "Live", "--search", "news")
+            "7-settings"       = @("--mode", "Live", "--settings", "General")
+            "8-settings-guide" = @("--mode", "Live", "--settings", "Guide")
+            "9-light-live"     = @("--mode", "Live", "--light")
           }
           foreach ($name in $cases.Keys) {
             $out = Join-Path (Resolve-Path shots) "$name.png"
+            $settingsFile = Join-Path $data "settings.json"
+            if ($cases[$name] -contains "--light") { '{ "Theme": "Light" }' | Set-Content $settingsFile } else { Remove-Item $settingsFile -ErrorAction SilentlyContinue }
             $p = Start-Process publish/Madhyam/Madhyam.exe -ArgumentList ($cases[$name] + @("--screenshot", "`"$out`"")) -PassThru
             if (-not $p.WaitForExit(45000)) { Stop-Process -Id $p.Id -Force; Write-Host "::warning::$name timed out" }
             if (Test-Path $out) { Write-Host "::notice::screenshot $name ok" } else { Write-Host "::warning::screenshot $name missing" }

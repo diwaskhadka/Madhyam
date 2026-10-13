@@ -19,7 +19,7 @@
         <!-- ================================================= navigation rail -->
         <DockPanel Background="{StaticResource Rail}">
             <StackPanel DockPanel.Dock="Top" Margin="0,16,0,0" HorizontalAlignment="Center">
-                <Border Width="40" Height="40" CornerRadius="12" Background="#1E2A4A" Margin="0,0,0,20">
+                <Border Width="40" Height="40" CornerRadius="12" Background="{StaticResource RailActive}" Margin="0,0,0,20">
                     <TextBlock Text="&#xE7F4;" FontFamily="{StaticResource Icons}" FontSize="18"
                                Foreground="{StaticResource Accent}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Border>
@@ -31,8 +31,8 @@
                 <RadioButton x:Name="NavRecent" Style="{StaticResource RailButton}" Content="&#xE81C;" ToolTip="Recently watched" Tag="Recent" Checked="Nav_Checked" />
                 <RadioButton x:Name="NavSearch" Style="{StaticResource RailButton}" Content="&#xE721;" ToolTip="Search everything (Ctrl+K)" Tag="Search" Checked="Nav_Checked" />
             </StackPanel>
-            <StackPanel DockPanel.Dock="Bottom" Margin="0,0,0,14" HorizontalAlignment="Center">
-                <Button Style="{StaticResource IconButton}" Content="&#xE946;" ToolTip="About Madhyam" Click="About_Click" Foreground="{StaticResource Muted}" />
+            <StackPanel DockPanel.Dock="Bottom" Margin="0,0,0,10" HorizontalAlignment="Center">
+                <RadioButton x:Name="NavSettings" Style="{StaticResource RailButton}" Content="&#xE713;" ToolTip="Settings" Tag="Settings" Checked="Nav_Checked" />
             </StackPanel>
             <Grid />
         </DockPanel>
@@ -46,7 +46,7 @@
             <!-- ============================================= top bar -->
             <Grid Margin="14,12,14,4">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="300" />
+                    <ColumnDefinition Width="Auto" MinWidth="240" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
@@ -60,13 +60,13 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <Border Width="32" Height="32" CornerRadius="8" Background="#262B3D" VerticalAlignment="Center">
+                        <Border Width="32" Height="32" CornerRadius="8" Background="{StaticResource Chip}" VerticalAlignment="Center">
                             <TextBlock Text="&#xE8FD;" FontFamily="{StaticResource Icons}" FontSize="14"
                                        HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
                         <StackPanel Grid.Column="1" Margin="10,0" VerticalAlignment="Center">
                             <TextBlock x:Name="PlaylistName" Text="No playlist" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                            <TextBlock x:Name="PlaylistCount" Text="Add a source to begin" FontSize="12" Foreground="{StaticResource Muted}" />
+                            <TextBlock x:Name="PlaylistCount" Text="Add a source to begin" FontSize="11.5" Foreground="{StaticResource Muted}" MaxWidth="420" TextTrimming="CharacterEllipsis" />
                         </StackPanel>
                         <TextBlock Grid.Column="2" Text="&#xE70D;" FontFamily="{StaticResource Icons}" FontSize="12"
                                    Foreground="{StaticResource Muted}" VerticalAlignment="Center" />
@@ -92,7 +92,7 @@
                             <TextBox x:Name="SearchBox" Background="Transparent" BorderThickness="0" Padding="0" FontSize="14"
                                      VerticalContentAlignment="Center" TextChanged="SearchBox_TextChanged" />
                         </Grid>
-                        <Border Grid.Column="3" CornerRadius="6" Background="#262B3D" Padding="7,2" VerticalAlignment="Center">
+                        <Border Grid.Column="3" CornerRadius="6" Background="{StaticResource Chip}" Padding="7,2" VerticalAlignment="Center">
                             <TextBlock Text="Ctrl K" FontSize="11" Foreground="{StaticResource Muted}" />
                         </Border>
                     </Grid>
@@ -108,8 +108,8 @@
             <!-- ============================================= body -->
             <Grid Grid.Row="1" Margin="14,8,14,14">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition x:Name="ColCats" Width="250" />
-                    <ColumnDefinition x:Name="ColList" Width="430" />
+                    <ColumnDefinition x:Name="ColCats" Width="240" />
+                    <ColumnDefinition x:Name="ColList" Width="350" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
@@ -125,10 +125,12 @@
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Text="{Binding Name}" FontSize="14" TextTrimming="CharacterEllipsis"
+                                    <TextBlock Text="{Binding Name}" FontSize="13.5" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
                                                Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" />
-                                    <TextBlock Grid.Column="1" Text="{Binding Count}" FontSize="12" Foreground="{StaticResource Muted}"
-                                               Margin="10,0,0,0" VerticalAlignment="Center" />
+                                    <Border Grid.Column="1" CornerRadius="9" Background="{StaticResource Chip}" Padding="7,1" Margin="10,0,0,0"
+                                            VerticalAlignment="Center" MinWidth="26">
+                                        <TextBlock Text="{Binding Count}" FontSize="11" Foreground="{StaticResource Muted}" HorizontalAlignment="Center" />
+                                    </Border>
                                 </Grid>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
@@ -146,7 +148,7 @@
                     </StackPanel>
                     <Grid>
                         <TextBlock x:Name="ListEmpty" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="6,10" Visibility="Collapsed" />
-                        <ListBox x:Name="ItemList" Style="{StaticResource PlainList}" ItemContainerStyle="{StaticResource CardItem}"
+                        <ListBox x:Name="ItemList" Style="{StaticResource PlainList}" ItemContainerStyle="{StaticResource RowItem}"
                                  MouseLeftButtonUp="ItemList_MouseLeftButtonUp" KeyDown="ItemList_KeyDown"
                                  SelectionChanged="ItemList_SelectionChanged">
                             <ListBox.ContextMenu>
@@ -159,20 +161,20 @@
                                 <DataTemplate>
                                     <Grid>
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="56" />
+                                            <ColumnDefinition Width="44" />
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
-                                        <Border Width="50" Height="50" CornerRadius="10" Background="#262B3D" VerticalAlignment="Center">
+                                        <Border Width="40" Height="40" CornerRadius="8" Background="{StaticResource Chip}" VerticalAlignment="Center">
                                             <Grid>
                                                 <TextBlock Text="{Binding Initials}" FontSize="14" Foreground="{StaticResource Muted}"
                                                            HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                <Image Source="{Binding Logo}" Stretch="Uniform" Margin="5" RenderOptions.BitmapScalingMode="HighQuality" />
+                                                <Image Source="{Binding Logo}" Stretch="Uniform" Margin="3" RenderOptions.BitmapScalingMode="HighQuality" />
                                             </Grid>
                                         </Border>
-                                        <StackPanel Grid.Column="1" Margin="12,0,6,0" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                            <TextBlock FontSize="13" Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis" Margin="0,2,0,0">
+                                        <StackPanel Grid.Column="1" Margin="10,0,4,0" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding Title}" FontSize="13.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock FontSize="12" Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis" Margin="0,1,0,0">
                                                 <TextBlock.Style>
                                                     <Style TargetType="TextBlock">
                                                         <Setter Property="Text" Value="{Binding Subtitle}" />
@@ -184,7 +186,7 @@
                                                     </Style>
                                                 </TextBlock.Style>
                                             </TextBlock>
-                                            <Grid Margin="0,5,0,0" Visibility="{Binding HasNow, Converter={StaticResource BoolVis}}">
+                                            <Grid Margin="0,3,0,0" Visibility="{Binding HasNow, Converter={StaticResource BoolVis}}">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="Auto" />
                                                     <ColumnDefinition Width="*" />
@@ -197,13 +199,13 @@
                                             </Grid>
                                         </StackPanel>
                                         <Button Grid.Column="2" Content="{Binding StarGlyph}" Tag="{Binding}" Click="Star_Click"
-                                                ToolTip="Favorite" VerticalAlignment="Center">
+                                                ToolTip="Favorite" VerticalAlignment="Top" Width="30" Height="30" FontSize="13">
                                             <Button.Style>
                                                 <Style TargetType="Button" BasedOn="{StaticResource IconButton}">
                                                     <Setter Property="Foreground" Value="{StaticResource Muted}" />
                                                     <Style.Triggers>
                                                         <DataTrigger Binding="{Binding IsFavorite}" Value="True">
-                                                            <Setter Property="Foreground" Value="#FFD166" />
+                                                            <Setter Property="Foreground" Value="{StaticResource Star}" />
                                                         </DataTrigger>
                                                     </Style.Triggers>
                                                 </Style>
@@ -249,11 +251,11 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Button Tag="{Binding}" Click="Poster_Click" Cursor="Hand" Margin="0,0,20,24" Width="176" Focusable="False" Foreground="{StaticResource Fg}">
+                                    <Button Tag="{Binding}" Click="Poster_Click" Cursor="Hand" Margin="0,0,20,24" Width="{DynamicResource PosterW}" Focusable="False" Foreground="{StaticResource Fg}" ToolTip="{Binding Name}">
                                         <Button.Template>
                                             <ControlTemplate TargetType="Button">
                                                 <StackPanel>
-                                                    <Grid Width="176" Height="262">
+                                                    <Grid Width="{DynamicResource PosterW}" Height="{DynamicResource PosterH}">
                                                         <Border CornerRadius="12" Background="{StaticResource Card}">
                                                             <TextBlock Text="{Binding Initials}" FontSize="30" Foreground="{StaticResource Muted}"
                                                                        HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -265,7 +267,7 @@
                                                         </Border>
                                                         <Border x:Name="Hover" CornerRadius="12" BorderThickness="2" BorderBrush="Transparent" />
                                                         <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="8" CornerRadius="8"
-                                                                Background="#D90F111A" Padding="7,3"
+                                                                Background="{StaticResource Badge}" Padding="7,3"
                                                                 Visibility="{Binding HasRating, Converter={StaticResource BoolVis}}">
                                                             <StackPanel Orientation="Horizontal">
                                                                 <TextBlock Text="&#xE735;" FontFamily="{StaticResource Icons}" FontSize="11"
@@ -275,8 +277,9 @@
                                                             </StackPanel>
                                                         </Border>
                                                     </Grid>
-                                                    <TextBlock Text="{Binding Name}" FontSize="13" TextAlignment="Center" TextWrapping="Wrap"
-                                                               MaxHeight="36" TextTrimming="CharacterEllipsis" Margin="4,10,4,0" />
+                                                    <TextBlock Text="{Binding DisplayName}" FontSize="13" TextAlignment="Center" TextWrapping="Wrap"
+                                                               MaxHeight="36" TextTrimming="CharacterEllipsis" Margin="4,10,4,0"
+                                                               Visibility="{DynamicResource PosterTitleVis}" />
                                                 </StackPanel>
                                                 <ControlTemplate.Triggers>
                                                     <Trigger Property="IsMouseOver" Value="True">
@@ -307,8 +310,8 @@
                             <Border>
                                 <Border.Background>
                                     <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                                        <GradientStop Color="#330F111A" Offset="0" />
-                                        <GradientStop Color="#F20F111A" Offset="0.85" />
+                                        <GradientStop Color="{StaticResource ShadeColor}" Offset="0" />
+                                        <GradientStop Color="{StaticResource ShadeEndColor}" Offset="0.85" />
                                     </LinearGradientBrush>
                                 </Border.Background>
                             </Border>
@@ -337,13 +340,13 @@
                                 <StackPanel Grid.Column="1" Margin="40,6,0,0">
                                     <TextBlock x:Name="DetTitle" FontSize="38" FontWeight="Bold" TextWrapping="Wrap" />
                                     <WrapPanel x:Name="DetChips" Margin="0,16,0,0" />
-                                    <TextBlock x:Name="DetPlot" FontSize="15" TextWrapping="Wrap" Foreground="#C9CCDA" MaxWidth="820"
+                                    <TextBlock x:Name="DetPlot" FontSize="15" TextWrapping="Wrap" Foreground="{StaticResource Fg}" Opacity="0.85" MaxWidth="820"
                                                HorizontalAlignment="Left" LineHeight="23" Margin="0,16,0,0" />
                                     <StackPanel Orientation="Horizontal" Margin="0,26,0,0">
                                         <Button x:Name="DetPlay" Style="{StaticResource PrimaryButton}" Click="DetPlay_Click">
                                             <StackPanel Orientation="Horizontal">
-                                                <TextBlock Text="&#xE768;" FontFamily="{StaticResource Icons}" Foreground="#0F111A" VerticalAlignment="Center" />
-                                                <TextBlock x:Name="DetPlayText" Text="Play" Foreground="#0F111A" Margin="10,0,0,0" />
+                                                <TextBlock Text="&#xE768;" FontFamily="{StaticResource Icons}" Foreground="{StaticResource PrimaryFg}" VerticalAlignment="Center" />
+                                                <TextBlock x:Name="DetPlayText" Text="Play" Foreground="{StaticResource PrimaryFg}" Margin="10,0,0,0" />
                                             </StackPanel>
                                         </Button>
                                         <Button x:Name="DetFav" Style="{StaticResource SecondaryButton}" Margin="12,0,0,0" Click="DetFav_Click">
@@ -396,15 +399,18 @@
                     </ScrollViewer>
                 </Grid>
 
+                <!-- Settings page -->
+                <ContentControl x:Name="SettingsHost" Grid.Column="0" Grid.ColumnSpan="3" Visibility="Collapsed" />
+
                 <!-- Player + guide -->
                 <Grid x:Name="PlayerPanel" Grid.Column="2">
                     <Grid.RowDefinitions>
-                        <RowDefinition x:Name="VideoRow" Height="*" MinHeight="200" />
-                        <RowDefinition x:Name="GuideRow" Height="1.15*" />
+                        <RowDefinition x:Name="VideoRow" Height="1.35*" MinHeight="200" />
+                        <RowDefinition x:Name="GuideRow" Height="*" />
                     </Grid.RowDefinitions>
                     <Grid Background="Black">
                         <StackPanel x:Name="VideoHint" HorizontalAlignment="Center" VerticalAlignment="Center">
-                            <TextBlock Text="&#xE7F4;" FontFamily="{StaticResource Icons}" FontSize="40" Foreground="#3A4060" HorizontalAlignment="Center" />
+                            <TextBlock Text="&#xE7F4;" FontFamily="{StaticResource Icons}" FontSize="40" Foreground="{StaticResource Thumb}" HorizontalAlignment="Center" />
                             <TextBlock Text="Select a channel to start watching" Foreground="{StaticResource Muted}" Margin="0,12,0,0" />
                         </StackPanel>
                         <vlc:VideoView x:Name="Video" Visibility="Collapsed" />
@@ -461,6 +467,35 @@
                             </ListBox.ItemTemplate>
                         </ListBox>
                     </DockPanel>
+
+                    <!-- EPG timeline ribbon (Settings → Programme guide → Timeline) -->
+                    <Border x:Name="TimelinePanel" Grid.Row="1" Visibility="Collapsed" Margin="0,12,0,0" CornerRadius="12"
+                            Background="{StaticResource Panel}" Padding="0,10,0,6">
+                        <DockPanel>
+                            <Grid DockPanel.Dock="Top" Margin="14,0,8,6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock x:Name="TlChannel" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock x:Name="TlNow" FontSize="12" Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button Style="{StaticResource IconButton}" Content="&#xE81D;" ToolTip="Jump to now" Click="TimelineNow_Click" />
+                                    <Button Style="{StaticResource IconButton}" Content="&#xE76B;" ToolTip="Previous day" Click="GuidePrev_Click" />
+                                    <TextBlock x:Name="TlDay" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" Margin="6,0" MinWidth="110" TextAlignment="Center" />
+                                    <Button Style="{StaticResource IconButton}" Content="&#xE76C;" ToolTip="Next day" Click="GuideNext_Click" />
+                                </StackPanel>
+                            </Grid>
+                            <TextBlock x:Name="TlEmpty" DockPanel.Dock="Top" Foreground="{StaticResource Muted}" Margin="14,6" Visibility="Collapsed"
+                                       Text="No programme guide for this channel." />
+                            <ScrollViewer x:Name="TlScroll" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                                          PreviewMouseWheel="TlScroll_PreviewMouseWheel">
+                                <Canvas x:Name="TlCanvas" Height="112" HorizontalAlignment="Left" />
+                            </ScrollViewer>
+                        </DockPanel>
+                    </Border>
 
                     <!-- Transport bar for films / episodes -->
                     <Border x:Name="ControlBar" Grid.Row="1" VerticalAlignment="Top" Visibility="Collapsed" CornerRadius="12"

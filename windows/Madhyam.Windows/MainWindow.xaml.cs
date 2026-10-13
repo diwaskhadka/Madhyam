@@ -21,7 +21,7 @@ namespace Madhyam.Windows;
 /// </summary>
 public partial class MainWindow : Window
 {
-    private enum Mode { Live, Movies, Series, Favorites, Recent, Search }
+    private enum Mode { Live, Movies, Series, Favorites, Recent, Search, Settings }
 
     private readonly Repository _repo = new();
     private readonly LibVLC _vlc = new("--no-video-title-show", "--network-caching=1500");
@@ -54,6 +54,12 @@ public partial class MainWindow : Window
     private int _ticks;
     private bool _fullscreen;
     private WindowState _savedState;
+    private SettingsView? _settingsView;
+    private static AppSettings S => AppSettings.Current;
+
+    /// <summary>Set by Settings → Reset: wipe the data folder after this window closes.</summary>
+    public bool ResetOnExit { get; set; }
+    private bool _restartOnExit;
 
     public MainWindow()
     {
@@ -71,7 +77,51 @@ public partial class MainWindow : Window
             await ApplySearch();
         };
         _tick.Tick += (_, _) => OnTick();
+        _player.Playing += (_, _) =>
+        {
+            if (!S.ShowSubtitles) Dispatcher.InvokeAsync(() => _player.SetSpu(-1));
+        };
         HighlightPerPage();
+        RestoreWindowPlacement();
+    }
+
+    private void RestoreWindowPlacement()
+    {
+        if (S.WinWidth is double w and > 400 && S.WinHeight is double h and > 300)
+        {
+            var vs = new Rect(SystemParameters.VirtualScreenLeft, SystemParameters.VirtualScreenTop,
+                              SystemParameters.VirtualScreenWidth, SystemParameters.VirtualScreenHeight);
+            // Only restore a position that is still on a connected monitor.
+            if (S.WinLeft is { } l && S.WinTop is { } t && vs.IntersectsWith(new Rect(l, t, w, h)))
+            {
+                WindowStartupLocation = WindowStartupLocation.Manual;
+                Left = l;
+                Top = t;
+            }
+            Width = w;
+            Height = h;
+        }
+        if (S.WindowStartup == "Maximized" || (S.WindowStartup == "Last" && S.WinMaximized)) WindowState = WindowState.Maximized;
+    }
+
+    private void SaveWindowPlacement()
+    {
+        var b = WindowState == WindowState.Normal && !_fullscreen ? new Rect(Left, Top, Width, Height) : RestoreBounds;
+        if (b.Width > 0)
+        {
+            S.WinLeft = b.Left;
+            S.WinTop = b.Top;
+            S.WinWidth = b.Width;
+            S.WinHeight = b.Height;
+        }
+        S.WinMaximized = WindowState == WindowState.Maximized && !_fullscreen;
+    }
+
+    /// <summary>Close and start again (theme change, reset).</summary>
+    public void RestartApp()
+    {
+        _restartOnExit = true;
+        Close();
     }
 
     // ================================================================ lifecycle
@@ -86,7 +136,8 @@ public partial class MainWindow : Window
         });
         var args = Environment.GetCommandLineArgs();
         string? Arg(string name) => Array.IndexOf(args, name) is var i and >= 0 && i + 1 < args.Length ? args[i + 1] : null;
-        var start = Arg("--mode") is { } m && Enum.TryParse<Mode>(m, true, out var parsed) ? parsed : Mode.Live;
+        var wanted = Arg("--mode") ?? (S.StartupView == "Last" ? S.LastView : S.StartupView);
+        var start = Enum.TryParse<Mode>(wanted, true, out var parsed) && parsed is not (Mode.Search or Mode.Settings) ? parsed : Mode.Live;
         (start switch
         {
             Mode.Movies => NavMovies,
@@ -97,6 +148,7 @@ public partial class MainWindow : Window
             _ => NavLive,
         }).IsChecked = true; // triggers Nav_Checked → LoadMode
         _tick.Start();
+        if (S.WindowStartup == "Fullscreen" && Arg("--screenshot") == null) ToggleFullscreen(force: true);
 
         if (Arg("--screenshot") is { } shot)
         {
@@ -114,7 +166,7 @@ public partial class MainWindow : Window
         {
             try
             {
-                if (_repo.EpgAge(s.Id) is { } age && age < TimeSpan.FromHours(12)) continue;
+                if (_repo.EpgAge(s.Id) is { } age && age < TimeSpan.FromHours(S.EpgRefreshHours)) continue;
                 if (!await _repo.HasEpg(s.Id)) continue;
                 await _repo.RefreshEpg(s.Id);
                 if (ItemList.ItemsSource is IReadOnlyList<ItemVm> shown) await UpdateNowNext(shown);
@@ -125,12 +177,31 @@ public partial class MainWindow : Window
                 Repository.Log($"background guide refresh failed for {s.Name}: {ex.Message}");
             }
         }
+        if (S.ExtraEpgUrls.Count > 0 && (Repository.CustomEpgAge() is not { } cage || cage > TimeSpan.FromHours(S.EpgRefreshHours)))
+        {
+            try
+            {
+                await _repo.RefreshCustomEpg(S.ExtraEpgUrls);
+                RefreshListAppearance();
+            }
+            catch (Exception ex)
+            {
+                Repository.Log($"extra guide refresh failed: {ex.Message}");
+            }
+        }
     }
 
     /// <summary>
     /// CI helper: render the window to a PNG without needing a real screen, then exit.
     /// `--open-first` opens the first poster's details page, `--search q` types a query.
     /// </summary>
+    private static string? Arg2(string name)
+    {
+        var args = Environment.GetCommandLineArgs();
+        var i = Array.IndexOf(args, name);
+        return i >= 0 && i + 1 < args.Length ? args[i + 1] : null;
+    }
+
     private async Task CaptureForCi(string path, bool openFirst, string? search)
     {
         await Task.Delay(1500);
@@ -138,6 +209,13 @@ public partial class MainWindow : Window
         {
             SearchBox.Text = search;
             await Task.Delay(1200);
+        }
+        if (Arg2("--settings") is { } page)
+        {
+            NavSettings.IsChecked = true;
+            await Task.Delay(800);
+            _settingsView?.Open(page);
+            await Task.Delay(800);
         }
         if (openFirst && PosterGrid.Items.Count > 0 && PosterGrid.Items[0] is ItemVm first)
         {
@@ -173,10 +251,28 @@ public partial class MainWindow : Window
     {
         SaveProgress();
         _player.Stop();
-        _repo.Persist();
+        if (!ResetOnExit && Arg2("--screenshot") == null)
+        {
+            _repo.Persist();
+            SaveWindowPlacement();
+            AppSettings.Save();
+        }
         _player.Dispose();
         _vlc.Dispose();
         _repo.Dispose();
+        if (ResetOnExit)
+        {
+            try
+            {
+                foreach (var f in System.IO.Directory.EnumerateFiles(App.DataDir)) System.IO.File.Delete(f);
+                foreach (var d in System.IO.Directory.EnumerateDirectories(App.DataDir)) System.IO.Directory.Delete(d, true);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Some files could not be removed: {ex.Message}", "Reset Madhyam");
+            }
+        }
+        if ((_restartOnExit || ResetOnExit) && Environment.ProcessPath is { } exe) System.Diagnostics.Process.Start(exe);
     }
 
     private void SetStatus(string text)
@@ -251,11 +347,14 @@ public partial class MainWindow : Window
         var movies = await _repo.CountKind(_source.Id, "movie");
         var series = await _repo.CountKind(_source.Id, "series");
         var parts = new List<string>();
-        if (live > 0) parts.Add($"{live:N0} channels");
-        if (movies > 0) parts.Add($"{movies:N0} movies");
-        if (series > 0) parts.Add($"{series:N0} series");
+        if (live > 0) parts.Add($"{Compact(live)} channels");
+        if (movies > 0) parts.Add($"{Compact(movies)} movies");
+        if (series > 0) parts.Add($"{Compact(series)} series");
         PlaylistCount.Text = parts.Count > 0 ? string.Join(" · ", parts) : (_source.Kind == "xtream" ? "Xtream Code" : "M3U playlist");
     }
+
+    /// <summary>53,324 → "53K", 950 → "950".</summary>
+    private static string Compact(int n) => n >= 10_000 ? $"{n / 1000:N0}K" : n.ToString("N0");
 
     private void PlaylistButton_Click(object sender, MouseButtonEventArgs e)
     {
@@ -332,17 +431,25 @@ public partial class MainWindow : Window
         });
     }
 
-    private void About_Click(object sender, RoutedEventArgs e) =>
-        MessageBox.Show(this,
-            $"Madhyam {typeof(App).Assembly.GetName().Version?.ToString(3)}\nEngine (Rust) {_repo.CoreVersion}\n\n" +
-            "Madhyam plays your own Xtream Codes or M3U playlists. It ships with no channels.",
-            "About Madhyam");
 
     // ================================================================ layout
 
     /// <summary>Show the panels that belong to the current mode / view.</summary>
     private void Layout()
     {
+        var settings = _mode == Mode.Settings && !_fullscreen;
+        SettingsHost.Visibility = settings ? Visibility.Visible : Visibility.Collapsed;
+        if (settings)
+        {
+            foreach (var p in new FrameworkElement[] { CatsPanel, ListPanel, GridPanel, DetailsPanel, PlayerPanel }) p.Visibility = Visibility.Collapsed;
+            ColCats.Width = new GridLength(0);
+            ColList.Width = new GridLength(0);
+            RailCol.Width = new GridLength(64);
+            TopRow.Height = new GridLength(68);
+            SectionLabel.Text = "Settings";
+            SearchHint.Text = "Search is not available in Settings";
+            return;
+        }
         var vod = _mode is Mode.Movies or Mode.Series;
         var playingVod = _vodPlayerOpen;
         var details = _details != null && !playingVod;
@@ -352,19 +459,23 @@ public partial class MainWindow : Window
         var showPlayer = playingVod || (!vod && !details) || _fullscreen;
 
         CatsPanel.Visibility = showCats ? Visibility.Visible : Visibility.Collapsed;
-        ColCats.Width = new GridLength(showCats ? 250 : 0);
+        ColCats.Width = new GridLength(showCats ? 240 : 0);
         ListPanel.Visibility = showList ? Visibility.Visible : Visibility.Collapsed;
-        ColList.Width = showList ? new GridLength(430) : new GridLength(0);
+        ColList.Width = showList ? new GridLength(350) : new GridLength(0);
         GridPanel.Visibility = showGrid ? Visibility.Visible : Visibility.Collapsed;
         DetailsPanel.Visibility = details && !_fullscreen ? Visibility.Visible : Visibility.Collapsed;
         PlayerPanel.Visibility = showPlayer ? Visibility.Visible : Visibility.Collapsed;
 
         var liveGuide = Playing?.IsLive ?? !playingVod;
-        GuidePanel.Visibility = !_fullscreen && liveGuide && !playingVod ? Visibility.Visible : Visibility.Collapsed;
+        var showGuide = !_fullscreen && liveGuide && !playingVod;
+        var timeline = S.GuideView != "List";
+        GuidePanel.Visibility = showGuide && !timeline ? Visibility.Visible : Visibility.Collapsed;
+        TimelinePanel.Visibility = showGuide && timeline ? Visibility.Visible : Visibility.Collapsed;
         ControlBar.Visibility = !_fullscreen && (playingVod || Playing is { IsLive: false }) ? Visibility.Visible : Visibility.Collapsed;
         GuideRow.Height = _fullscreen ? new GridLength(0)
-            : GuidePanel.Visibility == Visibility.Visible ? new GridLength(1.15, GridUnitType.Star)
+            : GuidePanel.Visibility == Visibility.Visible ? new GridLength(1, GridUnitType.Star)
             : GridLength.Auto;
+        VideoRow.Height = new GridLength(GuidePanel.Visibility == Visibility.Visible ? 1.35 : 1, GridUnitType.Star);
 
         RailCol.Width = new GridLength(_fullscreen ? 0 : 64);
         TopRow.Height = new GridLength(_fullscreen ? 0 : 68);
@@ -380,10 +491,18 @@ public partial class MainWindow : Window
         if (sender is not RadioButton { Tag: string tag }) return;
         var mode = Enum.Parse<Mode>(tag);
         // Leaving a video context stops playback (one VideoView).
-        if (_vodPlayerOpen || (mode is Mode.Movies or Mode.Series && Playing != null)) StopPlayback();
+        if (_vodPlayerOpen || (mode is Mode.Movies or Mode.Series or Mode.Settings && Playing != null)) StopPlayback();
         _mode = mode;
         _details = null;
         SearchBox.Text = "";
+        if (mode == Mode.Settings)
+        {
+            _settingsView ??= new SettingsView(this, _repo);
+            SettingsHost.Content = _settingsView;
+            Layout();
+            return;
+        }
+        if (mode != Mode.Search) S.LastView = mode.ToString();
         if (mode == Mode.Search) SearchBox.Focus();
         await LoadMode();
     }
@@ -454,14 +573,24 @@ public partial class MainWindow : Window
     {
         for (var i = 0; i < items.Count; i++)
         {
-            items[i].Number = i + 1;
+            items[i].Number = S.ShowNumbers ? i + 1 : 0;
             items[i].IsFavorite = _favorites.Contains(items[i].Id);
         }
         ItemList.ItemsSource = items;
         ListCount.Text = items.Count > 0 ? $"{items.Count:N0}" : "";
         ListEmpty.Text = emptyText;
         ListEmpty.Visibility = items.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        if (Playing is { } p && items.FirstOrDefault(i => i.Id == p.Id) is { } same) ItemList.SelectedItem = same;
+        if (Playing is { } p && items.FirstOrDefault(i => i.Id == p.Id) is { } same)
+        {
+            ItemList.SelectedItem = same;
+        }
+        else if (Playing == null && items.FirstOrDefault(i => i.IsLive) is { } firstLive)
+        {
+            // Show something in the guide pane immediately (selection does not start playback).
+            _guideItem = firstLive;
+            _guideDay = DateTime.Today;
+            _ = LoadGuide();
+        }
         _ = UpdateNowNext(items);
     }
 
@@ -479,6 +608,39 @@ public partial class MainWindow : Window
         {
             Repository.Log($"now/next failed: {ex.Message}");
         }
+    }
+
+    // ---------------------------------------------------------------- hooks used by Settings
+
+    /// <summary>Re-render names/numbers/guide after a display setting changed.</summary>
+    public void RefreshListAppearance()
+    {
+        if (ItemList.ItemsSource is List<ItemVm> items) ShowList(items, ListEmpty.Text);
+        if (_guideItem != null) _ = LoadGuide();
+    }
+
+    public void RefreshGuideView()
+    {
+        Layout();
+        if (_guideItem != null) _ = LoadGuide();
+    }
+
+    public async Task ReloadFavorites()
+    {
+        _favorites = await _repo.FavoriteIds();
+        RefreshListAppearance();
+    }
+
+    /// <summary>Settings → "Refresh all guides now": every playlist's guide plus the extra XMLTV sources.</summary>
+    public async Task RefreshAllGuides()
+    {
+        foreach (var s in _sources.ToList())
+        {
+            try { await _repo.RefreshEpg(s.Id); }
+            catch (Exception ex) { Repository.Log($"guide refresh failed for {s.Name}: {ex.Message}"); }
+        }
+        await _repo.RefreshCustomEpg(S.ExtraEpgUrls);
+        RefreshListAppearance();
     }
 
     // ---------------------------------------------------------------- search
@@ -725,7 +887,7 @@ public partial class MainWindow : Window
         {
             DetPlay.IsEnabled = true;
             var resume = await _repo.ResumeSeconds(it.Id);
-            if (_details == it && resume > 60) DetPlayText.Text = $"Resume from {Fmt((long)resume * 1000)}";
+            if (_details == it && resume > 60 && S.ResumePlayback) DetPlayText.Text = $"Resume from {Fmt((long)resume * 1000)}";
         }
     }
 
@@ -784,7 +946,14 @@ public partial class MainWindow : Window
         _playIndex = (index % _playlist.Count + _playlist.Count) % _playlist.Count;
         var it = _playlist[_playIndex];
 
-        if (!Uri.TryCreate(it.Url, UriKind.Absolute, out var uri))
+        var url = it.Url;
+        if (it.IsLive && S.LiveFormat != "Auto")
+        {
+            // Xtream live URLs end in .ts or .m3u8; the server offers both.
+            var (from, to) = S.LiveFormat == "HLS" ? (".ts", ".m3u8") : (".m3u8", ".ts");
+            if (url.EndsWith(from, StringComparison.OrdinalIgnoreCase) && url.Contains("/live/")) url = url[..^from.Length] + to;
+        }
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
         {
             SetStatus($"“{it.Name}” has no valid stream address.");
             return;
@@ -792,7 +961,12 @@ public partial class MainWindow : Window
         using var media = new Media(_vlc, uri);
         media.AddOption($":http-user-agent={it.UserAgent ?? Repository.UserAgent}");
         if (it.Referrer != null) media.AddOption($":http-referrer={it.Referrer}");
-        if (!it.IsLive)
+        media.AddOption($":network-caching={S.NetworkCachingMs}");
+        media.AddOption($":live-caching={S.NetworkCachingMs}");
+        media.AddOption(S.HardwareDecoding ? ":avcodec-hw=any" : ":avcodec-hw=none");
+        if (S.AudioLanguage.Length > 0) media.AddOption($":audio-language={S.AudioLanguage}");
+        if (S.SubtitleLanguage.Length > 0) media.AddOption($":sub-language={S.SubtitleLanguage}");
+        if (!it.IsLive && S.ResumePlayback)
         {
             var resume = await _repo.ResumeSeconds(it.Id);
             if (resume > 0) media.AddOption($":start-time={resume:0}");
@@ -890,12 +1064,14 @@ public partial class MainWindow : Window
         if (_guideItem is not { } it) return;
         var day = _guideDay;
         GuideDay.Text = day == DateTime.Today ? $"Today, {day:dddd d MMMM}" : day.ToString("dddd, d MMMM");
+        TlDay.Text = day == DateTime.Today ? $"Today · {day:ddd d MMM}" : day.ToString("ddd d MMM");
         var from = new DateTimeOffset(day).ToUnixTimeSeconds();
         var to = new DateTimeOffset(day.AddDays(1)).ToUnixTimeSeconds();
         var progs = await _repo.Guide(it.Id, from, to);
         if (_guideItem != it || _guideDay != day) return;
         var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         var vms = progs.Select(p => new ProgrammeVm { P = p, Now = now }).ToList();
+        RenderTimeline(it, day, vms);
         GuideList.ItemsSource = vms;
         GuideEmpty.Visibility = vms.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         if (vms.FirstOrDefault(v => v.IsLive) is { } live)
@@ -903,6 +1079,135 @@ public partial class MainWindow : Window
             GuideList.SelectedItem = live;
             GuideList.ScrollIntoView(live);
         }
+    }
+
+    // ---------------------------------------------------------------- timeline
+
+    private const double PxPerMinute = 3.2;
+    private DateTime _timelineDay;
+
+    /// <summary>
+    /// Horizontal guide ribbon: hour ruler, one block per programme, a red
+    /// "now" line. Rebuilt per channel/day (≈30–60 blocks, cheap).
+    /// </summary>
+    private void RenderTimeline(ItemVm channel, DateTime day, List<ProgrammeVm> progs)
+    {
+        _timelineDay = day;
+        TlChannel.Text = channel.DisplayName;
+        var live = progs.FirstOrDefault(p => p.IsLive);
+        TlNow.Text = live != null ? $"Now: {live.Title}  ·  {live.TimeRange}" : "";
+        TlEmpty.Visibility = progs.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        TlCanvas.Children.Clear();
+        var width = 24 * 60 * PxPerMinute;
+        TlCanvas.Width = width;
+
+        var muted = (Brush)FindResource("Muted");
+        var line = (Brush)FindResource("Line");
+        for (var h = 0; h < 24; h++)
+        {
+            var x = h * 60 * PxPerMinute;
+            var label = new TextBlock { Text = $"{h:00}:00", FontSize = 11, Foreground = muted };
+            Canvas.SetLeft(label, x + 4);
+            Canvas.SetTop(label, 0);
+            TlCanvas.Children.Add(label);
+            var tick = new Border { Width = 1, Height = 8, Background = line };
+            Canvas.SetLeft(tick, x);
+            Canvas.SetTop(tick, 14);
+            TlCanvas.Children.Add(tick);
+        }
+
+        var dayStart = new DateTimeOffset(day).ToUnixTimeSeconds();
+        var dayEnd = dayStart + 86400;
+        foreach (var p in progs)
+        {
+            var start = Math.Max(p.P.Start, dayStart);
+            var stop = Math.Min(p.P.Stop, dayEnd);
+            if (stop <= start) continue;
+            var x = (start - dayStart) / 60.0 * PxPerMinute;
+            var w = Math.Max(6, (stop - start) / 60.0 * PxPerMinute - 4);
+            var block = new Border
+            {
+                Width = w,
+                Height = 78,
+                CornerRadius = new CornerRadius(8),
+                BorderThickness = new Thickness(1.5),
+                BorderBrush = p.IsLive ? (Brush)FindResource("Accent") : line,
+                Background = (Brush)FindResource(p.IsLive ? "CardSelected" : "Card"),
+                Padding = new Thickness(8, 6, 6, 6),
+                Opacity = p.IsPast ? 0.55 : 1,
+                ToolTip = string.IsNullOrWhiteSpace(p.Desc) ? $"{p.TimeRange}\n{p.Title}" : $"{p.TimeRange}\n{p.Title}\n\n{p.Desc}",
+                ClipToBounds = true,
+            };
+            var inner = new StackPanel();
+            inner.Children.Add(new TextBlock { Text = p.TimeRange, FontSize = 10.5, Foreground = muted, TextTrimming = TextTrimming.CharacterEllipsis });
+            inner.Children.Add(new TextBlock
+            {
+                Text = p.Title,
+                FontSize = 13,
+                FontWeight = FontWeights.SemiBold,
+                TextWrapping = TextWrapping.Wrap,
+                MaxHeight = 36,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                Margin = new Thickness(0, 2, 0, 0),
+                Foreground = (Brush)FindResource(p.IsLive ? "Accent" : "Fg"),
+            });
+            if (p.IsLive)
+                inner.Children.Add(new TextBlock { Text = "● ON NOW", FontSize = 10, FontWeight = FontWeights.Bold, Foreground = (Brush)FindResource("LiveRed"), Margin = new Thickness(0, 2, 0, 0) });
+            block.Child = inner;
+            Canvas.SetLeft(block, x);
+            Canvas.SetTop(block, 26);
+            TlCanvas.Children.Add(block);
+        }
+
+        var nowSec = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        if (nowSec >= dayStart && nowSec < dayEnd)
+        {
+            var x = (nowSec - dayStart) / 60.0 * PxPerMinute;
+            var red = (Brush)FindResource("LiveRed");
+            var nowLine = new Border { Width = 2, Height = 90, Background = red };
+            Canvas.SetLeft(nowLine, x - 1);
+            Canvas.SetTop(nowLine, 18);
+            TlCanvas.Children.Add(nowLine);
+            var tag = new Border
+            {
+                CornerRadius = new CornerRadius(4),
+                Background = red,
+                Padding = new Thickness(4, 0, 4, 0),
+                Child = new TextBlock { Text = DateTime.Now.ToString("HH:mm"), FontSize = 10, FontWeight = FontWeights.Bold, Foreground = Brushes.White },
+            };
+            Canvas.SetLeft(tag, x - 16);
+            Canvas.SetTop(tag, 0);
+            TlCanvas.Children.Add(tag);
+        }
+        Dispatcher.InvokeAsync(ScrollTimelineToNow, DispatcherPriority.Loaded);
+    }
+
+    private void ScrollTimelineToNow()
+    {
+        var dayStart = new DateTimeOffset(_timelineDay).ToUnixTimeSeconds();
+        var nowSec = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var minutes = nowSec >= dayStart && nowSec < dayStart + 86400 ? (nowSec - dayStart) / 60.0 : 18 * 60; // other days: evening
+        TlScroll.ScrollToHorizontalOffset(Math.Max(0, minutes * PxPerMinute - TlScroll.ViewportWidth * 0.3));
+    }
+
+    private void TimelineNow_Click(object sender, RoutedEventArgs e)
+    {
+        if (_guideDay != DateTime.Today)
+        {
+            _guideDay = DateTime.Today;
+            _ = LoadGuide();
+        }
+        else
+        {
+            ScrollTimelineToNow();
+        }
+    }
+
+    /// <summary>Mouse wheel scrolls the ribbon sideways.</summary>
+    private void TlScroll_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        TlScroll.ScrollToHorizontalOffset(TlScroll.HorizontalOffset - e.Delta);
+        e.Handled = true;
     }
 
     private async void GuidePrev_Click(object sender, RoutedEventArgs e)
@@ -978,9 +1283,9 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ToggleFullscreen()
+    private void ToggleFullscreen(bool force = false)
     {
-        if (Playing == null && !_fullscreen) return; // nothing to show full screen
+        if (!force && Playing == null && !_fullscreen) return; // nothing to show full screen
         _fullscreen = !_fullscreen;
         if (_fullscreen)
         {

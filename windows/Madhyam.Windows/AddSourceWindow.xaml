@@ -35,7 +35,7 @@
             </DockPanel>
         </StackPanel>
 
-        <TextBlock x:Name="Error" Foreground="#FF7A7A" TextWrapping="Wrap" Margin="0,0,0,6" />
+        <TextBlock x:Name="Error" Foreground="{StaticResource LiveRed}" TextWrapping="Wrap" Margin="0,0,0,6" />
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
             <Button Content="Cancel" IsCancel="True" Margin="0,0,10,0" Style="{StaticResource SecondaryButton}" />
             <Button Content="Add playlist" IsDefault="True" Style="{StaticResource PrimaryButton}" Click="Ok_Click" />

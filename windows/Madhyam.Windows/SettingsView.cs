@@ -1,0 +1,465 @@
+using System.Diagnostics;
+using System.IO;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
+using Microsoft.Win32;
+
+namespace Madhyam.Windows;
+
+/// <summary>
+/// Settings page: section list on the left, rows of
+/// "title + description … control" on the right. Built in code so each row is
+/// one line here and adding a setting stays cheap.
+/// </summary>
+public sealed class SettingsView : UserControl
+{
+    private readonly MainWindow _host;
+    private readonly Repository _repo;
+    private readonly ListBox _nav = new();
+    private readonly StackPanel _content = new() { Margin = new Thickness(40, 8, 40, 40), MaxWidth = 860 };
+    private readonly ScrollViewer _scroll;
+    private static AppSettings S => AppSettings.Current;
+
+    private static readonly (string Key, string Icon, string Label)[] Sections =
+    {
+        ("General", "\uE713", "General"),
+        ("Playback", "\uE768", "Playback"),
+        ("Guide", "\uE787", "Programme guide"),
+        ("Data", "\uE8F1", "Backup & data"),
+        ("About", "\uE946", "About"),
+    };
+
+    public SettingsView(MainWindow host, Repository repo)
+    {
+        _host = host;
+        _repo = repo;
+
+        var grid = new Grid();
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(230) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        var left = new DockPanel { Margin = new Thickness(0, 0, 14, 0) };
+        var title = new TextBlock { Text = "Settings", FontSize = 17, FontWeight = FontWeights.SemiBold, Margin = new Thickness(12, 4, 0, 12) };
+        DockPanel.SetDock(title, Dock.Top);
+        left.Children.Add(title);
+        _nav.Style = (Style)Application.Current.FindResource("PlainList");
+        _nav.ItemContainerStyle = (Style)Application.Current.FindResource("CategoryItem");
+        foreach (var (_, icon, label) in Sections)
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            row.Children.Add(new TextBlock { Text = icon, FontFamily = (FontFamily)Application.Current.FindResource("Icons"), FontSize = 14, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) });
+            row.Children.Add(new TextBlock { Text = label, FontSize = 14, VerticalAlignment = VerticalAlignment.Center });
+            _nav.Items.Add(new ListBoxItem { Content = row });
+        }
+        _nav.SelectionChanged += (_, _) => Show(Sections[Math.Max(0, _nav.SelectedIndex)].Key);
+        left.Children.Add(_nav);
+        grid.Children.Add(left);
+
+        var panel = new Border { CornerRadius = new CornerRadius(14), Background = Brush("Panel") };
+        _scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = _content };
+        panel.Child = _scroll;
+        Grid.SetColumn(panel, 1);
+        grid.Children.Add(panel);
+        Content = grid;
+
+        _nav.SelectedIndex = 0;
+    }
+
+    /// <summary>Open a section by key (General, Playback, Guide, Data, About).</summary>
+    public void Open(string key)
+    {
+        var i = Array.FindIndex(Sections, x => string.Equals(x.Key, key, StringComparison.OrdinalIgnoreCase));
+        if (i >= 0) _nav.SelectedIndex = i;
+    }
+
+    // ================================================================ building blocks
+
+    private static Brush Brush(string key) => (Brush)Application.Current.FindResource(key);
+
+    private void Header(string title, string subtitle)
+    {
+        _content.Children.Add(new TextBlock { Text = title, FontSize = 24, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 22, 0, 2) });
+        _content.Children.Add(new TextBlock { Text = subtitle, Foreground = Brush("Muted"), Margin = new Thickness(0, 0, 0, 10) });
+    }
+
+    private void SubHeader(string title) =>
+        _content.Children.Add(new TextBlock { Text = title, FontSize = 17, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 26, 0, 4) });
+
+    /// <summary>One setting: title and description on the left, the control on the right (or below if wide).</summary>
+    private void Row(string title, string description, UIElement control, bool controlBelow = false)
+    {
+        var g = new Grid { Margin = new Thickness(0, 0, 0, 0) };
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var text = new StackPanel { Margin = new Thickness(0, 0, 24, 0), VerticalAlignment = VerticalAlignment.Center };
+        text.Children.Add(new TextBlock { Text = title, FontSize = 14.5, FontWeight = FontWeights.SemiBold });
+        if (description.Length > 0)
+            text.Children.Add(new TextBlock { Text = description, Foreground = Brush("Muted"), FontSize = 12.5, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 3, 0, 0) });
+        g.Children.Add(text);
+        if (controlBelow)
+        {
+            var stack = new StackPanel();
+            stack.Children.Add(g);
+            if (control is FrameworkElement fe) fe.Margin = new Thickness(0, 10, 0, 0);
+            stack.Children.Add(control);
+            AddRow(stack);
+        }
+        else
+        {
+            if (control is FrameworkElement fe) fe.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(control, 1);
+            g.Children.Add(control);
+            AddRow(g);
+        }
+    }
+
+    private void AddRow(UIElement e)
+    {
+        _content.Children.Add(new Border { Height = 1, Background = Brush("Line"), Margin = new Thickness(0, 14, 0, 14) });
+        _content.Children.Add(e);
+    }
+
+    private static CheckBox Toggle(bool value, Action<bool> changed)
+    {
+        var c = new CheckBox { IsChecked = value, Style = (Style)Application.Current.FindResource("Switch") };
+        c.Click += (_, _) => changed(c.IsChecked == true);
+        return c;
+    }
+
+    private static int _group;
+
+    private static Panel Choice(IEnumerable<(string Value, string Label)> options, string current, Action<string> changed)
+    {
+        var panel = new WrapPanel();
+        var name = $"g{_group++}";
+        foreach (var (value, label) in options)
+        {
+            var r = new RadioButton
+            {
+                Content = label,
+                GroupName = name,
+                IsChecked = value == current,
+                Style = (Style)Application.Current.FindResource("Segment"),
+            };
+            r.Checked += (_, _) => changed(value);
+            panel.Children.Add(r);
+        }
+        return panel;
+    }
+
+    private static Button Btn(string label, Func<Task> onClick, bool primary = false)
+    {
+        var b = new Button
+        {
+            Content = label,
+            Style = (Style)Application.Current.FindResource(primary ? "PrimaryButton" : "SecondaryButton"),
+            Padding = new Thickness(16, 7, 16, 7),
+            FontSize = 13.5,
+            Margin = new Thickness(0, 0, 8, 0),
+        };
+        b.Click += async (_, _) =>
+        {
+            b.IsEnabled = false;
+            try { await onClick(); }
+            finally { b.IsEnabled = true; }
+        };
+        return b;
+    }
+
+    private static StackPanel Buttons(params Button[] buttons)
+    {
+        var p = new StackPanel { Orientation = Orientation.Horizontal };
+        foreach (var b in buttons) p.Children.Add(b);
+        return p;
+    }
+
+    private TextBlock Note(string text)
+    {
+        var t = new TextBlock { Text = text, Foreground = Brush("Accent"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 8, 0, 0) };
+        return t;
+    }
+
+    private static void Save() => AppSettings.Save();
+
+    // ================================================================ pages
+
+    private void Show(string key)
+    {
+        _content.Children.Clear();
+        _scroll.ScrollToTop();
+        switch (key)
+        {
+            case "General": General(); break;
+            case "Playback": Playback(); break;
+            case "Guide": Guide(); break;
+            case "Data": Data(); break;
+            default: About(); break;
+        }
+    }
+
+    private void General()
+    {
+        Header("General", "How Madhyam looks and starts.");
+
+        var themeNote = Note("");
+        themeNote.Visibility = Visibility.Collapsed;
+        var restart = Btn("Restart now", () => { _host.RestartApp(); return Task.CompletedTask; }, primary: true);
+        restart.Visibility = Visibility.Collapsed;
+        restart.Margin = new Thickness(0, 10, 0, 0);
+        restart.HorizontalAlignment = HorizontalAlignment.Left;
+        var themeBox = new StackPanel();
+        themeBox.Children.Add(Choice(new[] { ("Light", "☀  Light"), ("Dark", "☾  Dark"), ("System", "🖥  System") }, S.Theme, v =>
+        {
+            S.Theme = v;
+            Save();
+            themeNote.Text = "The new theme is used the next time Madhyam starts.";
+            themeNote.Visibility = Visibility.Visible;
+            restart.Visibility = Visibility.Visible;
+        }));
+        themeBox.Children.Add(themeNote);
+        themeBox.Children.Add(restart);
+        Row("Visual theme", "Light, dark, or follow the Windows app setting.", themeBox, controlBelow: true);
+
+        Row("Cover size", "Size of posters in the movie and series grids. Larger is easier to see from a distance; smaller shows more per row.",
+            Choice(new[] { ("Small", "Small"), ("Medium", "Medium"), ("Large", "Large") }, S.CoverSize, v =>
+            {
+                S.CoverSize = v;
+                Save();
+                AppSettings.ApplyLayout(Application.Current.Resources);
+            }), controlBelow: true);
+
+        Row("Show titles under covers", "Turn off for a posters-only wall; the title still shows when you point at a poster.",
+            Toggle(S.TitlesUnderCovers, v =>
+            {
+                S.TitlesUnderCovers = v;
+                Save();
+                AppSettings.ApplyLayout(Application.Current.Resources);
+            }));
+
+        Row("Startup view", "The section Madhyam opens on.",
+            Choice(new[] { ("Live", "Live TV"), ("Movies", "Movies"), ("Series", "Series"), ("Favorites", "Favorites"), ("Last", "Where I left off") },
+                S.StartupView, v => { S.StartupView = v; Save(); }), controlBelow: true);
+
+        Row("Window on startup", "Open at the last size and position, maximized, or full screen. F11 toggles full screen at any time.",
+            Choice(new[] { ("Last", "Last size"), ("Maximized", "Maximized"), ("Fullscreen", "Full screen") },
+                S.WindowStartup, v => { S.WindowStartup = v; Save(); }), controlBelow: true);
+
+        Row("Strip country prefixes from channel names", "Shows “CBC Calgary HD” instead of “CA EN: CBC Calgary HD”. Search still finds both.",
+            Toggle(S.StripPrefixes, v => { S.StripPrefixes = v; Save(); _host.RefreshListAppearance(); }));
+
+        Row("Show channel numbers", "Number channels in the order the provider lists them.",
+            Toggle(S.ShowNumbers, v => { S.ShowNumbers = v; Save(); _host.RefreshListAppearance(); }));
+    }
+
+    private void Playback()
+    {
+        Header("Playback", "How streams are opened and played (VLC engine).");
+
+        Row("Live stream format", "Auto uses what the provider gives. If live channels stutter or fail, try the other format. Applies to Xtream channels.",
+            Choice(new[] { ("Auto", "Auto"), ("TS", "MPEG-TS"), ("HLS", "HLS (m3u8)") }, S.LiveFormat, v => { S.LiveFormat = v; Save(); }),
+            controlBelow: true);
+
+        Row("Network buffer", "More buffer means fewer freezes on a slow connection but a longer wait when switching channels.",
+            Choice(new[] { ("800", "0.8 s"), ("1500", "1.5 s"), ("3000", "3 s"), ("6000", "6 s") }, S.NetworkCachingMs.ToString(),
+                v => { S.NetworkCachingMs = int.Parse(v); Save(); }), controlBelow: true);
+
+        Row("Hardware decoding", "Uses the graphics card to decode video (lower CPU use, smoother 4K). Turn off if you see green or black frames.",
+            Toggle(S.HardwareDecoding, v => { S.HardwareDecoding = v; Save(); }));
+
+        Row("Resume movies and episodes", "Continue where you stopped last time.",
+            Toggle(S.ResumePlayback, v => { S.ResumePlayback = v; Save(); }));
+
+        Row("Show subtitles by default", "When a film has subtitles, turn them on automatically.",
+            Toggle(S.ShowSubtitles, v => { S.ShowSubtitles = v; Save(); }));
+
+        Row("Preferred audio language", "Chosen automatically when a stream has several audio tracks.",
+            LanguageChoice(S.AudioLanguage, v => { S.AudioLanguage = v; Save(); }), controlBelow: true);
+
+        Row("Preferred subtitle language", "",
+            LanguageChoice(S.SubtitleLanguage, v => { S.SubtitleLanguage = v; Save(); }), controlBelow: true);
+
+        _content.Children.Add(Note("Playback changes apply to the next channel or film you open."));
+    }
+
+    private static Panel LanguageChoice(string current, Action<string> changed) =>
+        Choice(new[] { ("", "Stream default"), ("eng", "English"), ("fre", "French"), ("spa", "Spanish"), ("ger", "German"),
+                       ("ara", "Arabic"), ("hin", "Hindi"), ("por", "Portuguese"), ("tur", "Turkish") }, current, changed);
+
+    private void Guide()
+    {
+        Header("Programme guide", "The EPG shown next to live channels.");
+
+        Row("Guide view", "Timeline is a horizontal ribbon under the video (like a TV guide); List is a vertical list of today's programmes.",
+            Choice(new[] { ("Timeline", "Timeline"), ("List", "List") }, S.GuideView, v => { S.GuideView = v; Save(); _host.RefreshGuideView(); }),
+            controlBelow: true);
+
+        var offsetLabel = new TextBlock { Width = 70, TextAlignment = TextAlignment.Center, VerticalAlignment = VerticalAlignment.Center, FontSize = 14 };
+        void ShowOffset() => offsetLabel.Text = S.EpgOffsetMinutes == 0 ? "0 min" : $"{S.EpgOffsetMinutes:+0;-0} min";
+        ShowOffset();
+        Button Step(string label, int delta)
+        {
+            var b = new Button { Content = label, Style = (Style)Application.Current.FindResource("ChipButton"), MinWidth = 44 };
+            b.Click += (_, _) =>
+            {
+                S.EpgOffsetMinutes = Math.Clamp(S.EpgOffsetMinutes + delta, -720, 720);
+                ShowOffset();
+                Save();
+                _host.RefreshListAppearance();
+            };
+            return b;
+        }
+        var offset = new StackPanel { Orientation = Orientation.Horizontal };
+        offset.Children.Add(Step("−1 h", -60));
+        offset.Children.Add(Step("−15", -15));
+        offset.Children.Add(offsetLabel);
+        offset.Children.Add(Step("+15", 15));
+        offset.Children.Add(Step("+1 h", 60));
+        Row("Time offset", "Shift programme times if your provider's guide is consistently early or late.", offset, controlBelow: true);
+
+        Row("Refresh guides every", "Guides are downloaded in the background when they are older than this.",
+            Choice(new[] { ("6", "6 hours"), ("12", "12 hours"), ("24", "24 hours"), ("72", "3 days") }, S.EpgRefreshHours.ToString(),
+                v => { S.EpgRefreshHours = int.Parse(v); Save(); }), controlBelow: true);
+
+        // Extra XMLTV sources
+        var list = new StackPanel();
+        var status = Note("");
+        status.Visibility = Visibility.Collapsed;
+        void Render()
+        {
+            list.Children.Clear();
+            if (S.ExtraEpgUrls.Count == 0)
+                list.Children.Add(new TextBlock { Text = "No extra guide sources. Your playlists' own guides are always used.", Foreground = Brush("Muted"), Margin = new Thickness(0, 0, 0, 8) });
+            foreach (var url in S.ExtraEpgUrls.ToList())
+            {
+                var row = new DockPanel { Margin = new Thickness(0, 0, 0, 6) };
+                var remove = new Button { Content = "\uE74D", Style = (Style)Application.Current.FindResource("IconButton"), ToolTip = "Remove", Width = 32, Height = 32, FontSize = 13 };
+                remove.Click += (_, _) => { S.ExtraEpgUrls.Remove(url); Save(); Render(); };
+                DockPanel.SetDock(remove, Dock.Right);
+                row.Children.Add(remove);
+                row.Children.Add(new Border
+                {
+                    CornerRadius = new CornerRadius(8), Background = Brush("Card"), Padding = new Thickness(10, 7, 10, 7),
+                    Child = new TextBlock { Text = url, TextTrimming = TextTrimming.CharacterEllipsis, FontSize = 13 },
+                });
+                list.Children.Add(row);
+            }
+        }
+        Render();
+        var box = new TextBox { MinWidth = 420, ToolTip = "https://example.org/guide.xml.gz  or  C:\\epg\\guide.xml" };
+        var add = Btn("Add", () =>
+        {
+            var u = box.Text.Trim();
+            if (u.Length > 0 && !S.ExtraEpgUrls.Contains(u))
+            {
+                S.ExtraEpgUrls.Add(u);
+                Save();
+                box.Text = "";
+                Render();
+            }
+            return Task.CompletedTask;
+        });
+        add.Margin = new Thickness(8, 0, 0, 0);
+        var addRow = new DockPanel { Margin = new Thickness(0, 4, 0, 0) };
+        DockPanel.SetDock(add, Dock.Right);
+        addRow.Children.Add(add);
+        addRow.Children.Add(box);
+        var sources = new StackPanel();
+        sources.Children.Add(list);
+        sources.Children.Add(addRow);
+        Row("Extra guide sources (XMLTV)", "Add XMLTV links (http/https, .xml or .xml.gz) or files on this computer. Useful when your provider's guide is missing channels.",
+            sources, controlBelow: true);
+
+        var actions = Buttons(
+            Btn("Refresh all guides now", async () =>
+            {
+                status.Visibility = Visibility.Visible;
+                status.Text = "Downloading guides…";
+                await _host.RefreshAllGuides();
+                status.Text = "Guides updated.";
+            }, primary: true),
+            Btn("Clear guide data", async () =>
+            {
+                await _repo.ClearEpg();
+                _host.RefreshListAppearance();
+                status.Visibility = Visibility.Visible;
+                status.Text = "Guide data cleared. Use “Refresh all guides now” to download it again.";
+            }));
+        var actionBox = new StackPanel();
+        actionBox.Children.Add(actions);
+        actionBox.Children.Add(status);
+        AddRow(actionBox);
+    }
+
+    private void Data()
+    {
+        Header("Backup & data", "Your favorites, watch progress and history.");
+
+        var status = Note("");
+        status.Visibility = Visibility.Collapsed;
+
+        Row("Backup", "Save favorites, resume positions and recently watched to a file, or restore them on another PC. Playlists and passwords are not included.",
+            Buttons(
+                Btn("Export…", async () =>
+                {
+                    var dlg = new SaveFileDialog { FileName = $"Madhyam-backup-{DateTime.Now:yyyy-MM-dd}.json", Filter = "Madhyam backup (*.json)|*.json" };
+                    if (dlg.ShowDialog(Window.GetWindow(this)) != true) return;
+                    await File.WriteAllTextAsync(dlg.FileName, await _repo.ExportUserState());
+                    status.Visibility = Visibility.Visible;
+                    status.Text = $"Saved to {dlg.FileName}";
+                }),
+                Btn("Import…", async () =>
+                {
+                    var dlg = new OpenFileDialog { Filter = "Madhyam backup (*.json)|*.json|All files|*.*" };
+                    if (dlg.ShowDialog(Window.GetWindow(this)) != true) return;
+                    try
+                    {
+                        await _repo.ImportUserState(await File.ReadAllBytesAsync(dlg.FileName));
+                        await _host.ReloadFavorites();
+                        status.Text = "Backup restored (merged with what you already had).";
+                    }
+                    catch (Exception e)
+                    {
+                        status.Text = $"Could not import: {e.Message}";
+                    }
+                    status.Visibility = Visibility.Visible;
+                })), controlBelow: true);
+
+        Row("Data folder", "Where Madhyam keeps its catalog, guides, settings and logs.",
+            Buttons(Btn("Open folder", () =>
+            {
+                Process.Start(new ProcessStartInfo("explorer.exe", $"\"{App.DataDir}\"") { UseShellExecute = true });
+                return Task.CompletedTask;
+            })), controlBelow: true);
+
+        Row("Reset Madhyam", "Remove all playlists, favorites, progress, guides and settings, and start fresh.",
+            Buttons(Btn("Reset everything…", () =>
+            {
+                if (MessageBox.Show(Window.GetWindow(this),
+                        "This removes all playlists, favorites, watch progress, guides and settings from this PC.\n\nContinue?",
+                        "Reset Madhyam", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                    return Task.CompletedTask;
+                _host.ResetOnExit = true;
+                _host.RestartApp();
+                return Task.CompletedTask;
+            })), controlBelow: true);
+
+        _content.Children.Add(status);
+    }
+
+    private void About()
+    {
+        Header("About", "Madhyam — a player for your own IPTV subscription.");
+        var v = typeof(App).Assembly.GetName().Version?.ToString(3) ?? "?";
+        Row("Version", $"Madhyam {v} · engine {_repo.CoreVersion} (Rust) · video by VLC", new TextBlock());
+        Row("Source code and releases", "github.com/diwaskhadka/Madhyam",
+            Buttons(Btn("Open on GitHub", () =>
+            {
+                Process.Start(new ProcessStartInfo("https://github.com/diwaskhadka/Madhyam/releases") { UseShellExecute = true });
+                return Task.CompletedTask;
+            })));
+        Row("Content", "Madhyam ships with no channels. It plays the Xtream Codes or M3U playlists you add from a provider you are entitled to use.", new TextBlock());
+        Row("Keyboard", "Ctrl+K search · F11 full screen · Space pause · PgUp/PgDn change channel · Ctrl+←/→ seek 10 s · Esc back", new TextBlock());
+    }
+}

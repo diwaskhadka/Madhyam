@@ -11,6 +11,9 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         Directory.CreateDirectory(DataDir);
+        AppSettings.Load();
+        AppSettings.ApplyTheme(Resources);   // must run before any window or style is used
+        AppSettings.ApplyLayout(Resources);
         // Point LibVLC at the libvlc\win-x64 folder next to the exe explicitly:
         // in a single-file app, assembly locations are empty, so auto-discovery fails.
         var vlcDir = Path.Combine(AppContext.BaseDirectory, "libvlc", "win-x64");
@@ -35,5 +38,12 @@ public partial class App : Application
             args.Handled = true; // keep the app alive; errors are logged
         };
         base.OnStartup(e);
+    }
+
+    /// <summary>Start a fresh copy of the app and quit this one (used after theme changes / reset).</summary>
+    public static void Restart()
+    {
+        if (Environment.ProcessPath is { } exe) System.Diagnostics.Process.Start(exe);
+        Current.Shutdown();
     }
 }
