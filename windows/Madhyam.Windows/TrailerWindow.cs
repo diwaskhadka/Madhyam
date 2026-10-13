@@ -21,7 +21,12 @@ public static class TrailerPlayer
     /// </summary>
     public static WebView2 Create() => new()
     {
-        CreationProperties = new CoreWebView2CreationProperties { UserDataFolder = Path.Combine(App.DataDir, "webview2") },
+        CreationProperties = new CoreWebView2CreationProperties
+        {
+            UserDataFolder = Path.Combine(App.DataDir, "webview2"),
+            // Start the trailer straight away (the Play click in Madhyam is the user's gesture).
+            AdditionalBrowserArguments = "--autoplay-policy=no-user-gesture-required",
+        },
         DefaultBackgroundColor = System.Drawing.Color.Black,
     };
 

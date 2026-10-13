@@ -352,6 +352,18 @@ public partial class MainWindow
 
     private void LiveClose_Click(object sender, RoutedEventArgs e) => StopPlayback();
 
+    /// <summary>"S03E01 · Title" without the series name providers repeat in every episode title.</summary>
+    private static string EpisodeLabel(string seriesName, ItemVm ep)
+    {
+        var name = ep.Name;
+        foreach (var cut in new[] { seriesName, CleanTitle(seriesName), Ratings.CleanTitle(seriesName) })
+            if (cut.Length > 2) name = name.Replace(cut, "", StringComparison.OrdinalIgnoreCase);
+        name = System.Text.RegularExpressions.Regex.Replace(name, @"\bS\d{1,2}\s*E\d{1,3}\b", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        name = System.Text.RegularExpressions.Regex.Replace(name, @"^\s*[A-Z]{2,4}\s*[-|:]\s*", "");
+        name = name.Trim(' ', '-', '·', '|', ':', '.');
+        return name.Length > 1 ? $"{SE(ep)} · {name}" : SE(ep);
+    }
+
     /// <summary>
     /// Card title: the film or series name, and for episodes "S03E01 · title"
     /// without repeating the series name the provider often puts in every episode title.
@@ -362,13 +374,7 @@ public partial class MainWindow
         {
             VodCardLabel.Text = "NOW PLAYING";
             VodCardTitle.Text = series.Name;
-            var ep = it.Name;
-            foreach (var cut in new[] { series.Name, CleanTitle(series.Name) })
-                if (cut.Length > 2) ep = ep.Replace(cut, "", StringComparison.OrdinalIgnoreCase);
-            ep = System.Text.RegularExpressions.Regex.Replace(ep, @"\bS\d{1,2}\s*E\d{1,3}\b", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-            ep = System.Text.RegularExpressions.Regex.Replace(ep, @"^\s*[A-Z]{2,4}\s*[-|:]\s*", "");
-            ep = ep.Trim(' ', '-', '·', '|', ':', '.');
-            VodCardSub.Text = ep.Length > 1 ? $"{SE(it)} · {ep}" : SE(it);
+            VodCardSub.Text = EpisodeLabel(series.Name, it);
         }
         else
         {

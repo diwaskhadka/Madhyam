@@ -286,11 +286,35 @@ pub fn item_added(i: &Item) -> i64 {
 }
 
 /// Provider rating (0–10), 0 if unknown.
+/// Rating on a 0–10 scale. Providers sometimes send 0–100 values ("72") or junk ("7125");
+/// the first are scaled down, the rest ignored so they cannot top "Top rated".
 pub fn item_rating(i: &Item) -> f64 {
-    i.extra("rating")
-        .and_then(|v| v.trim().replace(',', ".").parse::<f64>().ok())
-        .filter(|r| r.is_finite())
-        .unwrap_or(0.0)
+    normalize_rating(
+        i.extra("rating")
+            .and_then(|v| v.trim().replace(',', ".").parse::<f64>().ok()),
+    )
+}
+
+pub fn normalize_rating(r: Option<f64>) -> f64 {
+    match r {
+        Some(r) if r.is_finite() && (0.0..=10.0).contains(&r) => r,
+        Some(r) if r.is_finite() && r > 10.0 && r <= 100.0 => r / 10.0,
+        _ => 0.0,
+    }
+}
+
+#[cfg(test)]
+mod rating_tests {
+    use super::normalize_rating;
+
+    #[test]
+    fn ratings_are_normalised() {
+        assert_eq!(normalize_rating(Some(7.5)), 7.5);
+        assert_eq!(normalize_rating(Some(72.0)), 7.2);
+        assert_eq!(normalize_rating(Some(7125.0)), 0.0);
+        assert_eq!(normalize_rating(Some(-1.0)), 0.0);
+        assert_eq!(normalize_rating(None), 0.0);
+    }
 }
 
 // ===================================================================== catalog

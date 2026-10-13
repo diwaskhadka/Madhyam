@@ -122,6 +122,15 @@ public sealed class ItemVm : Observable
     public int Number { get => _number; set { Set(ref _number, value); Raise(nameof(Title)); } }
     public string Title => Number > 0 && IsLive ? $"{Number}. {DisplayName}" : DisplayName;
 
+    /// <summary>Same item with another picture (episodes shown with their series poster).</summary>
+    public ItemVm WithLogo(string? logo) => new()
+    {
+        Id = Id, Kind = Kind, Name = Name, Group = Group, Logo = logo, Url = Url, UserAgent = UserAgent, Referrer = Referrer,
+        Plot = Plot, Rating = Rating, Year = Year, Genre = Genre, Season = Season, Episode = Episode, SourceId = SourceId,
+        SeriesId = SeriesId, AddedAt = AddedAt, PlayedAt = PlayedAt, PositionSec = PositionSec, DurationSec = DurationSec,
+        DurationHint = DurationHint,
+    };
+
     /// <summary>Re-evaluate display text after a naming setting changed.</summary>
     public void Refresh()
     {
@@ -280,7 +289,7 @@ public sealed class Repository : IDisposable
             UserAgent = Str(extra, "user_agent"),
             Referrer = Str(extra, "referrer"),
             Plot = plot,
-            Rating = Str(extra, "rating"),
+            Rating = CleanRating(Str(extra, "rating")),
             Year = year,
             Genre = Str(extra, "genre"),
             Season = Str(extra, "season"),
@@ -293,6 +302,15 @@ public sealed class Repository : IDisposable
             DurationSec = Dbl(progress, "duration"),
             DurationHint = Dbl(extra, "duration_secs") is var d and > 0 ? d : Dbl(extra, "duration"),
         };
+    }
+
+    /// <summary>"7.5" stays, "72" becomes "7.2", junk like "7125" is dropped (same rule as the core's sort).</summary>
+    private static string? CleanRating(string? raw)
+    {
+        if (raw == null || !double.TryParse(raw.Replace(',', '.'), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var r)) return null;
+        if (r > 10 && r <= 100) r /= 10;
+        if (r <= 0 || r > 10) return null;
+        return Math.Round(r, 1).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private static List<ItemVm> Items(JsonElement arr) =>

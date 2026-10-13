@@ -467,13 +467,11 @@ public partial class MainWindow : Window
         Grid.SetColumn(text, 1);
         g.Children.Add(text);
 
-        var more = UiKit.IconButton("\uE712", "More", () => { }, 32);
-        more.FontSize = 14;
-        more.Click += (_, ev) =>
+        // The actions go in IconButton's own handler: a second Click handler never ran because
+        // IconButton marks the click handled first (that is why ⋮ showed nothing).
+        var more = UiKit.IconButton("\uE712", "More", () =>
         {
-            ev.Handled = true;
             close();
-            // Show the playlist's actions in the same place once the list has closed.
             Dispatcher.BeginInvoke(new Action(() =>
             {
                 var items = new List<UiKit.MenuRow> { new("\uE946", "Playlist info", false, () => _ = ShowPlaylistInfo(src)) };
@@ -484,7 +482,8 @@ public partial class MainWindow : Window
                 items.Add(new("\uE74D", "Remove playlist", false, () => _ = RemoveSource(src), GlyphBrush: "LiveRed", LabelBrush: "LiveRed"));
                 UiKit.PopMenu(PlaylistButton, src.Name, items, width: 300);
             }), System.Windows.Threading.DispatcherPriority.Input);
-        };
+        }, 32);
+        more.FontSize = 14;
         Grid.SetColumn(more, 2);
         g.Children.Add(more);
 

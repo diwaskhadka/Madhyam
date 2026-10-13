@@ -93,6 +93,14 @@ public partial class MainWindow
         return s;
     }
 
+    /// <summary>The series' own poster; falls back to the details endpoint's cover when the list had none.</summary>
+    private async Task<string?> SeriesPoster(ItemVm series)
+    {
+        if (!string.IsNullOrWhiteSpace(series.Logo)) return series.Logo;
+        try { return (await _repo.SeriesDetails(series))?.Poster; }
+        catch { return null; }
+    }
+
     private static string ProgressSubtitle(ItemVm it)
     {
         var left = it.TimeLeftText;
@@ -117,7 +125,14 @@ public partial class MainWindow
         if (S.DashContinue && cont.Count > 0)
         {
             body.Children.Add(SectionHeader("Continue watching", cont.Count, () => NavButton(Mode.Recent).IsChecked = true, "History"));
-            body.Children.Add(Rail(cont.Select(i => Poster(i, x => _ = GoToVod(x, play: true), ProgressSubtitle(i)))));
+            var shown = new List<ItemVm>();
+            foreach (var i in cont)
+            {
+                if (i.Kind == "episode" && i.SeriesId != null && await _repo.Item(i.SeriesId) is { } sr)
+                    shown.Add(i.WithLogo(await SeriesPoster(sr) ?? i.Logo));
+                else shown.Add(i);
+            }
+            body.Children.Add(Rail(shown.Select(i => Poster(i, x => _ = GoToVod(x, play: true), ProgressSubtitle(i)))));
         }
 
         if (S.DashLiveFavorites)
@@ -191,8 +206,8 @@ public partial class MainWindow
             string? title = it.Name;
             if (it.Kind == "episode" && it.SeriesId != null && await _repo.Item(it.SeriesId) is { } series)
             {
-                poster = series.Logo ?? poster;
                 title = $"{series.Name}";
+                poster = await SeriesPoster(series) ?? poster;
             }
             clip.Child = Backdrop(UiKit.Image(poster, 700), 0.45);
             content.Children.Add(PosterImage(poster, 168, 248));
@@ -201,7 +216,7 @@ public partial class MainWindow
             t.Margin = new Thickness(0, 6, 0, 0);
             t.MaxHeight = 84;
             right.Children.Add(t);
-            if (it.Kind == "episode") right.Children.Add(Text($"{SE(it)} · {it.Name}", 14, "Muted"));
+            if (it.Kind == "episode") right.Children.Add(Text(EpisodeLabel(title ?? "", it), 14, "Muted"));
             var row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 16, 0, 0) };
             row.Children.Add(new ProgressBar { Style = St("ThinProgress"), Value = it.WatchedRatio, Width = 260, VerticalAlignment = VerticalAlignment.Center });
             var l = Text($"{it.TimeLeftText} · {it.WatchedRatio:P0} watched", 12.5, "Muted");

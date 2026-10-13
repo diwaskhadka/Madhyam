@@ -23,7 +23,7 @@ public static class UiKit
     public static ImageSource? Image(string? url, int decodeWidth = 0)
     {
         if (string.IsNullOrWhiteSpace(url)) return null;
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return null;
+        if (!Uri.TryCreate(url.Trim(), UriKind.Absolute, out var uri)) return null;
         try
         {
             var bmp = new BitmapImage();
