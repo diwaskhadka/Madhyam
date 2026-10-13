@@ -974,7 +974,13 @@ impl Catalog {
 
     /// Write sources, items and user state as JSON Lines. EPG is excluded
     /// (it goes stale within days; re-download it instead).
-    pub fn save_snapshot<W: Write>(&self, mut w: W) -> Result<()> {
+    pub fn save_snapshot<W: Write>(&self, w: W) -> Result<()> {
+        self.save_snapshot_with(w, false)
+    }
+
+    /// Like [`Catalog::save_snapshot`]; with `redact_passwords` the Xtream
+    /// passwords are written empty so a host can keep them in an OS key store.
+    pub fn save_snapshot_with<W: Write>(&self, mut w: W, redact_passwords: bool) -> Result<()> {
         let mut line = String::new();
         let mut emit = |w: &mut W, v: Value| -> Result<()> {
             line.clear();
@@ -993,7 +999,12 @@ impl Catalog {
         for s in self.sources.values() {
             let mut v = s.to_json();
             if let (Value::Object(m), SourceKind::Xtream(c)) = (&mut v, &s.kind) {
-                m.insert("password".into(), c.password.as_str().into());
+                let pw = if redact_passwords {
+                    ""
+                } else {
+                    c.password.as_str()
+                };
+                m.insert("password".into(), pw.into());
                 m.insert("live_ext".into(), c.live_ext.as_str().into());
             }
             if let Value::Object(m) = &mut v {
@@ -1337,6 +1348,23 @@ mod tests {
             c.update_source(s, SourceKind::Xtream(XtreamCredentials::new("h", "u", "p")))
                 .is_err()
         );
+    }
+
+    #[test]
+    fn snapshot_can_redact_passwords() {
+        let mut c = Catalog::new();
+        let id = c.add_source(
+            "X",
+            SourceKind::Xtream(XtreamCredentials::new("http://h", "u", "topsecret")),
+        );
+        let _ = id;
+        let mut buf = Vec::new();
+        c.save_snapshot_with(&mut buf, true).unwrap();
+        let text = String::from_utf8(buf).unwrap();
+        assert!(!text.contains("topsecret"));
+        let mut plain = Vec::new();
+        c.save_snapshot(&mut plain).unwrap();
+        assert!(String::from_utf8(plain).unwrap().contains("topsecret"));
     }
 
     #[test]

@@ -509,7 +509,7 @@ pub fn dispatch(st: &mut State, method: &str, a: &Value) -> Result<Value> {
             let tmp = format!("{path}.tmp");
             {
                 let f = std::io::BufWriter::new(std::fs::File::create(&tmp)?);
-                c.save_snapshot(f)?;
+                c.save_snapshot_with(f, a.get("redact_passwords").is_some_and(Value::to_bool))?;
             }
             std::fs::rename(&tmp, &path)?;
             Value::Null

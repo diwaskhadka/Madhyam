@@ -289,6 +289,8 @@ public sealed class SettingsView : UserControl
         tools.Children.Add(filters);
         _content.Children.Add(tools);
 
+        AddRow(FreeTvCard());
+
         var list = _host.SourcesList.Where(x => _srcFilter == "all" || x.Kind == _srcFilter);
         list = _srcSort == "name"
             ? list.OrderBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase)
@@ -305,6 +307,88 @@ public sealed class SettingsView : UserControl
             return;
         }
         foreach (var src in shown) AddRow(SourceRow(src));
+    }
+
+    /// <summary>Free TV (iptv-org): on/off, all channels by category or chosen countries.</summary>
+    private FrameworkElement FreeTvCard()
+    {
+        var on = S.FreeTvSourceId != null && _host.SourcesList.Any(x => x.Id == S.FreeTvSourceId);
+        var box = new StackPanel();
+        var head = new Grid();
+        var text = new StackPanel { Margin = new Thickness(0, 0, 24, 0) };
+        text.Children.Add(new TextBlock { Text = "Free TV channels (iptv-org)", FontSize = 14.5, FontWeight = FontWeights.SemiBold });
+        text.Children.Add(new TextBlock
+        {
+            Text = "Thousands of public channels collected by the iptv-org project, added as a playlist called “Free TV”. " +
+                   "Many streams are offline or only work in their own country; turn it off to remove them again.",
+            Foreground = Brush("Muted"), FontSize = 12.5, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 3, 0, 0),
+        });
+        head.Children.Add(text);
+        var status = Note("");
+        status.Visibility = Visibility.Collapsed;
+        var options = new StackPanel { Margin = new Thickness(0, 12, 0, 0), Visibility = on ? Visibility.Visible : Visibility.Collapsed };
+        var toggle = Toggle(on, async v =>
+        {
+            options.Visibility = v ? Visibility.Visible : Visibility.Collapsed;
+            status.Visibility = Visibility.Visible;
+            status.Text = v ? "Downloading the channel list…" : "Removing Free TV…";
+            await _host.ApplyFreeTv(v);
+            status.Text = v ? "Free TV is on. Find it in the left bar and in the playlist menu." : "Free TV removed.";
+        });
+        toggle.HorizontalAlignment = HorizontalAlignment.Right;
+        toggle.VerticalAlignment = VerticalAlignment.Top;
+        Grid.SetColumn(toggle, 1);
+        head.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        head.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        head.Children.Add(toggle);
+        box.Children.Add(head);
+
+        var chips = new WrapPanel { Margin = new Thickness(0, 10, 0, 0), Visibility = S.FreeTvMode == "countries" ? Visibility.Visible : Visibility.Collapsed };
+        foreach (var (code, name) in FreeTv.Countries)
+        {
+            var c = code;
+            chips.Children.Add(UiKit.Filter($"{name}", S.FreeTvCountries.Contains(c), v =>
+            {
+                if (v && !S.FreeTvCountries.Contains(c)) S.FreeTvCountries.Add(c);
+                if (!v) S.FreeTvCountries.Remove(c);
+                Save();
+            }));
+        }
+        var other = new TextBox { MinWidth = 220, ToolTip = "Other two-letter country codes, comma-separated (e.g. kh, mn)",
+            Text = string.Join(", ", S.FreeTvCountries.Where(c => !FreeTv.Countries.Any(x => x.Code == c))) };
+        other.LostFocus += (_, _) =>
+        {
+            var known = S.FreeTvCountries.Where(c => FreeTv.Countries.Any(x => x.Code == c)).ToList();
+            known.AddRange(other.Text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(x => x.ToLowerInvariant()).Where(x => x.Length == 2 && x.All(char.IsLetter)));
+            S.FreeTvCountries = known.Distinct().ToList();
+            Save();
+        };
+        var otherRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0), Visibility = chips.Visibility };
+        otherRow.Children.Add(new TextBlock { Text = "Other codes", Foreground = Brush("Muted"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) });
+        otherRow.Children.Add(other);
+
+        options.Children.Add(Choice(new[] { ("all", "All channels, by category"), ("countries", "Only these countries") }, S.FreeTvMode, v =>
+        {
+            S.FreeTvMode = v;
+            Save();
+            chips.Visibility = otherRow.Visibility = v == "countries" ? Visibility.Visible : Visibility.Collapsed;
+        }));
+        options.Children.Add(chips);
+        options.Children.Add(otherRow);
+        var apply = Btn("Update Free TV", async () =>
+        {
+            status.Visibility = Visibility.Visible;
+            status.Text = "Downloading the channel list…";
+            await _host.ApplyFreeTv(true);
+            status.Text = "Free TV updated.";
+        }, primary: true);
+        apply.Margin = new Thickness(0, 12, 0, 0);
+        apply.HorizontalAlignment = HorizontalAlignment.Left;
+        options.Children.Add(apply);
+        box.Children.Add(options);
+        box.Children.Add(status);
+        return box;
     }
 
     private static string When(long unix) => DateTimeOffset.FromUnixTimeSeconds(unix).LocalDateTime.ToString("d MMM yyyy, HH:mm");

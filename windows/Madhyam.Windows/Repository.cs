@@ -334,8 +334,81 @@ public sealed class Repository : IDisposable
 
     private void Save()
     {
-        try { _core.Call("save_snapshot", new { path = SnapshotPath }); }
-        catch (IptvException e) { Log($"snapshot save failed: {e.Message}"); }
+        lock (_saveLock)
+        {
+            try
+            {
+                // Passwords go to secrets.json (encrypted for this Windows user), never into the catalog file.
+                bool secretsOk;
+                try { SyncSecrets(); secretsOk = true; }
+                catch (Exception e) { Log($"secrets not saved: {e.Message}"); secretsOk = false; }
+                // Never drop a password from the catalog unless it is safely in secrets.json.
+                _core.Call("save_snapshot", new { path = SnapshotPath, redact_passwords = secretsOk });
+            }
+            catch (IptvException e) { Log($"snapshot save failed: {e.Message}"); }
+        }
+    }
+
+    // ---------------------------------------------------------------- secrets
+
+    private static string SecretsPath => Path.Combine(App.DataDir, "secrets.json");
+    private Dictionary<int, string> _secrets = new(); // source id → DPAPI-protected password (base64)
+
+    private void LoadSecrets()
+    {
+        try
+        {
+            if (File.Exists(SecretsPath))
+                _secrets = JsonSerializer.Deserialize<Dictionary<int, string>>(File.ReadAllText(SecretsPath)) ?? new();
+        }
+        catch (Exception e)
+        {
+            Log($"secrets unreadable: {e.Message}");
+            _secrets = new();
+        }
+    }
+
+    /// <summary>Copy every Xtream password from the engine into secrets.json (encrypted), dropping removed sources.</summary>
+    private void SyncSecrets()
+    {
+        var changed = false;
+        var ids = new HashSet<int>();
+        foreach (var s in _core.Call("sources").EnumerateArray())
+        {
+            if (Str(s, "kind") != "xtream") continue;
+            var id = s.GetProperty("id").GetInt32();
+            ids.Add(id);
+            var pw = _core.Call("source_password", new { source = id });
+            var plain = pw.ValueKind == JsonValueKind.String ? pw.GetString() ?? "" : "";
+            if (plain.Length == 0) continue; // keep what we have
+            if (_secrets.TryGetValue(id, out var stored) && Secret.Unprotect(stored) == plain) continue;
+            _secrets[id] = Secret.Protect(plain);
+            changed = true;
+        }
+        foreach (var gone in _secrets.Keys.Where(k => !ids.Contains(k)).ToList())
+        {
+            _secrets.Remove(gone);
+            changed = true;
+        }
+        if (!changed) return;
+        var tmp = SecretsPath + ".tmp";
+        File.WriteAllText(tmp, JsonSerializer.Serialize(_secrets));
+        File.Move(tmp, SecretsPath, overwrite: true);
+    }
+
+    /// <summary>After loading a (redacted) catalog, give the engine its passwords back.</summary>
+    private void RestoreSecrets()
+    {
+        foreach (var s in _core.Call("sources").EnumerateArray())
+        {
+            if (Str(s, "kind") != "xtream") continue;
+            var id = s.GetProperty("id").GetInt32();
+            var pw = _core.Call("source_password", new { source = id });
+            var current = pw.ValueKind == JsonValueKind.String ? pw.GetString() ?? "" : "";
+            if (current.Length > 0) continue; // an older, unredacted file: migrated on the next save
+            if (_secrets.TryGetValue(id, out var stored) && Secret.Unprotect(stored) is { Length: > 0 } plain)
+                _core.Call("update_source", new { source = id, password = plain });
+        }
     }
 
     public static void Log(string msg)
@@ -347,9 +420,17 @@ public sealed class Repository : IDisposable
 
     public Task Init() => Bg(() =>
     {
+        LoadSecrets();
         if (File.Exists(SnapshotPath))
         {
-            try { _core.Call("load_snapshot", new { path = SnapshotPath }); }
+            try
+            {
+                _core.Call("load_snapshot", new { path = SnapshotPath });
+                RestoreSecrets();
+                // Older versions wrote the password in plain text: rewrite the file without it now.
+                if (File.ReadLines(SnapshotPath).Take(50).Any(l => l.Contains("\"t\":\"source\"") && l.Contains("\"kind\":\"xtream\"") && !l.Contains("\"password\":\"\"")))
+                    Save();
+            }
             catch (IptvException e)
             {
                 Log($"snapshot unreadable, starting empty: {e.Message}");
@@ -437,7 +518,8 @@ public sealed class Repository : IDisposable
                    (acc.Expires is { } e ? $", expires {e:d MMM yyyy}" : "");
         }
         if (System.IO.File.Exists(src.Location)) return "Local playlist file found.";
-        using var req = new HttpRequestMessage(HttpMethod.Get, src.Location);
+        var probe = FreeTv.IsCountries(src.Location) ? FreeTv.CountryUrls(src.Location).FirstOrDefault() ?? FreeTv.AllUrl : src.Location;
+        using var req = new HttpRequestMessage(HttpMethod.Get, probe);
         ApplyUserAgent(req, source);
         using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
         return resp.IsSuccessStatusCode
@@ -510,7 +592,7 @@ public sealed class Repository : IDisposable
         {
             var location = await Bg(() => _core.Call("sources").EnumerateArray()
                 .First(s => s.GetProperty("id").GetInt32() == id).GetProperty("location").GetString() ?? "");
-            var file = await Download(location, "playlist", id);
+            var file = FreeTv.IsCountries(location) ? await DownloadJoined(FreeTv.CountryUrls(location), id) : await Download(location, "playlist", id);
             try { await Bg(() => _core.Call("import_m3u_file", new { source = id, path = file })); }
             finally { File.Delete(file); }
         }
@@ -541,6 +623,30 @@ public sealed class Repository : IDisposable
         foreach (var stale in EpgFiles(id).Where(f => !Enumerable.Range(0, index).Select(i => EpgFile(id, i)).Contains(f)).ToList())
             File.Delete(stale);
         await Bg(Save);
+    }
+
+    /// <summary>Download several M3U playlists and join them into one file (Free TV by country).</summary>
+    private async Task<string> DownloadJoined(IEnumerable<string> urls, int source)
+    {
+        var joined = Path.Combine(Path.GetTempPath(), $"madhyam-joined-{Guid.NewGuid():N}.m3u");
+        await using var outFile = new StreamWriter(joined);
+        await outFile.WriteLineAsync("#EXTM3U");
+        var any = false;
+        foreach (var url in urls)
+        {
+            string part;
+            try { part = await Download(url, "playlist", source); }
+            catch (Exception e) { Log($"free tv list {url} failed: {e.Message}"); continue; }
+            try
+            {
+                foreach (var line in File.ReadLines(part))
+                    if (!line.StartsWith("#EXTM3U", StringComparison.OrdinalIgnoreCase)) await outFile.WriteLineAsync(line);
+                any = true;
+            }
+            finally { File.Delete(part); }
+        }
+        if (!any) throw new HttpRequestException("None of the chosen country lists could be downloaded.");
+        return joined;
     }
 
     /// <summary>Stream a URL (or local file) to a temp file, gunzipping .gz content.</summary>

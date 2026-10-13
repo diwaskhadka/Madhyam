@@ -356,8 +356,109 @@ public partial class MainWindow : Window
         await UpdatePlaylistHeader();
     }
 
+    /// <summary>Rail icons, one per playlist (initials in a colour picked from the name; Free TV gets a globe).</summary>
+    private void RebuildPlaylistRail()
+    {
+        PlaylistRail.Children.Clear();
+        PlaylistRailLine.Visibility = _sources.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        foreach (var src in _sources)
+        {
+            var free = S.FreeTvSourceId == src.Id;
+            var words = src.Name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var initials = words.Length >= 2 ? $"{words[0][0]}{words[1][0]}" : src.Name.Length >= 2 ? src.Name[..2] : src.Name;
+            var hue = src.Name.Aggregate(7, (h, ch) => unchecked(h * 31 + ch)) is var hc ? (uint)hc % 360 : 0; // stable across runs
+            var tint = HslColor(hue, 0.55, 0.55);
+            var face = new Border
+            {
+                Width = 32,
+                Height = 32,
+                CornerRadius = new CornerRadius(9),
+                Background = new SolidColorBrush(Color.FromArgb(0x33, tint.R, tint.G, tint.B)),
+                BorderBrush = new SolidColorBrush(tint),
+                BorderThickness = new Thickness(src.Id == _source?.Id ? 1.5 : 0),
+                Child = new TextBlock
+                {
+                    Text = free ? "\uE774" : initials.ToUpperInvariant(),
+                    FontFamily = free ? UiKit.Icons : (FontFamily)FindResource("UiFont"),
+                    FontSize = free ? 14 : 12,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = new SolidColorBrush(tint),
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                },
+            };
+            var b = new Button
+            {
+                Content = face,
+                Style = (Style)FindResource("IconButton"),
+                Width = 44,
+                Height = 44,
+                Margin = new Thickness(0, 2, 0, 2),
+                ToolTip = $"{src.Name} · {src.KindLabel}",
+            };
+            b.Click += async (_, _) =>
+            {
+                if (src.Id == _source?.Id) return;
+                await SwitchSource(src);
+                RebuildPlaylistRail();
+            };
+            PlaylistRail.Children.Add(b);
+        }
+    }
+
+    private static Color HslColor(double h, double s, double l)
+    {
+        double c = (1 - Math.Abs(2 * l - 1)) * s, x = c * (1 - Math.Abs(h / 60 % 2 - 1)), m = l - c / 2;
+        var (r, g, b) = h < 60 ? (c, x, 0d) : h < 120 ? (x, c, 0d) : h < 180 ? (0d, c, x) : h < 240 ? (0d, x, c) : h < 300 ? (x, 0d, c) : (c, 0d, x);
+        return Color.FromRgb((byte)((r + m) * 255), (byte)((g + m) * 255), (byte)((b + m) * 255));
+    }
+
+    /// <summary>Settings → Sources → Free TV: add, update or remove the iptv-org playlist.</summary>
+    public async Task ApplyFreeTv(bool enabled)
+    {
+        var existing = _sources.FirstOrDefault(s => s.Id == S.FreeTvSourceId);
+        if (!enabled)
+        {
+            if (existing != null)
+            {
+                await Run("Removing Free TV…", async () =>
+                {
+                    if (Playing != null && Playing.SourceId == existing.Id) StopPlayback();
+                    await _repo.RemoveSource(existing.Id);
+                    S.SourceAdded.Remove(existing.Id);
+                    if (_source?.Id == existing.Id) _source = null;
+                    await ReloadSources();
+                });
+            }
+            S.FreeTvSourceId = null;
+            AppSettings.Save();
+            _settingsView?.Refresh();
+            return;
+        }
+        var location = S.FreeTvMode == "countries" && S.FreeTvCountries.Count > 0 ? FreeTv.CountriesLocation(S.FreeTvCountries) : FreeTv.AllUrl;
+        await Run("Downloading Free TV channels…", async () =>
+        {
+            if (existing != null)
+            {
+                await _repo.UpdateSource(existing.Id, FreeTv.Name, location, null, null, null);
+            }
+            else
+            {
+                var keep = _source?.Id;
+                S.FreeTvSourceId = await _repo.AddM3u(FreeTv.Name, location);
+                AppSettings.Save();
+                await ReloadSources(keep);
+                return;
+            }
+            await ReloadSources(_source?.Id);
+        });
+        AppSettings.Save();
+        _settingsView?.Refresh();
+    }
+
     private async Task UpdatePlaylistHeader()
     {
+        RebuildPlaylistRail();
         if (_source == null)
         {
             PlaylistName.Text = "No playlist";
