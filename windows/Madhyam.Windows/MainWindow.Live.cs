@@ -74,6 +74,7 @@ public partial class MainWindow
 
     private void CatFilter_TextChanged(object sender, TextChangedEventArgs e)
     {
+        CatFilterHint.Visibility = CatFilter.Text.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
         _groupSilent = true;
         var f = CatFilter.Text.Trim();
         GroupList.ItemsSource = f.Length == 0 ? _allCategories : _allCategories.Where(r => r.IsAll || r.Name.Contains(f, StringComparison.CurrentCultureIgnoreCase)).ToList();
@@ -83,8 +84,9 @@ public partial class MainWindow
 
     private void CatSearch_Click(object sender, RoutedEventArgs e)
     {
-        var show = CatFilter.Visibility != Visibility.Visible;
-        CatFilter.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        var show = CatFilterBox.Visibility != Visibility.Visible;
+        CatFilterBox.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        if (show) Motion.Rise(CatFilterBox, 8, 200);
         if (show) CatFilter.Focus();
         else CatFilter.Text = "";
     }
@@ -475,6 +477,11 @@ public partial class MainWindow
     private async Task LoadGuide()
     {
         if (_guideItem is not { } it) return;
+        if (Playing is not { IsLive: true })
+        {
+            LiveCardTitle.Text = it.DisplayName;
+            LiveCardSub.Text = "Click the channel to start watching";
+        }
         var day = _guideDay;
         GuideDay.Text = day == DateTime.Today ? $"Today, {day:dddd d MMMM}" : day.ToString("dddd, d MMMM");
         TlDay.Text = day == DateTime.Today ? $"Today · {day:ddd d MMM}" : day.ToString("ddd d MMM");

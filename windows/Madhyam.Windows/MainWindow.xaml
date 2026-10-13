@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vlc="clr-namespace:LibVLCSharp.WPF;assembly=LibVLCSharp.WPF"
-        Title="Madhyam" Width="1480" Height="900" MinWidth="1040" MinHeight="620"
+        Title="Madhyam" Icon="pack://application:,,,/Assets/Madhyam.ico" Width="1480" Height="900" MinWidth="1040" MinHeight="620"
         WindowStartupLocation="CenterScreen" Background="{StaticResource Bg}"
         FontFamily="{StaticResource UiFont}" Foreground="{StaticResource Fg}"
         Loaded="Window_Loaded" Closing="Window_Closing" PreviewKeyDown="Window_PreviewKeyDown">
@@ -19,10 +19,8 @@
         <!-- ================================================= navigation rail -->
         <DockPanel Background="{StaticResource Rail}">
             <StackPanel DockPanel.Dock="Top" Margin="0,14,0,0" HorizontalAlignment="Center">
-                <Border Width="40" Height="40" CornerRadius="12" Background="{StaticResource RailActive}" Margin="0,0,0,14">
-                    <TextBlock Text="&#xE7F4;" FontFamily="{StaticResource Icons}" FontSize="18"
-                               Foreground="{StaticResource Accent}" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                </Border>
+                <Image Source="pack://application:,,,/Assets/Madhyam-64.png" Width="40" Height="40" Margin="0,0,0,14"
+                       RenderOptions.BitmapScalingMode="HighQuality" ToolTip="Madhyam" />
                 <RadioButton x:Name="NavDashboard" Style="{StaticResource RailButton}" Content="&#xE80F;" ToolTip="Dashboard" Tag="Dashboard" Checked="Nav_Checked" />
                 <RadioButton x:Name="NavSearch" Style="{StaticResource RailButton}" Content="&#xE721;" ToolTip="Advanced search (Ctrl+K)" Tag="Search" Checked="Nav_Checked" />
                 <RadioButton x:Name="NavFavorites" Style="{StaticResource RailButton}" Content="&#xEB51;" ToolTip="Favorites" Tag="Favorites" Checked="Nav_Checked" />
@@ -124,8 +122,20 @@
                                     ToolTip="Manage categories (show / hide)" Click="CatManage_Click" />
                         </StackPanel>
                     </Grid>
-                    <TextBox x:Name="CatFilter" DockPanel.Dock="Top" Margin="4,0,4,8" Visibility="Collapsed" TextChanged="CatFilter_TextChanged"
-                             ToolTip="Filter categories" />
+                    <Border x:Name="CatFilterBox" DockPanel.Dock="Top" Margin="4,0,4,10" Visibility="Collapsed" CornerRadius="18"
+                            Background="{StaticResource Card}" BorderBrush="{StaticResource Line}" BorderThickness="1" Padding="12,0" Height="36">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="&#xE721;" FontFamily="{StaticResource Icons}" FontSize="12" Foreground="{StaticResource Muted}" VerticalAlignment="Center" />
+                            <TextBlock x:Name="CatFilterHint" Grid.Column="1" Text="Search categories" Foreground="{StaticResource Muted}" FontSize="13"
+                                       VerticalAlignment="Center" Margin="10,0,0,0" IsHitTestVisible="False" />
+                            <TextBox x:Name="CatFilter" Grid.Column="1" Margin="8,0,0,0" Background="Transparent" BorderThickness="0" Padding="0"
+                                     VerticalContentAlignment="Center" FontSize="13" TextChanged="CatFilter_TextChanged" />
+                        </Grid>
+                    </Border>
                     <ListBox x:Name="GroupList" Style="{StaticResource PlainList}" ItemContainerStyle="{StaticResource CategoryItem}"
                              SelectionChanged="GroupList_SelectionChanged">
                         <ListBox.ItemTemplate>
@@ -230,88 +240,127 @@
                     <!-- Player + guide -->
                     <Grid x:Name="PlayerPanel" Grid.Column="1" SizeChanged="Players_SizeChanged">
                         <Grid.RowDefinitions>
-                            <RowDefinition x:Name="VideoRow" Height="*" MinHeight="200" />
+                            <RowDefinition x:Name="VideoRow" Height="Auto" />
                             <RowDefinition x:Name="GuideRow" Height="*" />
                         </Grid.RowDefinitions>
-                        <Grid x:Name="LiveVideoBox" Background="Black" ClipToBounds="True">
-                            <StackPanel x:Name="VideoHint" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                <TextBlock Text="&#xE7F4;" FontFamily="{StaticResource Icons}" FontSize="40" Foreground="{StaticResource Thumb}" HorizontalAlignment="Center" />
-                                <TextBlock Text="Select a channel to start watching" Foreground="{StaticResource Muted}" Margin="0,12,0,0" />
-                            </StackPanel>
-                            <Grid x:Name="LiveVideoHost">
-                                <vlc:VideoView x:Name="Video" Visibility="Collapsed">
-                                    <!-- Drawn in VLC's overlay window above the video: click = pause, double-click = full screen. -->
-                                    <Grid x:Name="VideoOverlay" Visibility="Collapsed" Background="#01000000" Loaded="Overlay_Loaded"
-                                          MouseLeftButtonDown="Overlay_MouseLeftButtonDown" MouseMove="Overlay_MouseMove">
-                                        <Border x:Name="Osd" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,22,0,0" CornerRadius="10"
-                                                Background="#CC000000" Padding="16,8" Visibility="Collapsed" IsHitTestVisible="False">
-                                            <TextBlock x:Name="OsdText" Foreground="White" FontSize="14" />
-                                        </Border>
-                                        <Border x:Name="BigPlay" Width="76" Height="76" CornerRadius="38" Background="#99000000" IsHitTestVisible="False"
-                                                HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed">
-                                            <TextBlock x:Name="BigPlayGlyph" Text="&#xE768;" FontFamily="{StaticResource Icons}" FontSize="30" Foreground="White"
-                                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                        </Border>
-                                        <Border x:Name="PlayerBar" VerticalAlignment="Bottom" Padding="16,40,16,8">
-                                            <Border.Background>
-                                                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                                                    <GradientStop Color="#00000000" Offset="0" />
-                                                    <GradientStop Color="#D9000000" Offset="1" />
-                                                </LinearGradientBrush>
-                                            </Border.Background>
-                                            <StackPanel>
-                                                <Grid x:Name="SeekRow" Margin="4,0">
-                                                    <Slider x:Name="SeekBar" Style="{StaticResource SeekSlider}" Minimum="0" Maximum="1"
-                                                            PreviewMouseUp="SeekBar_PreviewMouseUp" MouseMove="SeekBar_MouseMove" />
-                                                    <Border x:Name="SeekTip" CornerRadius="6" Background="#E6000000" Padding="7,2" HorizontalAlignment="Left"
-                                                            VerticalAlignment="Top" Margin="0,-26,0,0" Visibility="Collapsed" IsHitTestVisible="False">
-                                                        <TextBlock x:Name="SeekTipText" Foreground="White" FontSize="11.5" />
+                        <Grid x:Name="LiveCardBox" VerticalAlignment="Top" HorizontalAlignment="Center">
+                            <Border x:Name="LiveCardShadow" CornerRadius="18" Background="{StaticResource Panel}">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="34" ShadowDepth="10" Direction="270" Opacity="0.36" />
+                                </Border.Effect>
+                            </Border>
+                            <Border x:Name="LiveCard" CornerRadius="18" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}"
+                                    BorderThickness="1" Padding="14,10,14,14">
+                                <DockPanel>
+                                    <Grid x:Name="LiveCardHeader" DockPanel.Dock="Top" Margin="2,0,0,10">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,150,0">
+                                            <Border x:Name="LiveBadge" CornerRadius="9" Background="#2622C55E" Padding="8,2" VerticalAlignment="Center"
+                                                    Visibility="Collapsed" Margin="0,0,10,0">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Ellipse Width="7" Height="7" Fill="#22C55E" VerticalAlignment="Center" />
+                                                    <TextBlock Text="LIVE" FontSize="10.5" FontWeight="Bold" Foreground="#22C55E" Margin="6,0,0,0" />
+                                                </StackPanel>
+                                            </Border>
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock x:Name="LiveCardTitle" Text="Live TV" FontSize="15.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock x:Name="LiveCardSub" FontSize="12" Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                        <Button x:Name="LiveCloseBtn" Style="{StaticResource PillButton}" Click="LiveClose_Click" HorizontalAlignment="Right"
+                                                VerticalAlignment="Center" Visibility="Collapsed" ToolTip="Stop playback">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="&#xE711;" FontFamily="{StaticResource Icons}" FontSize="11" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                                <TextBlock Text="Close player" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                        </Button>
+                                    </Grid>
+                                    <Border x:Name="LiveVideoFrame" CornerRadius="12" Background="Black" ClipToBounds="True">
+                                    <Grid x:Name="LiveVideoBox" Background="Black">
+                                        <StackPanel x:Name="VideoHint" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                            <TextBlock Text="&#xE7F4;" FontFamily="{StaticResource Icons}" FontSize="40" Foreground="{StaticResource Thumb}" HorizontalAlignment="Center" />
+                                            <TextBlock Text="Select a channel to start watching" Foreground="{StaticResource Muted}" Margin="0,12,0,0" />
+                                        </StackPanel>
+                                        <Grid x:Name="LiveVideoHost">
+                                            <vlc:VideoView x:Name="Video" Visibility="Collapsed">
+                                                <!-- Drawn in VLC's overlay window above the video: click = pause, double-click = full screen. -->
+                                                <Grid x:Name="VideoOverlay" Visibility="Collapsed" Background="#01000000" Loaded="Overlay_Loaded"
+                                                      MouseLeftButtonDown="Overlay_MouseLeftButtonDown" MouseMove="Overlay_MouseMove">
+                                                    <Border x:Name="Osd" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,22,0,0" CornerRadius="10"
+                                                            Background="#CC000000" Padding="16,8" Visibility="Collapsed" IsHitTestVisible="False">
+                                                        <TextBlock x:Name="OsdText" Foreground="White" FontSize="14" />
+                                                    </Border>
+                                                    <Border x:Name="BigPlay" Width="76" Height="76" CornerRadius="38" Background="#99000000" IsHitTestVisible="False"
+                                                            HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed">
+                                                        <TextBlock x:Name="BigPlayGlyph" Text="&#xE768;" FontFamily="{StaticResource Icons}" FontSize="30" Foreground="White"
+                                                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                    </Border>
+                                                    <Border x:Name="PlayerBar" VerticalAlignment="Bottom" Padding="16,40,16,8">
+                                                        <Border.Background>
+                                                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                                                <GradientStop Color="#00000000" Offset="0" />
+                                                                <GradientStop Color="#D9000000" Offset="1" />
+                                                            </LinearGradientBrush>
+                                                        </Border.Background>
+                                                        <StackPanel>
+                                                            <Grid x:Name="SeekRow" Margin="4,0">
+                                                                <Slider x:Name="SeekBar" Style="{StaticResource SeekSlider}" Minimum="0" Maximum="1"
+                                                                        PreviewMouseUp="SeekBar_PreviewMouseUp" MouseMove="SeekBar_MouseMove" />
+                                                                <Border x:Name="SeekTip" CornerRadius="6" Background="#E6000000" Padding="7,2" HorizontalAlignment="Left"
+                                                                        VerticalAlignment="Top" Margin="0,-26,0,0" Visibility="Collapsed" IsHitTestVisible="False">
+                                                                    <TextBlock x:Name="SeekTipText" Foreground="White" FontSize="11.5" />
+                                                                </Border>
+                                                            </Grid>
+                                                            <Grid x:Name="TimeRow" Margin="6,0,6,2">
+                                                                <TextBlock x:Name="TimePos" Foreground="#D9FFFFFF" FontSize="12" />
+                                                                <TextBlock x:Name="TimeLen" Foreground="#D9FFFFFF" FontSize="12" HorizontalAlignment="Right" />
+                                                            </Grid>
+                                                            <Grid>
+                                                                <StackPanel Orientation="Horizontal">
+                                                                    <Button x:Name="PlayPause" Style="{StaticResource PlayerButton}" Content="&#xE769;" ToolTip="Play / pause (Space, or click the picture)" Click="PlayPause_Click" />
+                                                                    <Button x:Name="Back10Btn" Style="{StaticResource PlayerButton}" ToolTip="Back 10 s (←)" Click="Back10_Click">
+                                                                        <Grid Width="24" Height="24">
+                                                                <Path Fill="White" Width="24" Height="24" Stretch="None" Data="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"></Path>
+                                                                <TextBlock Text="10" FontFamily="{StaticResource UiFont}" FontSize="7" FontWeight="Bold" Foreground="White"
+                                                                           HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,3,0,0" />
+                                                            </Grid>
+                                                                    </Button>
+                                                                    <Button x:Name="Fwd10Btn" Style="{StaticResource PlayerButton}" ToolTip="Forward 10 s (→)" Click="Fwd10_Click">
+                                                                        <Grid Width="24" Height="24">
+                                                                <Path Fill="White" Width="24" Height="24" Stretch="None" Data="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"><Path.RenderTransform><ScaleTransform ScaleX="-1" CenterX="12" /></Path.RenderTransform></Path>
+                                                                <TextBlock Text="10" FontFamily="{StaticResource UiFont}" FontSize="7" FontWeight="Bold" Foreground="White"
+                                                                           HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,3,0,0" />
+                                                            </Grid>
+                                                                    </Button>
+                                                                    <Button x:Name="NextEpisodeBtn" Style="{StaticResource PlayerButton}" Content="&#xE893;" ToolTip="Next episode" Click="NextEpisode_Click" Visibility="Collapsed" />
+                                                                    <Border x:Name="BarLive" CornerRadius="9" Background="#3322C55E" Padding="8,2" VerticalAlignment="Center"
+                                                                Margin="10,0,0,0" Visibility="Collapsed">
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <Ellipse Width="7" Height="7" Fill="#22C55E" VerticalAlignment="Center" />
+                                                                <TextBlock Text="LIVE" FontSize="10.5" FontWeight="Bold" Foreground="#4ADE80" Margin="6,0,0,0" />
+                                                            </StackPanel>
+                                                        </Border>
+                                                        <TextBlock x:Name="BarTitle" Foreground="White" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" Margin="12,0,0,0"
+                                                                               TextTrimming="CharacterEllipsis" MaxWidth="420" />
+                                                                </StackPanel>
+                                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                                                    <Button x:Name="VodMute" Style="{StaticResource PlayerButton}" Content="&#xE767;" ToolTip="Mute (M)" Click="Mute_Click" />
+                                                                    <Slider x:Name="VolumeBar" Style="{StaticResource SeekSlider}" Width="90" Minimum="0" Maximum="100" Value="100"
+                                                                            VerticalAlignment="Center" ValueChanged="VolumeBar_ValueChanged" Margin="0,0,8,0" ToolTip="Volume (↑ / ↓)" />
+                                                                    <Button x:Name="AudioBtn" Style="{StaticResource PlayerButton}" Content="&#xE8D6;" ToolTip="Audio track and delay" Click="AudioTracks_Click" />
+                                                                    <Button x:Name="SubsBtn" Style="{StaticResource PlayerButton}" Content="&#xE7F0;" ToolTip="Subtitles" Click="Subtitles_Click" />
+                                                                    <Button x:Name="SpeedBtn" Style="{StaticResource PlayerButton}" Content="&#xEC4A;" ToolTip="Playback speed" Click="Speed_Click" />
+                                                                    <Button x:Name="FullBtn" Style="{StaticResource PlayerButton}" Content="&#xE740;" ToolTip="Full screen (F11 or double-click)" Click="Fullscreen_Click" />
+                                                                </StackPanel>
+                                                            </Grid>
+                                                        </StackPanel>
                                                     </Border>
                                                 </Grid>
-                                                <Grid x:Name="TimeRow" Margin="6,0,6,2">
-                                                    <TextBlock x:Name="TimePos" Foreground="#D9FFFFFF" FontSize="12" />
-                                                    <TextBlock x:Name="TimeLen" Foreground="#D9FFFFFF" FontSize="12" HorizontalAlignment="Right" />
-                                                </Grid>
-                                                <Grid>
-                                                    <StackPanel Orientation="Horizontal">
-                                                        <Button x:Name="PlayPause" Style="{StaticResource PlayerButton}" Content="&#xE769;" ToolTip="Play / pause (Space, or click the picture)" Click="PlayPause_Click" />
-                                                        <Button x:Name="Back10Btn" Style="{StaticResource PlayerButton}" ToolTip="Back 10 s (←)" Click="Back10_Click">
-                                                            <Viewbox Width="24" Height="24">
-                                                                <Canvas Width="24" Height="24">
-                                                                    <Path Fill="White" Data="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"></Path>
-                                                                    <TextBlock Text="10" FontFamily="{StaticResource UiFont}" FontSize="6.6" FontWeight="Bold" Foreground="White"
-                                                                               Canvas.Left="8.2" Canvas.Top="9.3" />
-                                                                </Canvas>
-                                                            </Viewbox>
-                                                        </Button>
-                                                        <Button x:Name="Fwd10Btn" Style="{StaticResource PlayerButton}" ToolTip="Forward 10 s (→)" Click="Fwd10_Click">
-                                                            <Viewbox Width="24" Height="24">
-                                                                <Canvas Width="24" Height="24">
-                                                                    <Path Fill="White" Data="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"><Path.RenderTransform><ScaleTransform ScaleX="-1" CenterX="12" /></Path.RenderTransform></Path>
-                                                                    <TextBlock Text="10" FontFamily="{StaticResource UiFont}" FontSize="6.6" FontWeight="Bold" Foreground="White"
-                                                                               Canvas.Left="8.2" Canvas.Top="9.3" />
-                                                                </Canvas>
-                                                            </Viewbox>
-                                                        </Button>
-                                                        <Button x:Name="NextEpisodeBtn" Style="{StaticResource PlayerButton}" Content="&#xE893;" ToolTip="Next episode" Click="NextEpisode_Click" Visibility="Collapsed" />
-                                                        <TextBlock x:Name="BarTitle" Foreground="White" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" Margin="12,0,0,0"
-                                                                   TextTrimming="CharacterEllipsis" MaxWidth="420" />
-                                                    </StackPanel>
-                                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                                        <Button x:Name="VodMute" Style="{StaticResource PlayerButton}" Content="&#xE767;" ToolTip="Mute (M)" Click="Mute_Click" />
-                                                        <Slider x:Name="VolumeBar" Style="{StaticResource SeekSlider}" Width="90" Minimum="0" Maximum="100" Value="100"
-                                                                VerticalAlignment="Center" ValueChanged="VolumeBar_ValueChanged" Margin="0,0,8,0" ToolTip="Volume (↑ / ↓)" />
-                                                        <Button x:Name="AudioBtn" Style="{StaticResource PlayerButton}" Content="&#xE8D6;" ToolTip="Audio track and delay" Click="AudioTracks_Click" />
-                                                        <Button x:Name="SubsBtn" Style="{StaticResource PlayerButton}" Content="&#xE7F0;" ToolTip="Subtitles" Click="Subtitles_Click" />
-                                                        <Button x:Name="SpeedBtn" Style="{StaticResource PlayerButton}" Content="&#xEC4A;" ToolTip="Playback speed" Click="Speed_Click" />
-                                                        <Button x:Name="FullBtn" Style="{StaticResource PlayerButton}" Content="&#xE740;" ToolTip="Full screen (F11 or double-click)" Click="Fullscreen_Click" />
-                                                    </StackPanel>
-                                                </Grid>
-                                            </StackPanel>
-                                        </Border>
+                                            </vlc:VideoView>
+                                        </Grid>
                                     </Grid>
-                                </vlc:VideoView>
-                            </Grid>
+                                    </Border>
+                                </DockPanel>
+                            </Border>
                         </Grid>
 
                         <!-- EPG list (Settings → Programme guide → List) -->
@@ -492,25 +541,48 @@
                             <StackPanel Orientation="Horizontal">
                                 <Button Style="{StaticResource IconButton}" Content="&#xE72B;" ToolTip="Back (Esc)" Click="VodBack_Click"
                                         Width="40" Height="40" FontSize="16" />
-                                <StackPanel VerticalAlignment="Center" Margin="12,0,0,0">
-                                    <TextBlock x:Name="VodNowLabel" Text="NOW PLAYING" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource Muted}" Visibility="Collapsed" />
-                                    <TextBlock x:Name="VodHeaderTitle" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxWidth="900" />
-                                </StackPanel>
+                                <TextBlock x:Name="VodHeaderTitle" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" MaxWidth="900"
+                                           VerticalAlignment="Center" Margin="12,0,0,0" />
                             </StackPanel>
-                            <Button x:Name="VodCloseBtn" Style="{StaticResource SecondaryButton}" HorizontalAlignment="Right" VerticalAlignment="Center"
-                                    Click="VodClose_Click" Visibility="Collapsed" ToolTip="Stop and show the details (Esc)">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="&#xE711;" FontFamily="{StaticResource Icons}" FontSize="11" VerticalAlignment="Center" Margin="0,0,8,0" />
-                                    <TextBlock Text="Close player" />
-                                </StackPanel>
-                            </Button>
                         </Grid>
 
-                        <!-- Player card (16:9, sized in code; fixed: only the area below scrolls, native video cannot be clipped) -->
-                        <Border x:Name="VodPlayerBox" Grid.Row="1" Margin="18,12,18,10" CornerRadius="12" Background="Black" BorderThickness="1"
-                                BorderBrush="{StaticResource Line}" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Top">
-                            <Grid x:Name="VodVideoHost" Background="Black" />
-                        </Border>
+                        <!-- Raised player card (16:9 video sized in code). Only the area below scrolls: native video cannot be clipped. -->
+                        <Grid x:Name="VodPlayerBox" Grid.Row="1" Margin="18,6,18,14" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Top">
+                            <Border x:Name="VodCardShadow" CornerRadius="18" Background="{StaticResource Panel}">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="36" ShadowDepth="12" Direction="270" Opacity="0.38" />
+                                </Border.Effect>
+                            </Border>
+                            <Border x:Name="VodCard" CornerRadius="18" Background="{StaticResource Panel}" BorderBrush="{StaticResource Line}"
+                                    BorderThickness="1" Padding="16,12,16,16">
+                                <DockPanel>
+                                    <Grid x:Name="VodCardHeader" DockPanel.Dock="Top" Margin="2,0,0,12">
+                                        <StackPanel VerticalAlignment="Center" Margin="0,0,330,0">
+                                            <TextBlock Text="NOW PLAYING" FontSize="10.5" FontWeight="Bold" Foreground="{StaticResource Muted}" />
+                                            <TextBlock x:Name="VodCardTitle" FontSize="18" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Margin="0,1,0,0" />
+                                            <TextBlock x:Name="VodCardSub" FontSize="12.5" Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                            <Button Style="{StaticResource LinkButton}" Click="CopyUrl_Click" ToolTip="Copy the stream address" Margin="0,0,10,0">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="&#xE8C8;" FontFamily="{StaticResource Icons}" FontSize="13" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                                    <TextBlock Text="Copy stream URL" VerticalAlignment="Center" />
+                                                </StackPanel>
+                                            </Button>
+                                            <Button Style="{StaticResource PillButton}" Click="VodClose_Click" ToolTip="Stop and show the details (Esc)">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="&#xE711;" FontFamily="{StaticResource Icons}" FontSize="11" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                                    <TextBlock Text="Close player" VerticalAlignment="Center" />
+                                                </StackPanel>
+                                            </Button>
+                                        </StackPanel>
+                                    </Grid>
+                                    <Border x:Name="VodVideoFrame" CornerRadius="12" Background="Black" ClipToBounds="True">
+                                        <Grid x:Name="VodVideoHost" Background="Black" />
+                                    </Border>
+                                </DockPanel>
+                            </Border>
+                        </Grid>
 
                         <ScrollViewer x:Name="VodScroll" Grid.Row="2" VerticalScrollBarVisibility="Auto">
                             <StackPanel x:Name="VodContent" Margin="34,14,34,30" />

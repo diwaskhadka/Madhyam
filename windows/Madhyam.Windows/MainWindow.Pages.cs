@@ -42,7 +42,9 @@ public partial class MainWindow
             SetStatus(Explain(ex));
         }
         if (version != _loadVersion) return;
+        ElasticScroll.Attach(scroll);
         PageHost.Content = scroll;
+        Motion.Rise(body, 14, 240);
     }
 
     private void Open(ItemVm it)

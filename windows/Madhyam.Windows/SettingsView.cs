@@ -61,6 +61,7 @@ public sealed class SettingsView : UserControl
 
         var panel = new Border { CornerRadius = new CornerRadius(14), Background = Brush("Panel") };
         _scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Content = _content };
+        ElasticScroll.Attach(_scroll);
         panel.Child = _scroll;
         Grid.SetColumn(panel, 1);
         grid.Children.Add(panel);
@@ -200,6 +201,7 @@ public sealed class SettingsView : UserControl
         _current = key;
         _content.Children.Clear();
         _scroll.ScrollToTop();
+        Motion.Rise(_content, 12, 220);
         switch (key)
         {
             case "General": General(); break;

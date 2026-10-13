@@ -94,6 +94,7 @@ public partial class MainWindow
         }
         foreach (var it in items) it.IsFavorite = _favorites.Contains(it.Id);
         PosterGrid.ItemsSource = items;
+        Motion.Rise(PosterGrid, 12, 220);
         GridCount.Text = _gridTotal == 0
             ? (_vodSearch != null ? "Nothing matches." : "No items here.")
             : $"{_gridTotal:N0} {(kind == "series" ? "series" : "movies")}";
@@ -199,6 +200,7 @@ public partial class MainWindow
         VodHeaderTitle.Text = fresh.DisplayName;
         RenderVodPage();
         VodScroll.ScrollToTop();
+        Motion.Rise(VodPage, 18, 280);
 
         DetailsInfo? info = null;
         var eps = new List<ItemVm>();
@@ -622,6 +624,7 @@ public partial class MainWindow
         {
             _season = v;
             RenderVodPage();
+            if (VodContent.Children.Count > 0) Motion.Rise(VodContent.Children[^1], 10, 200);
         }));
         s.Children.Add(bar);
         s.Children.Add(Wrap(eps.Select(e => EpisodeCard(series, e))));
@@ -654,25 +657,53 @@ public partial class MainWindow
             d.Margin = new Thickness(7, 7, 7, 12);
             img.Children.Add(d);
         }
-        if (ep.IsWatched)
-        {
-            var c = new Border
-            {
-                Width = 24,
-                Height = 24,
-                CornerRadius = new CornerRadius(12),
-                Background = B("Accent"),
-                HorizontalAlignment = HorizontalAlignment.Right,
-                VerticalAlignment = VerticalAlignment.Top,
-                Margin = new Thickness(7),
-                Child = new TextBlock { Text = "", FontFamily = Icons, FontSize = 11, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center },
-            };
-            img.Children.Add(c);
-        }
-        else if (ep.WatchedRatio > 0)
-        {
+        if (!ep.IsWatched && ep.WatchedRatio > 0)
             img.Children.Add(new ProgressBar { Style = St("ThinProgress"), Value = ep.WatchedRatio, VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(8, 0, 8, 6) });
+
+        // Watched toggle: filled when watched, an outline that appears on hover otherwise.
+        var tick = new TextBlock { Text = "\uE73E", FontFamily = Icons, FontSize = 12, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        var circle = new Border { Width = 28, Height = 28, CornerRadius = new CornerRadius(14), BorderThickness = new Thickness(1.6), Child = tick };
+        void Paint(bool hot)
+        {
+            circle.Background = ep.IsWatched ? B("Accent") : new SolidColorBrush(Color.FromArgb(0xB3, 0, 0, 0));
+            circle.BorderBrush = ep.IsWatched ? B("Accent") : Brushes.White;
+            tick.Foreground = Brushes.White;
+            circle.Opacity = ep.IsWatched || hot ? 1 : 0;
         }
+        Paint(false);
+        var watchBtn = new Button
+        {
+            Content = circle,
+            Template = BareTemplate(),
+            Cursor = Cursors.Hand,
+            Focusable = false,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(7),
+            ToolTip = ep.IsWatched ? "Watched — click to mark as unwatched" : "Mark as watched",
+        };
+        watchBtn.Click += async (_, e) =>
+        {
+            e.Handled = true;
+            await _repo.SetWatched(ep, !ep.IsWatched);
+            await ReloadDetailsProgress();
+        };
+        img.Children.Add(watchBtn);
+
+        // Play button in the middle on hover.
+        var playHint = new Border
+        {
+            Width = 44,
+            Height = 44,
+            CornerRadius = new CornerRadius(22),
+            Background = B("Accent"),
+            Opacity = 0,
+            IsHitTestVisible = false,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = new TextBlock { Text = "\uE768", FontFamily = Icons, FontSize = 16, Foreground = Brushes.White, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(3, 0, 0, 0) },
+        };
+        if (!playing) img.Children.Add(playHint);
         if (playing)
         {
             var p = Badge("▶ PLAYING", "PrimaryFg");
@@ -697,8 +728,18 @@ public partial class MainWindow
             stack.Children.Add(plot);
         }
         var card = new Button { Content = stack, Template = BareTemplate(), Cursor = Cursors.Hand, Focusable = false, Margin = new Thickness(0, 0, 18, 20), ToolTip = ep.Name };
-        card.MouseEnter += (_, _) => hover.BorderBrush = B("Accent");
-        card.MouseLeave += (_, _) => hover.BorderBrush = playing ? B("Accent") : Brushes.Transparent;
+        card.MouseEnter += (_, _) =>
+        {
+            hover.BorderBrush = B("Accent");
+            Paint(true);
+            playHint.Opacity = 1;
+        };
+        card.MouseLeave += (_, _) =>
+        {
+            hover.BorderBrush = playing ? B("Accent") : Brushes.Transparent;
+            Paint(false);
+            playHint.Opacity = 0;
+        };
         card.Click += (_, _) => _ = PlayEpisode(ep);
         card.MouseRightButtonUp += (_, e) =>
         {

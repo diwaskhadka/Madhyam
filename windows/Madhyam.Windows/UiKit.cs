@@ -306,10 +306,31 @@ public static class UiKit
             {
                 e.Handled = true;
                 var parent = FindParent<ScrollViewer>(VisualTreeHelper.GetParent(sv));
-                parent?.RaiseEvent(new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta) { RoutedEvent = UIElement.MouseWheelEvent });
+                // Preview first so the page's elastic scrolling gets it, then the plain event as a fallback.
+                var pe = new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta) { RoutedEvent = UIElement.PreviewMouseWheelEvent };
+                parent?.RaiseEvent(pe);
+                if (!pe.Handled) parent?.RaiseEvent(new MouseWheelEventArgs(e.MouseDevice, e.Timestamp, e.Delta) { RoutedEvent = UIElement.MouseWheelEvent });
             }
         };
         return sv;
+    }
+
+    /// <summary>First descendant of a type (breadth-first through the visual tree).</summary>
+    public static T? FindChild<T>(DependencyObject root) where T : DependencyObject
+    {
+        var queue = new Queue<DependencyObject>();
+        queue.Enqueue(root);
+        while (queue.Count > 0)
+        {
+            var d = queue.Dequeue();
+            for (var i = 0; i < VisualTreeHelper.GetChildrenCount(d); i++)
+            {
+                var c = VisualTreeHelper.GetChild(d, i);
+                if (c is T t) return t;
+                queue.Enqueue(c);
+            }
+        }
+        return null;
     }
 
     public static T? FindParent<T>(DependencyObject? d) where T : DependencyObject
@@ -345,12 +366,32 @@ public static class UiKit
         return s;
     }
 
-    /// <summary>Check-box styled as filter toggles.</summary>
-    public static CheckBox Filter(string label, bool on, Action<bool> changed)
+    /// <summary>Rounded on/off filter chip with a check mark (advanced search filters).</summary>
+    public static FrameworkElement Filter(string label, bool on, Action<bool> changed)
     {
-        var c = new CheckBox { Content = label, IsChecked = on, Foreground = B("Fg"), Margin = new Thickness(0, 0, 18, 0), VerticalAlignment = VerticalAlignment.Center, FontSize = 13.5 };
-        c.Click += (_, _) => changed(c.IsChecked == true);
-        return c;
+        var tick = new TextBlock { Text = "\uE73E", FontFamily = Icons, FontSize = 11, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 8, 0) };
+        var text = new TextBlock { Text = label, FontSize = 13, VerticalAlignment = VerticalAlignment.Center };
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        row.Children.Add(tick);
+        row.Children.Add(text);
+        var chip = new Border { CornerRadius = new CornerRadius(17), BorderThickness = new Thickness(1), Padding = new Thickness(14, 7, 16, 7), Child = row, Cursor = Cursors.Hand, Margin = new Thickness(0, 0, 10, 8) };
+        var state = on;
+        void Paint()
+        {
+            chip.Background = state ? B("CardSelected") : B("Card");
+            chip.BorderBrush = state ? B("Accent") : B("Line");
+            text.Foreground = state ? B("Accent") : B("Fg");
+            tick.Foreground = B("Accent");
+            tick.Visibility = state ? Visibility.Visible : Visibility.Collapsed;
+        }
+        Paint();
+        chip.MouseLeftButtonUp += (_, _) =>
+        {
+            state = !state;
+            Paint();
+            changed(state);
+        };
+        return chip;
     }
 
     /// <summary>Chip-like segmented choice (All | Live | Movies | Series).</summary>
@@ -400,7 +441,7 @@ public static class UiKit
     // ----------------------------------------------------------- pop-up menus
 
     /// <summary>One row of a pop-up menu. Label "-" draws a separator; Glyph may be empty.</summary>
-    public sealed record MenuRow(string Glyph, string Label, bool Checked, Action Run, string? Sub = null, string? GlyphBrush = null);
+    public sealed record MenuRow(string Glyph, string Label, bool Checked, Action Run, string? Sub = null, string? GlyphBrush = null, string? LabelBrush = null);
 
     /// <summary>
     /// pop-up: optional caps header, rows with a leading icon and a
@@ -410,42 +451,52 @@ public static class UiKit
     /// <summary>The pop-up currently shown (Esc closes it before anything else).</summary>
     public static Popup? OpenPopup { get; private set; }
 
+    /// <param name="rows">Choices; they scroll when there are many (e.g. 30 subtitle languages).</param>
+    /// <param name="fixedRows">Actions that always stay visible below the choices.</param>
+    /// <param name="extra">Other always-visible controls (delay steppers).</param>
     public static Popup PopMenu(FrameworkElement anchor, string? title, IEnumerable<MenuRow> rows, IEnumerable<UIElement>? extra = null,
-                                bool above = false, double width = 250)
+                                bool above = false, double width = 250, IEnumerable<MenuRow>? fixedRows = null, double rowsMaxHeight = 420,
+                                IEnumerable<UIElement>? prefix = null, PlacementMode? placement = null, bool keepOthers = false)
     {
         var popup = new Popup
         {
             PlacementTarget = anchor,
-            Placement = above ? PlacementMode.Top : PlacementMode.Bottom,
+            Placement = placement ?? (above ? PlacementMode.Top : PlacementMode.Bottom),
             StaysOpen = false,
             AllowsTransparency = true,
-            PopupAnimation = PopupAnimation.Fade,
-            VerticalOffset = above ? -6 : 6,
+            PopupAnimation = PopupAnimation.None, // our own "unfold" below
+            VerticalOffset = placement == null ? (above ? -6 : 6) : -8,
+            HorizontalOffset = placement == PlacementMode.Right ? 4 : 0,
         };
-        var stack = new StackPanel();
-        if (title != null) stack.Children.Add(MenuHeader(title));
-        foreach (var r in rows)
-        {
-            if (r.Label == "-")
-            {
-                stack.Children.Add(new Border { Height = 1, Background = B("Line"), Margin = new Thickness(6, 5, 6, 5) });
-                continue;
-            }
-            stack.Children.Add(MenuRowElement(r, () => popup.IsOpen = false));
-        }
+        void Close() => popup.IsOpen = false;
+        UIElement Build(MenuRow r) => r.Label == "-"
+            ? new Border { Height = 1, Background = B("Line"), Margin = new Thickness(6, 5, 6, 5) }
+            : MenuRowElement(r, Close);
+
+        var outer = new StackPanel();
+        if (title != null) outer.Children.Add(MenuHeader(title));
+        if (prefix != null)
+            foreach (var p in prefix) outer.Children.Add(p);
+        var list = new StackPanel();
+        foreach (var r in rows) list.Children.Add(Build(r));
+        var scroll = new ScrollViewer { Content = list, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, MaxHeight = rowsMaxHeight };
+        ElasticScroll.Attach(scroll);
+        outer.Children.Add(scroll);
+        if (fixedRows != null)
+            foreach (var r in fixedRows) outer.Children.Add(Build(r));
         if (extra != null)
-            foreach (var e in extra) stack.Children.Add(e);
+            foreach (var e in extra) outer.Children.Add(e);
         var root = new Border
         {
             Width = width,
-            CornerRadius = new CornerRadius(12),
+            CornerRadius = new CornerRadius(14),
             Background = B("Panel"),
             BorderBrush = B("Line"),
             BorderThickness = new Thickness(1),
             Padding = new Thickness(6),
-            Margin = new Thickness(10),
-            Effect = new DropShadowEffect { BlurRadius = 18, ShadowDepth = 3, Opacity = 0.45 },
-            Child = new ScrollViewer { Content = stack, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, MaxHeight = 520 },
+            Margin = new Thickness(12),
+            Effect = new DropShadowEffect { BlurRadius = 22, ShadowDepth = 4, Opacity = 0.4 },
+            Child = outer,
         };
         // A pop-up inherits fonts from its anchor; player and icon buttons use the icon font,
         // which turned every label into boxes. Reset text properties explicitly.
@@ -453,8 +504,10 @@ public static class UiKit
         TextElement.SetFontSize(root, 13.5);
         TextElement.SetForeground(root, B("Fg"));
         popup.Child = root;
+        popup.Opened += (_, _) => Motion.Unfold(root, above, placement == PlacementMode.Right);
         popup.Closed += (_, _) => { if (OpenPopup == popup) OpenPopup = null; };
-        OpenPopup = popup;
+        if (!keepOthers) OpenPopup?.SetCurrentValue(Popup.IsOpenProperty, false);
+        if (!keepOthers) OpenPopup = popup;
         popup.IsOpen = true;
         return popup;
     }
@@ -477,7 +530,7 @@ public static class UiKit
         if (r.Glyph.Length > 0)
             g.Children.Add(new TextBlock { Text = r.Glyph, FontFamily = Icons, FontSize = 14, Foreground = B(r.GlyphBrush ?? (r.Checked ? "Accent" : "Fg")), VerticalAlignment = VerticalAlignment.Center });
         var text = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        text.Children.Add(Text(r.Label, 13.5, r.Checked ? "Accent" : "Fg", r.Checked ? FontWeights.SemiBold : FontWeights.Normal));
+        text.Children.Add(Text(r.Label, 13.5, r.LabelBrush ?? (r.Checked ? "Accent" : "Fg"), r.Checked ? FontWeights.SemiBold : FontWeights.Normal));
         if (r.Sub != null) text.Children.Add(Text(r.Sub, 11.5, "Muted"));
         Grid.SetColumn(text, 1);
         g.Children.Add(text);

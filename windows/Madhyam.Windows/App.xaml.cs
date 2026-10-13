@@ -31,12 +31,24 @@ public partial class App : Application
             return;
         }
 
+        // One dialog at a time, and the same error only once a minute: a layout error repeats on
+        // every frame and used to stack dozens of dialogs.
+        var showing = false;
+        var lastText = "";
+        var lastAt = DateTime.MinValue;
         DispatcherUnhandledException += (_, args) =>
         {
-            File.AppendAllText(Path.Combine(DataDir, "error.log"), $"{DateTime.Now:u} {args.Exception}\n\n");
-            MessageBox.Show(args.Exception.Message, "Madhyam error", MessageBoxButton.OK, MessageBoxImage.Error);
             args.Handled = true; // keep the app alive; errors are logged
+            try { File.AppendAllText(Path.Combine(DataDir, "error.log"), $"{DateTime.Now:u} {args.Exception}\n\n"); } catch { }
+            var text = args.Exception.Message;
+            if (showing || (text == lastText && DateTime.Now - lastAt < TimeSpan.FromMinutes(1))) return;
+            showing = true;
+            lastText = text;
+            lastAt = DateTime.Now;
+            try { MessageBox.Show(text, "Madhyam error", MessageBoxButton.OK, MessageBoxImage.Error); }
+            finally { showing = false; }
         };
+        Motion.EnablePressFeedback();
         base.OnStartup(e);
     }
 

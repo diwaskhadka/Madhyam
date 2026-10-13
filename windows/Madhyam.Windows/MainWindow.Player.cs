@@ -47,45 +47,53 @@ public partial class MainWindow
 
     private void Players_SizeChanged(object sender, SizeChangedEventArgs e) => SizePlayers();
 
-    /// <summary>Keep the video 16:9 instead of stretching it over the whole page.</summary>
+    /// <summary>Keep the video 16:9 inside a raised card instead of stretching it over the page.</summary>
     private void SizePlayers()
     {
+        static bool Ok(double v) => double.IsFinite(v) && v > 0;
         var fs = _fullscreen && Playing != null;
-        // Live: video on top at 16:9 of the column width, guide below it.
+
+        // Live: card on top (16:9 video + header), guide below it.
         if (fs)
         {
             VideoRow.Height = new GridLength(1, GridUnitType.Star);
             GuideRow.Height = new GridLength(0);
-            LiveVideoBox.Width = double.NaN;
+            LiveCardBox.Width = double.NaN;
+            LiveCardBox.HorizontalAlignment = HorizontalAlignment.Stretch;
+            LiveCardBox.VerticalAlignment = VerticalAlignment.Stretch;
+            LiveVideoBox.Height = double.NaN;
         }
-        else if (PlayerPanel.ActualWidth > 0)
+        else if (Ok(PlayerPanel.ActualWidth) && Ok(PlayerPanel.ActualHeight))
         {
-            var w = PlayerPanel.ActualWidth;
-            var guide = TimelinePanel.Visibility == Visibility.Visible ? 175 : GuidePanel.Visibility == Visibility.Visible ? 220 : 0;
-            var h = Math.Max(200, Math.Min(w * 9 / 16, PlayerPanel.ActualHeight - guide));
-            VideoRow.Height = new GridLength(h);
+            const double chrome = 30, header = 62;
+            var guide = TimelinePanel.Visibility == Visibility.Visible ? 180 : GuidePanel.Visibility == Visibility.Visible ? 230 : 0;
+            var vw = Math.Min(PlayerPanel.ActualWidth - chrome, (PlayerPanel.ActualHeight - guide - header - chrome) * 16 / 9);
+            vw = Math.Max(300, vw);
+            VideoRow.Height = GridLength.Auto;
             GuideRow.Height = new GridLength(1, GridUnitType.Star);
-            LiveVideoBox.Width = Math.Min(w, h * 16 / 9);
-            LiveVideoBox.HorizontalAlignment = HorizontalAlignment.Center;
+            LiveCardBox.Width = vw + chrome;
+            LiveCardBox.HorizontalAlignment = HorizontalAlignment.Center;
+            LiveCardBox.VerticalAlignment = VerticalAlignment.Top;
+            LiveVideoBox.Height = vw * 9 / 16;
         }
 
-        // Movie / episode: a centred 16:9 card, leaving room to peek at "About" below.
+        // Movie / episode: centred card, leaving room to peek at "About" below.
         if (fs)
         {
             VodPlayerBox.Width = double.NaN;
-            VodPlayerBox.Height = double.NaN;
             VodPlayerBox.HorizontalAlignment = HorizontalAlignment.Stretch;
             VodPlayerBox.VerticalAlignment = VerticalAlignment.Stretch;
+            VodVideoFrame.Height = double.NaN;
         }
-        else if (VodPage.ActualWidth > 0)
+        else if (Ok(VodPage.ActualWidth) && Ok(VodPage.ActualHeight))
         {
-            var availW = VodPage.ActualWidth - 36;
-            var availH = VodPage.ActualHeight - 70 - 110;
-            var vw = Math.Max(320, Math.Min(Math.Min(availW, 1280), availH * 16 / 9));
-            VodPlayerBox.Width = vw;
-            VodPlayerBox.Height = vw * 9 / 16;
+            const double chrome = 34, header = 70;
+            var vw = Math.Min(Math.Min(VodPage.ActualWidth - 36 - chrome, 1280), (VodPage.ActualHeight - 60 - header - chrome - 90) * 16 / 9);
+            vw = Math.Max(320, vw);
+            VodPlayerBox.Width = vw + chrome;
             VodPlayerBox.HorizontalAlignment = HorizontalAlignment.Center;
             VodPlayerBox.VerticalAlignment = VerticalAlignment.Top;
+            VodVideoFrame.Height = vw * 9 / 16;
         }
     }
 
@@ -152,6 +160,17 @@ public partial class MainWindow
         Fwd10Btn.Visibility = vod ? Visibility.Visible : Visibility.Collapsed;
         SpeedBtn.Visibility = vod ? Visibility.Visible : Visibility.Collapsed;
         BarTitle.Text = it.IsLive ? it.DisplayName : "";
+        BarLive.Visibility = it.IsLive ? Visibility.Visible : Visibility.Collapsed;
+        SubsBtn.Visibility = it.IsLive ? Visibility.Collapsed : Visibility.Visible; // subtitles are a film / episode thing
+        if (it.IsLive)
+        {
+            LiveCardTitle.Text = it.DisplayName;
+            LiveCardSub.Text = it.HasNow ? $"Now: {it.NowTitle}" : it.Group;
+        }
+        else
+        {
+            SetVodCardTitles(it);
+        }
         _audioDelayMs = 0;
         _subDelayMs = 0;
         _player.Mute = _muted;
@@ -205,6 +224,9 @@ public partial class MainWindow
     {
         if (_player.Length <= 0 || SeekBar.ActualWidth <= 0) return;
         var x = e.GetPosition(SeekBar).X;
+        // While the window switches to full screen the position can be NaN; a NaN margin
+        // breaks layout on every frame ("should not return NaN values as its DesiredSize").
+        if (!double.IsFinite(x)) return;
         var ratio = Math.Clamp(x / SeekBar.ActualWidth, 0, 1);
         SeekTipText.Text = Fmt((long)(ratio * _player.Length));
         SeekTip.Visibility = Visibility.Visible;
@@ -216,6 +238,47 @@ public partial class MainWindow
     private void HideSeekTip(object sender, MouseEventArgs e) => SeekTip.Visibility = Visibility.Collapsed;
 
     private void VodClose_Click(object sender, RoutedEventArgs e) => StopPlayback();
+
+    private void LiveClose_Click(object sender, RoutedEventArgs e) => StopPlayback();
+
+    private void CopyUrl_Click(object sender, RoutedEventArgs e)
+    {
+        if (Playing is not { } it) return;
+        try
+        {
+            Clipboard.SetText(it.Url);
+            ShowOsd("Stream URL copied");
+            SetStatus("Stream URL copied to the clipboard.");
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Could not copy: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Card title: the film or series name, and for episodes "S03E01 · title"
+    /// without repeating the series name the provider often puts in every episode title.
+    /// </summary>
+    private void SetVodCardTitles(ItemVm it)
+    {
+        if (it.Kind == "episode" && _details is { IsSeries: true } series)
+        {
+            VodCardTitle.Text = series.Name;
+            var ep = it.Name;
+            foreach (var cut in new[] { series.Name, CleanTitle(series.Name) })
+                if (cut.Length > 2) ep = ep.Replace(cut, "", StringComparison.OrdinalIgnoreCase);
+            ep = System.Text.RegularExpressions.Regex.Replace(ep, @"\bS\d{1,2}\s*E\d{1,3}\b", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            ep = System.Text.RegularExpressions.Regex.Replace(ep, @"^\s*[A-Z]{2,4}\s*[-|:]\s*", "");
+            ep = ep.Trim(' ', '-', '·', '|', ':', '.');
+            VodCardSub.Text = ep.Length > 1 ? $"{SE(it)} · {ep}" : SE(it);
+        }
+        else
+        {
+            VodCardTitle.Text = it.Name;
+            VodCardSub.Text = string.Join("  ·  ", new[] { it.Year, it.Genre }.Where(x => !string.IsNullOrEmpty(x)));
+        }
+    }
 
     // ================================================================ volume and mute
 
@@ -296,25 +359,29 @@ public partial class MainWindow
             new Border { Height = 1, Background = UiKit.B("Line"), Margin = new Thickness(6, 5, 6, 5) },
             UiKit.Stepper("", "Audio delay  (J / K)", () => Delay(_audioDelayMs), () => ChangeAudioDelay(-50), () => ChangeAudioDelay(50), () => ChangeAudioDelay(0)),
         };
-        TrackPopup(UiKit.PopMenu(AudioBtn, "Audio", rows, extra, above: true, width: 300));
+        TrackPopup(UiKit.PopMenu(AudioBtn, "Audio", rows, extra, above: true, width: 300, rowsMaxHeight: 230));
     }
 
     private void Subtitles_Click(object sender, RoutedEventArgs e)
     {
         var tracks = _player.SpuDescription;
         var cur = _player.Spu;
-        var rows = new List<UiKit.MenuRow> { new("", "Off", cur < 0, () => _player.SetSpu(-1)) };
+        // Only the language list scrolls; file / online / delay always stay in view.
+        var rows = new List<UiKit.MenuRow> { new("\uE711", "Off", cur < 0, () => _player.SetSpu(-1)) };
         rows.AddRange(tracks.Where(t => t.Id >= 0)
-            .Select(t => new UiKit.MenuRow("", string.IsNullOrEmpty(t.Name) ? $"Track {t.Id}" : t.Name, t.Id == cur, () => _player.SetSpu(t.Id))));
-        rows.Add(new UiKit.MenuRow("", "-", false, () => { }));
-        rows.Add(new UiKit.MenuRow("", "Load subtitle file…", false, LoadSubtitleFile));
-        rows.Add(new UiKit.MenuRow("", "Search subtitles online…", false, SearchSubtitlesOnline, "OpenSubtitles.com"));
+            .Select(t => new UiKit.MenuRow("\uE774", string.IsNullOrEmpty(t.Name) ? $"Track {t.Id}" : t.Name, t.Id == cur, () => _player.SetSpu(t.Id))));
+        var fixedRows = new[]
+        {
+            new UiKit.MenuRow("", "-", false, () => { }),
+            new UiKit.MenuRow("\uE8E5", "Load subtitle file…", false, LoadSubtitleFile),
+            new UiKit.MenuRow("\uE721", "Search subtitles online…", false, SearchSubtitlesOnline, "OpenSubtitles.com"),
+        };
         var extra = new UIElement[]
         {
             new Border { Height = 1, Background = UiKit.B("Line"), Margin = new Thickness(6, 5, 6, 5) },
-            UiKit.Stepper("", "Subtitle delay  (G / H)", () => Delay(_subDelayMs), () => ChangeSubDelay(-50), () => ChangeSubDelay(50), () => ChangeSubDelay(0)),
+            UiKit.Stepper("\uE916", "Subtitle delay  (G / H)", () => Delay(_subDelayMs), () => ChangeSubDelay(-50), () => ChangeSubDelay(50), () => ChangeSubDelay(0)),
         };
-        TrackPopup(UiKit.PopMenu(SubsBtn, "Subtitles", rows, extra, above: true, width: 320));
+        TrackPopup(UiKit.PopMenu(SubsBtn, "Subtitles", rows, extra, above: true, width: 330, fixedRows: fixedRows, rowsMaxHeight: 230));
     }
 
     private void Speed_Click(object sender, RoutedEventArgs e)

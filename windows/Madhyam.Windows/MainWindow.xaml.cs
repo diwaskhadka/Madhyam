@@ -6,6 +6,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Shapes;
 using System.Windows.Threading;
 using MadhyamCoreNet;
 using LibVLCSharp.Shared;
@@ -75,6 +76,12 @@ public partial class MainWindow : Window
             await ApplySearch();
         };
         _tick.Tick += (_, _) => OnTick();
+        // Smooth, elastic scrolling in the category, channel and guide lists and the grids.
+        ElasticScroll.Attach(GroupList);
+        ElasticScroll.Attach(ItemList);
+        ElasticScroll.Attach(GuideList);
+        ElasticScroll.Attach(GridScroll);
+        ElasticScroll.Attach(VodScroll);
         _perPage = S.PerPage is 25 or 50 or 100 ? S.PerPage : 50;
         HighlightPerPage();
         RestoreWindowPlacement();
@@ -136,7 +143,8 @@ public partial class MainWindow : Window
             await _repo.Init();
             _favorites = await _repo.FavoriteIds();
             await ReloadSources();
-        });
+        }, quiet: true);
+        if (_source != null && Arg("--screenshot") == null) _ = CheckSource(_source, announce: false);
         var wanted = Arg("--mode") ?? (S.StartupView == "Last" ? S.LastView : S.StartupView);
         // Search is only a start view when asked for on the command line (CI screenshots).
         var start = Enum.TryParse<Mode>(wanted, true, out var parsed) && parsed != Mode.Settings && (parsed != Mode.Search || Arg("--mode") != null)
@@ -285,7 +293,7 @@ public partial class MainWindow : Window
     public void SetStatus(string text) => Status.Text = text;
 
     /// <summary>Run a task with a status line; errors are shown, not thrown.</summary>
-    public async Task Run(string label, Func<Task> work)
+    public async Task Run(string label, Func<Task> work, bool quiet = false)
     {
         SetStatus(label);
         try
@@ -362,25 +370,131 @@ public partial class MainWindow : Window
     /// <summary>53,324 → "53K", 950 → "950".</summary>
     public static string Compact(int n) => n >= 10_000 ? $"{n / 1000:N0}K" : n.ToString("N0");
 
+    /// <summary>Result of the last connection check per source: true = online, false = failed, missing = not checked.</summary>
+    private readonly Dictionary<int, bool> _sourceOnline = new();
+
+    private async Task CheckSource(Source src, bool announce)
+    {
+        try
+        {
+            var msg = await _repo.TestConnection(src.Id);
+            _sourceOnline[src.Id] = true;
+            if (announce) SetStatus($"{src.Name}: {msg}");
+        }
+        catch (Exception ex)
+        {
+            _sourceOnline[src.Id] = false;
+            if (announce) SetStatus($"{src.Name}: {Explain(ex)}");
+        }
+    }
+
+    /// <summary>playlist menu: playlists with status dot and a ⋮ menu, then shortcuts.</summary>
     private void PlaylistButton_Click(object sender, MouseButtonEventArgs e)
     {
+        Popup? popup = null;
         var rows = new List<UiKit.MenuRow>();
-        foreach (var src in _sources)
-        {
-            var when = src.UpdatedAt > 0 ? $" · {DateTimeOffset.FromUnixTimeSeconds(src.UpdatedAt).LocalDateTime:MMM d, HH:mm}" : "";
-            rows.Add(new UiKit.MenuRow(src.Kind == "xtream" ? "\uE774" : "\uE8FD", src.Name, src.Id == _source?.Id,
-                () => _ = SwitchSource(src), $"{src.KindLabel}{when}"));
-        }
-        if (rows.Count > 0) rows.Add(new UiKit.MenuRow("", "-", false, () => { }));
         if (_source is { } cur)
         {
             rows.Add(new UiKit.MenuRow("\uE946", "Playlist info", false, () => _ = ShowPlaylistInfo(cur)));
             if (cur.Kind == "xtream") rows.Add(new UiKit.MenuRow("\uE77B", "Account info", false, () => _ = ShowAccountInfo(cur)));
-            rows.Add(new UiKit.MenuRow("\uE72C", "Refresh playlist", false, () => _ = RefreshSource(cur)));
         }
         rows.Add(new UiKit.MenuRow("\uE710", "Add playlist", false, OpenAddSource));
-        rows.Add(new UiKit.MenuRow("\uE713", "Manage sources", false, () => OpenSettings("Sources")));
-        UiKit.PopMenu(PlaylistButton, "My playlists", rows, width: 300);
+
+        var list = new StackPanel();
+        foreach (var src in _sources) list.Children.Add(PlaylistRow(src, () => popup!.IsOpen = false));
+        var top = new UIElement[]
+        {
+            list,
+            new Border { Height = 1, Background = UiKit.B("Line"), Margin = new Thickness(6, 6, 6, 4) },
+        };
+        // Header + playlists first, then the shortcut rows.
+        popup = UiKit.PopMenu(PlaylistButton, null, Array.Empty<UiKit.MenuRow>(), null, width: 320, fixedRows: rows,
+            prefix: new UIElement[] { PlaylistHeader() }.Concat(top));
+    }
+
+    private FrameworkElement PlaylistHeader()
+    {
+        var g = new Grid { Margin = new Thickness(10, 6, 4, 6) };
+        var left = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        left.Children.Add(new TextBlock { Text = "\uE8FD", FontFamily = UiKit.Icons, FontSize = 13, Foreground = UiKit.B("Muted"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) });
+        left.Children.Add(UiKit.Text("MY PLAYLISTS", 11, "Muted", FontWeights.Bold));
+        g.Children.Add(left);
+        var manage = UiKit.IconButton("\uE713", "Manage sources", () => { UiKit.OpenPopup?.SetCurrentValue(Popup.IsOpenProperty, false); OpenSettings("Sources"); }, 30);
+        manage.FontSize = 13;
+        manage.HorizontalAlignment = HorizontalAlignment.Right;
+        g.Children.Add(manage);
+        return g;
+    }
+
+    private FrameworkElement PlaylistRow(Source src, Action close)
+    {
+        var active = src.Id == _source?.Id;
+        var g = new Grid { Margin = new Thickness(8, 6, 4, 6) };
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var icon = new Grid { Width = 36, Height = 36 };
+        icon.Children.Add(new Border { CornerRadius = new CornerRadius(10), Background = UiKit.B(active ? "RailActive" : "Chip") });
+        icon.Children.Add(new TextBlock { Text = src.Kind == "xtream" ? "\uE774" : "\uE8FD", FontFamily = UiKit.Icons, FontSize = 15, Foreground = UiKit.B(active ? "Accent" : "Fg"), HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center });
+        var dotColor = _sourceOnline.TryGetValue(src.Id, out var ok) ? (ok ? Color.FromRgb(0x22, 0xC5, 0x5E) : Color.FromRgb(0xEF, 0x44, 0x44)) : Color.FromRgb(0x9C, 0xA3, 0xAF);
+        icon.Children.Add(new Ellipse
+        {
+            Width = 10,
+            Height = 10,
+            Fill = new SolidColorBrush(dotColor),
+            Stroke = UiKit.B("Panel"),
+            StrokeThickness = 2,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Margin = new Thickness(0, 0, -2, -2),
+            ToolTip = _sourceOnline.TryGetValue(src.Id, out var o2) ? (o2 ? "Online" : "Not reachable") : "Not checked yet",
+        });
+        g.Children.Add(icon);
+
+        var text = new StackPanel { Margin = new Thickness(12, 0, 6, 0), VerticalAlignment = VerticalAlignment.Center };
+        text.Children.Add(UiKit.Text(src.Name, 14, active ? "Accent" : "Fg", FontWeights.SemiBold));
+        var when = src.UpdatedAt > 0 ? $" · {DateTimeOffset.FromUnixTimeSeconds(src.UpdatedAt).LocalDateTime:MMM d, HH:mm}" : "";
+        text.Children.Add(UiKit.Text($"{src.KindLabel}{when}", 11.5, active ? "Accent" : "Muted"));
+        Grid.SetColumn(text, 1);
+        g.Children.Add(text);
+
+        var more = UiKit.IconButton("\uE712", "More", () => { }, 32);
+        more.FontSize = 14;
+        more.Click += (_, ev) =>
+        {
+            ev.Handled = true;
+            var items = new List<UiKit.MenuRow> { new("\uE946", "Playlist info", false, () => { close(); _ = ShowPlaylistInfo(src); }) };
+            if (src.Kind == "xtream") items.Add(new("\uE77B", "Account info", false, () => { close(); _ = ShowAccountInfo(src); }));
+            items.Add(new("\uE701", "Check again", false, () => { close(); _ = CheckSource(src, announce: true); }));
+            items.Add(new("\uE72C", "Refresh playlist", false, () => { close(); _ = RefreshSource(src); }));
+            items.Add(new("", "-", false, () => { }));
+            items.Add(new("\uE74D", "Remove playlist", false, () => { close(); _ = RemoveSource(src); }, GlyphBrush: "LiveRed", LabelBrush: "LiveRed"));
+            // Sub-menu next to the row; the main menu stays open underneath until a choice is made.
+            UiKit.PopMenu(more, null, items, width: 230, placement: PlacementMode.Right, keepOthers: true);
+        };
+        Grid.SetColumn(more, 2);
+        g.Children.Add(more);
+
+        var row = new Border
+        {
+            CornerRadius = new CornerRadius(10),
+            Background = active ? UiKit.B("CardSelected") : Brushes.Transparent,
+            BorderThickness = new Thickness(3, 0, 0, 0),
+            BorderBrush = active ? UiKit.B("Accent") : Brushes.Transparent,
+            Child = g,
+            Cursor = Cursors.Hand,
+        };
+        var normal = row.Background;
+        row.MouseEnter += (_, _) => { if (!active) row.Background = UiKit.B("CardHover"); };
+        row.MouseLeave += (_, _) => row.Background = normal;
+        row.MouseLeftButtonUp += (_, ev) =>
+        {
+            ev.Handled = true;
+            close();
+            if (!active) _ = SwitchSource(src);
+        };
+        return row;
     }
 
     public async Task SwitchSource(Source s)
@@ -409,6 +523,7 @@ public partial class MainWindow : Window
         if (S.SourceAdded.TryGetValue(s.Id, out var added)) rows.Add(("Added", DateTimeOffset.FromUnixTimeSeconds(added).LocalDateTime.ToString("d MMM yyyy, HH:mm")));
         if (s.UpdatedAt > 0) rows.Add(("Last updated", DateTimeOffset.FromUnixTimeSeconds(s.UpdatedAt).LocalDateTime.ToString("d MMM yyyy, HH:mm")));
         rows.Add(("Guide cached", _repo.EpgAge(s.Id) is { } age ? $"{age.TotalHours:0.#} hours ago" : "no"));
+        rows.Add(("Connection", _sourceOnline.TryGetValue(s.Id, out var ok) ? (ok ? "Online" : "Not reachable") : "Not checked yet"));
         InfoWindow.Show(this, "Playlist info", rows);
     }
 
@@ -424,7 +539,6 @@ public partial class MainWindow : Window
                 ("Connections", $"{a.ActiveConnections} active of {a.MaxConnections} allowed"),
                 ("Trial", a.IsTrial ? "Yes" : "No"),
                 ("Created", a.Created?.ToString("d MMM yyyy") ?? "—"),
-                ("Server", a.ServerUrl.Length > 0 ? a.ServerUrl : s.Location),
                 ("Server time zone", a.Timezone.Length > 0 ? a.Timezone : "—"),
                 ("Stream formats", a.Formats.Length > 0 ? a.Formats : "—"),
             });
@@ -516,11 +630,21 @@ public partial class MainWindow : Window
         VodPlayerRow.Height = fs ? new GridLength(1, GridUnitType.Star) : GridLength.Auto;
         VodScroll.Visibility = fs ? Visibility.Collapsed : Visibility.Visible;
         VodHeader.Visibility = fs ? Visibility.Collapsed : Visibility.Visible;
-        VodNowLabel.Visibility = _vodPlaying ? Visibility.Visible : Visibility.Collapsed;
-        VodCloseBtn.Visibility = _vodPlaying ? Visibility.Visible : Visibility.Collapsed;
-        VodPlayerBox.Margin = fs ? new Thickness(0) : new Thickness(18, 12, 18, 10);
-        VodPlayerBox.CornerRadius = new CornerRadius(fs ? 0 : 12);
-        VodPlayerBox.BorderThickness = new Thickness(fs ? 0 : 1);
+        VodHeaderTitle.Visibility = _vodPlaying ? Visibility.Collapsed : Visibility.Visible; // shown inside the card instead
+        // Full screen: the card becomes a bare black video surface.
+        foreach (var (card, shadow, header, frame) in new[] { (VodCard, VodCardShadow, (FrameworkElement)VodCardHeader, VodVideoFrame), (LiveCard, LiveCardShadow, LiveCardHeader, LiveVideoFrame) })
+        {
+            card.Padding = fs ? new Thickness(0) : (card == VodCard ? new Thickness(16, 12, 16, 16) : new Thickness(14, 10, 14, 14));
+            card.CornerRadius = new CornerRadius(fs ? 0 : 18);
+            card.BorderThickness = new Thickness(fs ? 0 : 1);
+            card.Background = fs ? Brushes.Black : (Brush)FindResource("Panel");
+            shadow.Visibility = fs ? Visibility.Collapsed : Visibility.Visible;
+            header.Visibility = fs ? Visibility.Collapsed : Visibility.Visible;
+            frame.CornerRadius = new CornerRadius(fs ? 0 : 12);
+        }
+        VodPlayerBox.Margin = fs ? new Thickness(0) : new Thickness(18, 6, 18, 14);
+        LiveCloseBtn.Visibility = Playing is { IsLive: true } ? Visibility.Visible : Visibility.Collapsed;
+        LiveBadge.Visibility = Playing is { IsLive: true } ? Visibility.Visible : Visibility.Collapsed;
         Grid.SetRowSpan(VodPlayerBox, fs ? 3 : 1);
         Grid.SetRow(VodPlayerBox, fs ? 0 : 1);
 
@@ -568,7 +692,7 @@ public partial class MainWindow : Window
         _searchHits = null;
         _liveSearch = null;
         CatFilter.Text = "";
-        CatFilter.Visibility = Visibility.Collapsed;
+        CatFilterBox.Visibility = Visibility.Collapsed;
         if (mode != Mode.Search) SearchBox.Text = "";
         _searchDebounce.Stop();
         if (mode is not (Mode.Search or Mode.Settings)) S.LastView = mode.ToString();
@@ -590,6 +714,14 @@ public partial class MainWindow : Window
     {
         var version = ++_loadVersion;
         Layout();
+        // Page change: the new section rises into place.
+        Motion.Rise(_mode switch
+        {
+            Mode.Live => LiveLayout,
+            Mode.Movies or Mode.Series => GridPanel,
+            _ => PageHost,
+        });
+        if (IsSection) Motion.Rise(CatsPanel, 10, 220);
         switch (_mode)
         {
             case Mode.Live or Mode.Movies or Mode.Series:
