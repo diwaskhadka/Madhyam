@@ -73,10 +73,9 @@ public sealed class AppSettings
     public Dictionary<int, long> SourceAdded { get; set; } = new();
     /// <summary>Optional user agent per source, sent for playlist downloads and playback.</summary>
     public Dictionary<int, string> SourceUserAgent { get; set; } = new();
-    /// <summary>Free TV (iptv-org): the playlist it created, "all" or "countries", and the chosen country codes.</summary>
+    /// <summary>Free TV (iptv-org): the playlist it created, and whether Live TV lists it by "category" or "country".</summary>
     public int? FreeTvSourceId { get; set; }
-    public string FreeTvMode { get; set; } = "all";
-    public List<string> FreeTvCountries { get; set; } = new() { "us" };
+    public string FreeTvGroupBy { get; set; } = "category";
 
     public static string HiddenKey(int source, string kind) => $"{source}:{kind}";
 

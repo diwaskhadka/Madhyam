@@ -595,6 +595,7 @@ public sealed class Repository : IDisposable
             var file = FreeTv.IsCountries(location) ? await DownloadJoined(FreeTv.CountryUrls(location), id) : await Download(location, "playlist", id);
             try { await Bg(() => _core.Call("import_m3u_file", new { source = id, path = file })); }
             finally { File.Delete(file); }
+            if (FreeTv.IsFreeTv(location)) await TagCountries(id);
         }
         await Bg(Save);
         try { await RefreshEpg(id); }
@@ -623,6 +624,24 @@ public sealed class Repository : IDisposable
         foreach (var stale in EpgFiles(id).Where(f => !Enumerable.Range(0, index).Select(i => EpgFile(id, i)).Contains(f)).ToList())
             File.Delete(stale);
         await Bg(Save);
+    }
+
+    /// <summary>Tag Free TV channels with their countries (iptv-org's index by country), so the
+    /// category panel can switch to countries. Best effort: categories still work without it.</summary>
+    public async Task TagCountries(int id)
+    {
+        try
+        {
+            var file = await Download(FreeTv.CountryIndexUrl, "countries", id);
+            try
+            {
+                var bytes = await File.ReadAllBytesAsync(file);
+                var n = await Bg(() => _core.Import("m3u_tags", bytes, new { source = id, field = FreeTv.CountryField }).GetInt32());
+                Log($"free tv: {n} channels tagged with a country");
+            }
+            finally { File.Delete(file); }
+        }
+        catch (Exception e) { Log($"free tv country index failed: {e.Message}"); }
     }
 
     /// <summary>Download several M3U playlists and join them into one file (Free TV by country).</summary>
@@ -700,8 +719,9 @@ public sealed class Repository : IDisposable
 
     // --------------------------------------------------------------- browsing
 
-    public Task<List<Group>> Groups(int source, string kind) => Bg(() =>
-        _core.Call("groups", new { source, kind }).EnumerateArray()
+    /// <summary>Groups of a source; groupField groups by an item field instead (Free TV "country").</summary>
+    public Task<List<Group>> Groups(int source, string kind, string? groupField = null) => Bg(() =>
+        _core.Call("groups", new { source, kind, group_field = groupField }).EnumerateArray()
             .Select(g => new Group(Str(g, "name") ?? "", g.GetProperty("count").GetInt32())).ToList());
 
     /// <summary>
@@ -709,7 +729,8 @@ public sealed class Repository : IDisposable
     /// categories of the kind; source = null means every playlist.
     /// </summary>
     public Task<(int Total, List<ItemVm> Items)> Query(string kind, int? source, string? group, IEnumerable<string>? hidden,
-                                                      string sort = "provider", double minRating = 0, int offset = 0, int limit = 100) =>
+                                                      string sort = "provider", double minRating = 0, int offset = 0, int limit = 100,
+                                                      string? groupField = null) =>
         Bg(() =>
         {
             var r = _core.Call("query", new
@@ -717,6 +738,7 @@ public sealed class Repository : IDisposable
                 kind,
                 source,
                 group,
+                group_field = groupField,
                 hidden_groups = hidden?.ToArray() ?? Array.Empty<string>(),
                 sort,
                 min_rating = minRating,

@@ -343,7 +343,13 @@ pub fn dispatch(st: &mut State, method: &str, a: &Value) -> Result<Value> {
             ("items", c.len().into()),
             ("programmes", c.epg_programme_count().into()),
         ]),
-        "groups" => c.groups(arg_source(a)?, arg_kind(a)?).to_json(),
+        "groups" => c
+            .groups_by(
+                arg_source(a)?,
+                arg_kind(a)?,
+                opt_str(a, "group_field").as_deref(),
+            )
+            .to_json(),
         "list" => {
             let g = opt_str(a, "group");
             let v = c.list(
@@ -361,6 +367,7 @@ pub fn dispatch(st: &mut State, method: &str, a: &Value) -> Result<Value> {
             let mut q = ListQuery::new(arg_kind(a)?);
             q.source = a.int("source").map(|s| s as SourceId);
             q.group = opt_str(a, "group");
+            q.group_field = opt_str(a, "group_field");
             q.hidden_groups = a
                 .get("hidden_groups")
                 .and_then(Value::as_array)
@@ -529,6 +536,11 @@ pub fn dispatch_import(st: &mut State, method: &str, data: &[u8], a: &Value) -> 
     let now = a.int("now").unwrap_or_else(time::now);
     Ok(match method {
         "m3u" => st.catalog.import_m3u(arg_source(a)?, data)?.to_json(),
+        // Tag a source's items from another playlist's group titles: {source, field}
+        "m3u_tags" => st
+            .catalog
+            .tag_from_m3u(arg_source(a)?, &arg_str(a, "field")?, data)?
+            .into(),
         "xmltv" => st
             .catalog
             .import_xmltv(data, a.int("keep_from").unwrap_or(now - 86_400))?

@@ -309,7 +309,7 @@ public sealed class SettingsView : UserControl
         foreach (var src in shown) AddRow(SourceRow(src));
     }
 
-    /// <summary>Free TV (iptv-org): on/off, all channels by category or chosen countries.</summary>
+    /// <summary>Free TV (iptv-org): on/off and re-download. Categories / countries are chosen in Live TV.</summary>
     private FrameworkElement FreeTvCard()
     {
         var on = S.FreeTvSourceId != null && _host.SourcesList.Any(x => x.Id == S.FreeTvSourceId);
@@ -333,7 +333,7 @@ public sealed class SettingsView : UserControl
             status.Visibility = Visibility.Visible;
             status.Text = v ? "Downloading the channel list…" : "Removing Free TV…";
             await _host.ApplyFreeTv(v);
-            status.Text = v ? "Free TV is on. Find it in the left bar and in the playlist menu." : "Free TV removed.";
+            status.Text = v ? "Free TV is on. Open it with the globe in the left bar." : "Free TV removed.";
         });
         toggle.HorizontalAlignment = HorizontalAlignment.Right;
         toggle.VerticalAlignment = VerticalAlignment.Top;
@@ -343,40 +343,8 @@ public sealed class SettingsView : UserControl
         head.Children.Add(toggle);
         box.Children.Add(head);
 
-        var chips = new WrapPanel { Margin = new Thickness(0, 10, 0, 0), Visibility = S.FreeTvMode == "countries" ? Visibility.Visible : Visibility.Collapsed };
-        foreach (var (code, name) in FreeTv.Countries)
-        {
-            var c = code;
-            chips.Children.Add(UiKit.Filter($"{name}", S.FreeTvCountries.Contains(c), v =>
-            {
-                if (v && !S.FreeTvCountries.Contains(c)) S.FreeTvCountries.Add(c);
-                if (!v) S.FreeTvCountries.Remove(c);
-                Save();
-            }));
-        }
-        var other = new TextBox { MinWidth = 220, ToolTip = "Other two-letter country codes, comma-separated (e.g. kh, mn)",
-            Text = string.Join(", ", S.FreeTvCountries.Where(c => !FreeTv.Countries.Any(x => x.Code == c))) };
-        other.LostFocus += (_, _) =>
-        {
-            var known = S.FreeTvCountries.Where(c => FreeTv.Countries.Any(x => x.Code == c)).ToList();
-            known.AddRange(other.Text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Select(x => x.ToLowerInvariant()).Where(x => x.Length == 2 && x.All(char.IsLetter)));
-            S.FreeTvCountries = known.Distinct().ToList();
-            Save();
-        };
-        var otherRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 6, 0, 0), Visibility = chips.Visibility };
-        otherRow.Children.Add(new TextBlock { Text = "Other codes", Foreground = Brush("Muted"), VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 10, 0) });
-        otherRow.Children.Add(other);
-
-        options.Children.Add(Choice(new[] { ("all", "All channels, by category"), ("countries", "Only these countries") }, S.FreeTvMode, v =>
-        {
-            S.FreeTvMode = v;
-            Save();
-            chips.Visibility = otherRow.Visibility = v == "countries" ? Visibility.Visible : Visibility.Collapsed;
-        }));
-        options.Children.Add(chips);
-        options.Children.Add(otherRow);
-        var apply = Btn("Update Free TV", async () =>
+        options.Children.Add(Note("One playlist with every channel. In Live TV, switch the left panel between Categories and Countries."));
+        var apply = Btn("Update channel list", async () =>
         {
             status.Visibility = Visibility.Visible;
             status.Text = "Downloading the channel list…";

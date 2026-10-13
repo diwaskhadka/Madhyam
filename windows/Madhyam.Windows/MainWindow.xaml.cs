@@ -151,6 +151,7 @@ public partial class MainWindow : Window
             await _repo.Init();
             _favorites = await _repo.FavoriteIds();
             await ReloadSources();
+            await NormalizeFreeTv();
         }, quiet: true);
         if (_source != null && Arg("--screenshot") == null) _ = CheckSource(_source, announce: false);
         var wanted = Arg("--mode") ?? (S.StartupView == "Last" ? S.LastView : S.StartupView);
@@ -356,54 +357,104 @@ public partial class MainWindow : Window
         await UpdatePlaylistHeader();
     }
 
-    /// <summary>Rail icons, one per playlist (initials in a colour picked from the name; Free TV gets a globe).</summary>
+    /// <summary>Free TV playlists (normally one; older versions could leave a second).</summary>
+    private List<Source> FreeTvSources => _sources
+        .Where(s => s.Kind == "m3u" && (s.Id == S.FreeTvSourceId || FreeTv.IsFreeTv(s.Location))).ToList();
+
+    /// <summary>
+    /// Rail shortcut to Free TV, shown while it is on. Regular playlists have no icon: their content
+    /// already lives in Movies, Live TV and Series. Clicking opens Free TV in Live TV from any page.
+    /// </summary>
     private void RebuildPlaylistRail()
     {
         PlaylistRail.Children.Clear();
-        PlaylistRailLine.Visibility = _sources.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-        foreach (var src in _sources)
+        var free = FreeTvSources.FirstOrDefault(s => s.Id == S.FreeTvSourceId) ?? FreeTvSources.FirstOrDefault();
+        PlaylistRailLine.Visibility = free != null ? Visibility.Visible : Visibility.Collapsed;
+        if (free == null) return;
+        var tint = Color.FromRgb(0x4C, 0xC2, 0x8A);
+        var current = free.Id == _source?.Id && _mode == Mode.Live;
+        var b = new Button
         {
-            var free = S.FreeTvSourceId == src.Id;
-            var words = src.Name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            var initials = words.Length >= 2 ? $"{words[0][0]}{words[1][0]}" : src.Name.Length >= 2 ? src.Name[..2] : src.Name;
-            var hue = src.Name.Aggregate(7, (h, ch) => unchecked(h * 31 + ch)) is var hc ? (uint)hc % 360 : 0; // stable across runs
-            var tint = HslColor(hue, 0.55, 0.55);
-            var face = new Border
+            Content = new Border
             {
                 Width = 32,
                 Height = 32,
                 CornerRadius = new CornerRadius(9),
                 Background = new SolidColorBrush(Color.FromArgb(0x33, tint.R, tint.G, tint.B)),
                 BorderBrush = new SolidColorBrush(tint),
-                BorderThickness = new Thickness(src.Id == _source?.Id ? 1.5 : 0),
+                BorderThickness = new Thickness(current ? 1.5 : 0),
                 Child = new TextBlock
                 {
-                    Text = free ? "\uE774" : initials.ToUpperInvariant(),
-                    FontFamily = free ? UiKit.Icons : (FontFamily)FindResource("UiFont"),
-                    FontSize = free ? 14 : 12,
-                    FontWeight = FontWeights.Bold,
+                    Text = "\uE774",
+                    FontFamily = UiKit.Icons,
+                    FontSize = 14,
                     Foreground = new SolidColorBrush(tint),
                     HorizontalAlignment = HorizontalAlignment.Center,
                     VerticalAlignment = VerticalAlignment.Center,
                 },
-            };
-            var b = new Button
+            },
+            Style = (Style)FindResource("IconButton"),
+            Width = 44,
+            Height = 44,
+            Margin = new Thickness(0, 2, 0, 2),
+            ToolTip = "Free TV · live channels",
+        };
+        b.Click += async (_, _) => await OpenFreeTv(free);
+        PlaylistRail.Children.Add(b);
+    }
+
+    /// <summary>Switch to the Free TV playlist and show it in Live TV (also from Settings or any other page).</summary>
+    private async Task OpenFreeTv(Source free)
+    {
+        if (free.Id != _source?.Id)
+        {
+            if (Playing != null && Playing.SourceId != free.Id) StopPlayback();
+            _source = free;
+            _group = null;
+            await UpdatePlaylistHeader();
+            if (_mode == Mode.Live)
             {
-                Content = face,
-                Style = (Style)FindResource("IconButton"),
-                Width = 44,
-                Height = 44,
-                Margin = new Thickness(0, 2, 0, 2),
-                ToolTip = $"{src.Name} · {src.KindLabel}",
-            };
-            b.Click += async (_, _) =>
-            {
-                if (src.Id == _source?.Id) return;
-                await SwitchSource(src);
-                RebuildPlaylistRail();
-            };
-            PlaylistRail.Children.Add(b);
+                await ShowMode();
+                return;
+            }
         }
+        if (_mode != Mode.Live) NavLive.IsChecked = true; // → Nav_Checked → ShowMode
+        RebuildPlaylistRail();
+    }
+
+    /// <summary>
+    /// Keep exactly one Free TV playlist, on the all-channels list: 0.4.8 could add a second one
+    /// for "only these countries". Countries are now a filter inside that single playlist.
+    /// </summary>
+    private async Task NormalizeFreeTv()
+    {
+        var all = FreeTvSources;
+        if (all.Count == 0)
+        {
+            if (S.FreeTvSourceId != null) { S.FreeTvSourceId = null; AppSettings.Save(); }
+            return;
+        }
+        var keep = all.FirstOrDefault(s => s.Location.Equals(FreeTv.AllUrl, StringComparison.OrdinalIgnoreCase))
+                   ?? all.FirstOrDefault(s => s.Id == S.FreeTvSourceId) ?? all[0];
+        var changed = false;
+        foreach (var extra in all.Where(s => s.Id != keep.Id))
+        {
+            Repository.Log($"free tv: removing duplicate playlist {extra.Id} ({extra.Location})");
+            if (Playing != null && Playing.SourceId == extra.Id) StopPlayback();
+            await _repo.RemoveSource(extra.Id);
+            S.SourceAdded.Remove(extra.Id);
+            changed = true;
+        }
+        if (!keep.Location.Equals(FreeTv.AllUrl, StringComparison.OrdinalIgnoreCase))
+        {
+            try { await _repo.UpdateSource(keep.Id, FreeTv.Name, FreeTv.AllUrl, null, null, null); } // re-downloads (and tags countries)
+            catch (Exception ex) { Repository.Log($"free tv: could not switch to the full list: {ex.Message}"); }
+            changed = true;
+        }
+        if (S.FreeTvSourceId != keep.Id) { S.FreeTvSourceId = keep.Id; changed = true; }
+        if (!changed) return;
+        AppSettings.Save();
+        await ReloadSources(_source?.Id);
     }
 
     private static Color HslColor(double h, double s, double l)
@@ -413,47 +464,60 @@ public partial class MainWindow : Window
         return Color.FromRgb((byte)((r + m) * 255), (byte)((g + m) * 255), (byte)((b + m) * 255));
     }
 
-    /// <summary>Settings → Sources → Free TV: add, update or remove the iptv-org playlist.</summary>
+    private bool _freeTvBusy;
+
+    /// <summary>Settings → Sources → Free TV: add, re-download or remove the one iptv-org playlist.</summary>
     public async Task ApplyFreeTv(bool enabled)
     {
-        var existing = _sources.FirstOrDefault(s => s.Id == S.FreeTvSourceId);
-        if (!enabled)
+        if (_freeTvBusy) return; // a second click while downloading must not add a second playlist
+        _freeTvBusy = true;
+        try
         {
-            if (existing != null)
+            var existing = FreeTvSources;
+            if (!enabled)
             {
-                await Run("Removing Free TV…", async () =>
+                if (existing.Count > 0)
                 {
-                    if (Playing != null && Playing.SourceId == existing.Id) StopPlayback();
-                    await _repo.RemoveSource(existing.Id);
-                    S.SourceAdded.Remove(existing.Id);
-                    if (_source?.Id == existing.Id) _source = null;
-                    await ReloadSources();
-                });
-            }
-            S.FreeTvSourceId = null;
-            AppSettings.Save();
-            _settingsView?.Refresh();
-            return;
-        }
-        var location = S.FreeTvMode == "countries" && S.FreeTvCountries.Count > 0 ? FreeTv.CountriesLocation(S.FreeTvCountries) : FreeTv.AllUrl;
-        await Run("Downloading Free TV channels…", async () =>
-        {
-            if (existing != null)
-            {
-                await _repo.UpdateSource(existing.Id, FreeTv.Name, location, null, null, null);
-            }
-            else
-            {
-                var keep = _source?.Id;
-                S.FreeTvSourceId = await _repo.AddM3u(FreeTv.Name, location);
+                    await Run("Removing Free TV…", async () =>
+                    {
+                        foreach (var src in existing)
+                        {
+                            if (Playing != null && Playing.SourceId == src.Id) StopPlayback();
+                            await _repo.RemoveSource(src.Id);
+                            S.SourceAdded.Remove(src.Id);
+                            if (_source?.Id == src.Id) _source = null;
+                        }
+                        await ReloadSources();
+                    });
+                }
+                S.FreeTvSourceId = null;
                 AppSettings.Save();
-                await ReloadSources(keep);
+                _settingsView?.Refresh();
                 return;
             }
-            await ReloadSources(_source?.Id);
-        });
-        AppSettings.Save();
-        _settingsView?.Refresh();
+            await Run("Downloading Free TV channels…", async () =>
+            {
+                if (existing.Count > 0)
+                {
+                    await NormalizeFreeTv();
+                    if (S.FreeTvSourceId is { } id && _sources.Any(s => s.Id == id && s.Location == FreeTv.AllUrl))
+                        await _repo.Refresh(id);
+                    await ReloadSources(_source?.Id);
+                    return;
+                }
+                var keep = _source?.Id;
+                S.FreeTvSourceId = await _repo.AddM3u(FreeTv.Name, FreeTv.AllUrl);
+                AppSettings.Save();
+                await ReloadSources(keep);
+            });
+            AppSettings.Save();
+            _settingsView?.Refresh();
+            if (_mode == Mode.Live && IsFreeTvSource) await ShowMode();
+        }
+        finally
+        {
+            _freeTvBusy = false;
+        }
     }
 
     private async Task UpdatePlaylistHeader()
@@ -827,6 +891,7 @@ public partial class MainWindow : Window
     {
         var version = ++_loadVersion;
         Layout();
+        RebuildPlaylistRail(); // Free TV icon is highlighted while it is open in Live TV
         switch (_mode)
         {
             case Mode.Live or Mode.Movies or Mode.Series:

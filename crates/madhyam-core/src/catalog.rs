@@ -254,6 +254,8 @@ pub struct ListQuery {
     pub source: Option<SourceId>,
     pub kind: ItemKind,
     pub group: Option<String>,
+    /// Group by this `extra` field (values split on ';') instead of the provider group.
+    pub group_field: Option<String>,
     pub hidden_groups: HashSet<String>,
     pub sort: Sort,
     pub min_rating: f64,
@@ -267,12 +269,31 @@ impl ListQuery {
             source: None,
             kind,
             group: None,
+            group_field: None,
             hidden_groups: HashSet::new(),
             sort: Sort::Provider,
             min_rating: 0.0,
             offset: 0,
             limit: 100,
         }
+    }
+}
+
+/// The groups an item belongs to: its provider group, or the ';'-separated values of an
+/// `extra` field.
+fn item_groups<'a>(i: &'a Item, field: Option<&'a str>) -> Box<dyn Iterator<Item = &'a str> + 'a> {
+    match field {
+        None => Box::new(std::iter::once(i.group.as_str())),
+        // A stream listed under several categories is imported once per listing ("<hash>#2"…);
+        // by country it should appear once, so only the first copy counts.
+        Some(_) if i.remote_id.contains('#') => Box::new(std::iter::empty()),
+        Some(f) => Box::new(
+            i.extra
+                .iter()
+                .filter(move |(k, _)| k == f)
+                .flat_map(|(_, v)| v.split(';'))
+                .filter(|g| !g.is_empty()),
+        ),
     }
 }
 
@@ -508,6 +529,42 @@ impl Catalog {
         Ok(stats)
     }
 
+    /// Tag the items of an M3U source with an `extra` field taken from the group titles of a
+    /// second playlist that lists the same streams (iptv-org's index by country, say). Items
+    /// are matched by URL; a stream listed under several groups gets them all, joined by ';'.
+    /// Returns how many items were tagged.
+    pub fn tag_from_m3u<R: BufRead>(
+        &mut self,
+        source: SourceId,
+        field: &str,
+        reader: R,
+    ) -> Result<usize> {
+        if !self.sources.contains_key(&source) {
+            return Err(Error::NotFound(format!("source {source}")));
+        }
+        let mut by_url: HashMap<String, Vec<String>> = HashMap::new();
+        for e in M3uReader::new(reader).flatten() {
+            if e.group.is_empty() {
+                continue;
+            }
+            let v = by_url.entry(e.url).or_default();
+            for g in e.group.split(';').map(str::trim).filter(|g| !g.is_empty()) {
+                if !v.iter().any(|x| x == g) {
+                    v.push(g.to_string());
+                }
+            }
+        }
+        let mut n = 0;
+        for it in self.items.iter_mut().filter(|i| i.source == source) {
+            it.extra.retain(|(k, _)| k != field);
+            if let Some(g) = by_url.get(&it.url) {
+                it.extra.push((field.to_string(), g.join(";")));
+                n += 1;
+            }
+        }
+        Ok(n)
+    }
+
     /// Apply the result of [`crate::xtream::XtreamClient::sync`].
     pub fn apply_xtream(&mut self, source: SourceId, snap: XtreamSnapshot) -> Result<ImportStats> {
         let src = self
@@ -553,6 +610,17 @@ impl Catalog {
 
     /// Groups of one source and kind, in provider order, with item counts.
     pub fn groups(&self, source: SourceId, kind: ItemKind) -> Vec<GroupInfo> {
+        self.groups_by(source, kind, None)
+    }
+
+    /// Like [`Catalog::groups`], but grouped by an `extra` field when `field` is given
+    /// (an item counts once in each of its ';'-separated values; untagged items are left out).
+    pub fn groups_by(
+        &self,
+        source: SourceId,
+        kind: ItemKind,
+        field: Option<&str>,
+    ) -> Vec<GroupInfo> {
         let mut order: Vec<GroupInfo> = Vec::new();
         let mut pos: HashMap<&str, usize> = HashMap::new();
         let mut items: Vec<&Item> = self
@@ -562,14 +630,16 @@ impl Catalog {
             .collect();
         items.sort_by_key(|i| i.order);
         for it in items {
-            match pos.get(it.group.as_str()) {
-                Some(&p) => order[p].count += 1,
-                None => {
-                    pos.insert(&it.group, order.len());
-                    order.push(GroupInfo {
-                        name: it.group.clone(),
-                        count: 1,
-                    });
+            for g in item_groups(it, field) {
+                match pos.get(g) {
+                    Some(&p) => order[p].count += 1,
+                    None => {
+                        pos.insert(g, order.len());
+                        order.push(GroupInfo {
+                            name: g.to_string(),
+                            count: 1,
+                        });
+                    }
                 }
             }
         }
@@ -603,8 +673,10 @@ impl Catalog {
             .filter(|i| {
                 i.kind == q.kind
                     && q.source.is_none_or(|s| s == i.source)
-                    && q.group.as_deref().is_none_or(|g| i.group == g)
-                    && !q.hidden_groups.contains(&i.group)
+                    && q.group
+                        .as_deref()
+                        .is_none_or(|g| item_groups(i, q.group_field.as_deref()).any(|x| x == g))
+                    && (q.group_field.is_some() || !q.hidden_groups.contains(&i.group))
                     && (q.min_rating <= 0.0 || item_rating(i) >= q.min_rating)
             })
             .collect();
@@ -1348,6 +1420,40 @@ mod tests {
             c.update_source(s, SourceKind::Xtream(XtreamCredentials::new("h", "u", "p")))
                 .is_err()
         );
+    }
+
+    #[test]
+    fn tags_from_a_second_playlist_group_by_country() {
+        let mut c = Catalog::new();
+        let s = c.add_source(
+            "Free",
+            SourceKind::M3u {
+                location: "mem".into(),
+            },
+        );
+        let cats = "#EXTM3U\n#EXTINF:-1 group-title=\"News\",A\nhttp://a\n\
+#EXTINF:-1 group-title=\"Kids\",B\nhttp://b\n#EXTINF:-1 group-title=\"News\",C\nhttp://c\n\
+#EXTINF:-1 group-title=\"Kids\",A\nhttp://a\n";
+        c.import_m3u(s, cats.as_bytes()).unwrap();
+        let countries = "#EXTM3U\n#EXTINF:-1 group-title=\"Nepal\",A\nhttp://a\n\
+#EXTINF:-1 group-title=\"India\",A\nhttp://a\n#EXTINF:-1 group-title=\"India\",B\nhttp://b\n";
+        assert_eq!(
+            c.tag_from_m3u(s, "country", countries.as_bytes()).unwrap(),
+            3
+        );
+        let g = c.groups_by(s, ItemKind::Live, Some("country"));
+        let names: Vec<_> = g.iter().map(|g| (g.name.as_str(), g.count)).collect();
+        assert_eq!(names, [("Nepal", 1), ("India", 2)]);
+        let mut q = ListQuery::new(ItemKind::Live);
+        q.group = Some("India".into());
+        q.group_field = Some("country".into());
+        let (n, v) = c.query(&q);
+        assert_eq!(n, 2);
+        assert_eq!(v[0].name, "A");
+        // Re-tagging replaces the old values.
+        c.tag_from_m3u(s, "country", "#EXTM3U\n".as_bytes())
+            .unwrap();
+        assert!(c.groups_by(s, ItemKind::Live, Some("country")).is_empty());
     }
 
     #[test]

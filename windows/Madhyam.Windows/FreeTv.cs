@@ -11,27 +11,21 @@ public static class FreeTv
     /// <summary>Every channel, grouped by category (News, Sports, Kids…).</summary>
     public const string AllUrl = "https://iptv-org.github.io/iptv/index.category.m3u";
 
-    /// <summary>Playlist location for the chosen countries (understood by <see cref="Repository"/>).</summary>
-    public static string CountriesLocation(IEnumerable<string> codes) => "iptvorg:countries=" + string.Join(",", codes.Select(c => c.Trim().ToLowerInvariant()));
+    /// <summary>The same channels grouped by country; used only to tag channels with their countries.</summary>
+    public const string CountryIndexUrl = "https://iptv-org.github.io/iptv/index.country.m3u";
 
+    /// <summary>Item field holding a channel's countries (';'-separated).</summary>
+    public const string CountryField = "country";
+
+    /// <summary>Whether a playlist location is iptv-org's (the Free TV playlist).</summary>
+    public static bool IsFreeTv(string location) =>
+        location.Equals(AllUrl, StringComparison.OrdinalIgnoreCase) || IsCountries(location);
+
+    /// <summary>0.4.8's "only these countries" playlist location (still read so it can be merged away).</summary>
     public static bool IsCountries(string location) => location.StartsWith("iptvorg:countries=", StringComparison.OrdinalIgnoreCase);
 
     public static IEnumerable<string> CountryUrls(string location) =>
         location["iptvorg:countries=".Length..].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(c => c.Length == 2 && c.All(char.IsLetter))
             .Select(c => $"https://iptv-org.github.io/iptv/countries/{c.ToLowerInvariant()}.m3u");
-
-    /// <summary>Common countries offered as chips (any other two-letter code can be typed).</summary>
-    public static readonly (string Code, string Name)[] Countries =
-    {
-        ("us", "United States"), ("ca", "Canada"), ("gb", "United Kingdom"), ("ie", "Ireland"), ("au", "Australia"),
-        ("nz", "New Zealand"), ("in", "India"), ("np", "Nepal"), ("pk", "Pakistan"), ("bd", "Bangladesh"),
-        ("lk", "Sri Lanka"), ("de", "Germany"), ("fr", "France"), ("es", "Spain"), ("it", "Italy"),
-        ("pt", "Portugal"), ("nl", "Netherlands"), ("be", "Belgium"), ("ch", "Switzerland"), ("at", "Austria"),
-        ("se", "Sweden"), ("no", "Norway"), ("dk", "Denmark"), ("fi", "Finland"), ("pl", "Poland"),
-        ("gr", "Greece"), ("tr", "Turkey"), ("ru", "Russia"), ("ua", "Ukraine"), ("ro", "Romania"),
-        ("mx", "Mexico"), ("br", "Brazil"), ("ar", "Argentina"), ("co", "Colombia"), ("cl", "Chile"),
-        ("jp", "Japan"), ("kr", "South Korea"), ("cn", "China"), ("ph", "Philippines"), ("id", "Indonesia"),
-        ("sa", "Saudi Arabia"), ("ae", "UAE"), ("eg", "Egypt"), ("ng", "Nigeria"), ("za", "South Africa"),
-    };
 }

@@ -17,6 +17,7 @@ public partial class MainWindow
     private List<CategoryRow> _allCategories = new();
     private string? _group;           // null = All items
     private bool _groupSilent;        // suppress SelectionChanged while filling the list
+    private bool _countryTagging;     // Free TV country tags being fetched
 
     // Live list (paged: big "All items" lists load 400 at a time while scrolling)
     private readonly ObservableCollection<ItemVm> _liveItems = new();
@@ -37,21 +38,65 @@ public partial class MainWindow
 
     private string KindNow => ModeKind(_mode) ?? "live";
 
+    /// <summary>Is the current playlist the Free TV one (iptv-org)?</summary>
+    private bool IsFreeTvSource => _source != null && (S.FreeTvSourceId == _source.Id || FreeTv.IsFreeTv(_source.Location));
+
+    /// <summary>Item field the category panel groups by: "country" for Free TV by country, else null (categories).</summary>
+    private string? GroupFieldNow => _mode == Mode.Live && IsFreeTvSource && S.FreeTvGroupBy == "country" ? FreeTv.CountryField : null;
+
+    /// <summary>The Categories | Countries switch at the top of the panel (Free TV in Live TV only).</summary>
+    private void UpdateCatMode()
+    {
+        var show = _mode == Mode.Live && IsFreeTvSource;
+        CatModeBox.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        CatManageBtn.Visibility = GroupFieldNow == null ? Visibility.Visible : Visibility.Collapsed;
+        if (!show) return;
+        CatModeBox.Content = UiKit.Segments(new[] { ("category", "Categories"), ("country", "Countries") },
+            S.FreeTvGroupBy == "country" ? "country" : "category", v =>
+            {
+                if (S.FreeTvGroupBy == v) return;
+                S.FreeTvGroupBy = v;
+                AppSettings.Save();
+                _group = null;
+                CatFilter.Text = "";
+                _ = LoadCategories(++_loadVersion);
+            });
+    }
+
     private async Task LoadCategories(int version, string? select = null)
     {
-        CatsTitle.Text = _mode switch { Mode.Live => "Live categories", Mode.Movies => "Movie categories", _ => "Series categories" };
+        var field = GroupFieldNow;
+        CatsTitle.Text = field != null ? "Countries" : _mode switch { Mode.Live => "Live categories", Mode.Movies => "Movie categories", _ => "Series categories" };
+        CatFilterHint.Text = field != null ? "Search countries" : "Search categories";
+        UpdateCatMode();
         LiveSortBtn.ToolTip = S.LiveSortAz ? "Sorted A–Z (click for provider order)" : "Sort A–Z";
         var kind = KindNow;
-        var groups = _source == null ? new List<Group>() : await _repo.Groups(_source.Id, kind);
+        var groups = _source == null ? new List<Group>() : await _repo.Groups(_source.Id, kind, field);
         if (version != _loadVersion) return;
-        var hidden = _source == null ? new HashSet<string>() : S.Hidden(_source.Id, kind);
+        if (field != null && groups.Count == 0 && _source != null && !_countryTagging)
+        {
+            // Older Free TV download without country tags: fetch them now, then show the countries.
+            _countryTagging = true;
+            CatsTitle.Text = "Countries (loading…)";
+            try { await _repo.TagCountries(_source.Id); }
+            finally { _countryTagging = false; }
+            if (version != _loadVersion) return;
+            groups = await _repo.Groups(_source.Id, kind, field);
+            if (version != _loadVersion) return;
+            CatsTitle.Text = "Countries";
+        }
+        // Hidden categories are category names; they don't apply to the country list.
+        var hidden = _source == null || field != null ? new HashSet<string>() : S.Hidden(_source.Id, kind);
         var visible = groups.Where(g => !hidden.Contains(g.Name)).ToList();
-        visible = (S.CategorySort.TryGetValue(kind, out var order) ? order : "provider") switch
+        var order = S.CategorySort.TryGetValue(kind, out var o) ? o : "provider";
+        if (field != null && order == "provider") order = "name_asc"; // countries have no provider order worth keeping
+        visible = order switch
         {
             "name_asc" => visible.OrderBy(g => g.Name, StringComparer.CurrentCultureIgnoreCase).ToList(),
             "name_desc" => visible.OrderByDescending(g => g.Name, StringComparer.CurrentCultureIgnoreCase).ToList(),
             _ => visible,
         };
+        if (field != null) visible = visible.OrderBy(g => g.Name == "Undefined" ? 1 : 0).ToList(); // channels with no country last
         _allCategories = new List<CategoryRow> { new("All items", visible.Sum(g => g.Count), true) };
         _allCategories.AddRange(visible.Select(g => new CategoryRow(g.Name, g.Count)));
         ApplyCategoryFilter(select);
@@ -170,7 +215,7 @@ public partial class MainWindow
                 ListTitle.Text = _group ?? "All channels";
             }
             var (total, items) = await _repo.Query("live", _source.Id, _group, _group == null ? HiddenNow : null,
-                S.LiveSortAz ? "name_asc" : "provider", 0, _liveItems.Count, LivePage);
+                S.LiveSortAz ? "name_asc" : "provider", 0, _liveItems.Count, LivePage, GroupFieldNow);
             if (version != _loadVersion) return;
             _liveTotal = total;
             AppendLive(items);

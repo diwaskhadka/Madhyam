@@ -121,10 +121,12 @@
                                     ToolTip="Search categories" Click="CatSearch_Click" />
                             <Button x:Name="CatSortBtn" Style="{StaticResource IconButton}" Content="&#xE8CB;" Width="30" Height="30" FontSize="13"
                                     ToolTip="Sort categories" Click="CatSort_Click" />
-                            <Button Style="{StaticResource IconButton}" Content="&#xE9E9;" Width="30" Height="30" FontSize="13"
+                            <Button x:Name="CatManageBtn" Style="{StaticResource IconButton}" Content="&#xE9E9;" Width="30" Height="30" FontSize="13"
                                     ToolTip="Manage categories (show / hide)" Click="CatManage_Click" />
                         </StackPanel>
                     </Grid>
+                    <!-- Free TV only: list channels by category or by country. -->
+                    <ContentControl x:Name="CatModeBox" DockPanel.Dock="Top" Margin="4,0,4,10" Visibility="Collapsed" Focusable="False" />
                     <Border x:Name="CatFilterBox" DockPanel.Dock="Top" Margin="4,0,4,10" Visibility="Collapsed" CornerRadius="18"
                             Background="{StaticResource Card}" BorderBrush="{StaticResource Line}" BorderThickness="1" Padding="12,0" Height="36">
                         <Grid>
