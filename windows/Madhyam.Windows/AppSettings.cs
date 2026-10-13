@@ -16,8 +16,8 @@ public sealed class AppSettings
     public string Theme { get; set; } = "Dark";            // Dark | Light | System
     public string CoverSize { get; set; } = "Medium";      // Small | Medium | Large
     public bool TitlesUnderCovers { get; set; } = true;
-    public string StartupView { get; set; } = "Live";      // Live | Movies | Series | Favorites | Recent | Last
-    public string LastView { get; set; } = "Live";
+    public string StartupView { get; set; } = "Dashboard"; // Dashboard | Live | Movies | Series | Favorites | Recent | Last
+    public string LastView { get; set; } = "Dashboard";
     public string WindowStartup { get; set; } = "Last";    // Last | Maximized | Fullscreen
     public double? WinLeft { get; set; }
     public double? WinTop { get; set; }
@@ -41,6 +41,36 @@ public sealed class AppSettings
     public int EpgOffsetMinutes { get; set; }
     public int EpgRefreshHours { get; set; } = 12;
     public List<string> ExtraEpgUrls { get; set; } = new();
+
+    // ---- Dashboard (which rails are shown)
+    public bool DashHero { get; set; } = true;
+    public bool DashContinue { get; set; } = true;
+    public bool DashLiveFavorites { get; set; } = true;
+    public bool DashRecentLive { get; set; } = true;
+    public bool DashFavoriteVod { get; set; } = true;
+    public bool DashRecentlyAdded { get; set; } = true;
+
+    // ---- Browsing state
+    /// <summary>Hidden categories per "sourceId:kind" (Manage categories).</summary>
+    public Dictionary<string, List<string>> HiddenCategories { get; set; } = new();
+    /// <summary>Category list order per kind: provider | name_asc | name_desc.</summary>
+    public Dictionary<string, string> CategorySort { get; set; } = new();
+    public bool LiveSortAz { get; set; }
+    /// <summary>Poster grid sort (core sort names) and minimum rating.</summary>
+    public string VodSort { get; set; } = "provider";
+    public double VodMinRating { get; set; }
+    public int PerPage { get; set; } = 50;
+
+    // ---- Sources
+    /// <summary>When each source was added (Unix seconds), keyed by source id.</summary>
+    public Dictionary<int, long> SourceAdded { get; set; } = new();
+    /// <summary>Optional user agent per source, sent for playlist downloads and playback.</summary>
+    public Dictionary<int, string> SourceUserAgent { get; set; } = new();
+
+    public static string HiddenKey(int source, string kind) => $"{source}:{kind}";
+
+    public HashSet<string> Hidden(int source, string kind) =>
+        HiddenCategories.TryGetValue(HiddenKey(source, kind), out var l) ? l.ToHashSet() : new HashSet<string>();
 
     // ------------------------------------------------------------------ io
 

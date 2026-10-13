@@ -10,7 +10,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>Madhyam</AssemblyName>
     <RootNamespace>Madhyam.Windows</RootNamespace>
-    <Version>0.3.0</Version>
+    <Version>0.4.0</Version>
     <Product>Madhyam</Product>
     <!-- LibVLC for Windows ships x64/x86 only; x64 also runs on Windows on ARM (emulated). -->
     <PlatformTarget>x64</PlatformTarget>

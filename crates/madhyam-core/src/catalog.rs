@@ -219,6 +219,80 @@ fn name_key(s: &str) -> String {
         .join(" ")
 }
 
+// ======================================================================= query
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Sort {
+    /// Provider order (playlist order / Xtream `num`).
+    #[default]
+    Provider,
+    AddedDesc,
+    AddedAsc,
+    NameAsc,
+    NameDesc,
+    RatingDesc,
+    RatingAsc,
+}
+
+impl Sort {
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "provider" | "" => Sort::Provider,
+            "added_desc" => Sort::AddedDesc,
+            "added_asc" => Sort::AddedAsc,
+            "name_asc" => Sort::NameAsc,
+            "name_desc" => Sort::NameDesc,
+            "rating_desc" => Sort::RatingDesc,
+            "rating_asc" => Sort::RatingAsc,
+            _ => return None,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ListQuery {
+    pub source: Option<SourceId>,
+    pub kind: ItemKind,
+    pub group: Option<String>,
+    pub hidden_groups: HashSet<String>,
+    pub sort: Sort,
+    pub min_rating: f64,
+    pub offset: usize,
+    pub limit: usize,
+}
+
+impl ListQuery {
+    pub fn new(kind: ItemKind) -> Self {
+        ListQuery {
+            source: None,
+            kind,
+            group: None,
+            hidden_groups: HashSet::new(),
+            sort: Sort::Provider,
+            min_rating: 0.0,
+            offset: 0,
+            limit: 100,
+        }
+    }
+}
+
+/// When the provider added the item (Unix seconds), 0 if unknown.
+/// Xtream sends `added` for live/VOD and `last_modified` for series.
+pub fn item_added(i: &Item) -> i64 {
+    i.extra("added")
+        .or_else(|| i.extra("last_modified"))
+        .and_then(|v| v.trim().parse::<i64>().ok())
+        .unwrap_or(0)
+}
+
+/// Provider rating (0–10), 0 if unknown.
+pub fn item_rating(i: &Item) -> f64 {
+    i.extra("rating")
+        .and_then(|v| v.trim().replace(',', ".").parse::<f64>().ok())
+        .filter(|r| r.is_finite())
+        .unwrap_or(0.0)
+}
+
 // ===================================================================== catalog
 
 #[derive(Default)]
@@ -274,6 +348,28 @@ impl Catalog {
 
     pub fn sources(&self) -> Vec<&Source> {
         self.sources.values().collect()
+    }
+
+    /// Change where a source comes from (playlist URL, or Xtream server/login).
+    /// Items keep their ids; stream URLs that embed the old login are stale
+    /// until the next refresh, which the host should start right away.
+    pub fn update_source(&mut self, id: SourceId, kind: SourceKind) -> Result<()> {
+        let s = self
+            .sources
+            .get_mut(&id)
+            .ok_or_else(|| Error::NotFound(format!("source {id}")))?;
+        let same_type = matches!(
+            (&s.kind, &kind),
+            (SourceKind::M3u { .. }, SourceKind::M3u { .. })
+                | (SourceKind::Xtream(_), SourceKind::Xtream(_))
+        );
+        if !same_type {
+            return Err(Error::Invalid(
+                "a source cannot change between M3U and Xtream".into(),
+            ));
+        }
+        s.kind = kind;
+        Ok(())
     }
 
     pub fn rename_source(&mut self, id: SourceId, name: &str) -> Result<()> {
@@ -472,6 +568,33 @@ impl Catalog {
             .collect();
         v.sort_by_key(|i| i.order);
         v.into_iter().skip(offset).take(limit).collect()
+    }
+
+    /// Filtered, sorted, paged listing for grids and long lists.
+    /// Returns `(total matches, page)`.
+    pub fn query(&self, q: &ListQuery) -> (usize, Vec<&Item>) {
+        let mut v: Vec<&Item> = self
+            .items
+            .iter()
+            .filter(|i| {
+                i.kind == q.kind
+                    && q.source.is_none_or(|s| s == i.source)
+                    && q.group.as_deref().is_none_or(|g| i.group == g)
+                    && !q.hidden_groups.contains(&i.group)
+                    && (q.min_rating <= 0.0 || item_rating(i) >= q.min_rating)
+            })
+            .collect();
+        match q.sort {
+            Sort::Provider => v.sort_by_key(|i| (i.source, i.order)),
+            Sort::AddedDesc => v.sort_by_key(|i| (std::cmp::Reverse(item_added(i)), i.order)),
+            Sort::AddedAsc => v.sort_by_key(|i| (item_added(i), i.order)),
+            Sort::NameAsc => v.sort_by_cached_key(|i| i.name.to_lowercase()),
+            Sort::NameDesc => v.sort_by_cached_key(|i| std::cmp::Reverse(i.name.to_lowercase())),
+            Sort::RatingDesc => v.sort_by(|a, b| item_rating(b).total_cmp(&item_rating(a))),
+            Sort::RatingAsc => v.sort_by(|a, b| item_rating(a).total_cmp(&item_rating(b))),
+        }
+        let total = v.len();
+        (total, v.into_iter().skip(q.offset).take(q.limit).collect())
     }
 
     /// Episodes of a series, in season/episode order.
@@ -725,6 +848,20 @@ impl Catalog {
         self.history.retain(|(i, _)| *i != id);
         self.history.insert(0, (id, now));
         self.history.truncate(HISTORY_CAP);
+    }
+
+    /// Forget one item from "recently watched" (its resume position stays).
+    pub fn remove_from_history(&mut self, id: ItemId) {
+        self.history.retain(|(i, _)| *i != id);
+    }
+
+    pub fn clear_history(&mut self) {
+        self.history.clear();
+    }
+
+    /// When an item was last played (Unix seconds).
+    pub fn last_played(&self, id: ItemId) -> Option<i64> {
+        self.history.iter().find(|(i, _)| *i == id).map(|(_, t)| *t)
     }
 
     pub fn recent(&self, kind: Option<ItemKind>, limit: usize) -> Vec<&Item> {
@@ -1097,6 +1234,85 @@ mod tests {
         assert_eq!(c.episodes(show.id).len(), 2);
         assert!(c.sources()[0].epg_fetch_urls()[0].contains("/xmltv.php?username=u"));
         assert!(!c.sources()[0].to_json().to_string().contains("p%26x"));
+    }
+
+    #[test]
+    fn query_sorts_filters_pages() {
+        let mut c = Catalog::new();
+        let xc = client();
+        let s = c.add_source("Panel", SourceKind::Xtream(xc.creds.clone()));
+        let mut items = Vec::new();
+        for (i, (name, rating, added, group)) in [
+            ("Beta", "7.5", "300", "A"),
+            ("alpha", "9.1", "100", "A"),
+            ("Gamma", "", "200", "B"),
+            ("delta", "5", "", "A"),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut it = Item::new(s, ItemKind::Movie, i.to_string(), name);
+            it.group = group.into();
+            it.order = i as u32;
+            items.push(
+                it.with_extra("rating", Some(rating.into()))
+                    .with_extra("added", Some(added.into())),
+            );
+        }
+        c.apply_xtream(
+            s,
+            XtreamSnapshot {
+                items,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let names = |q: &ListQuery| {
+            c.query(q)
+                .1
+                .iter()
+                .map(|i| i.name.clone())
+                .collect::<Vec<_>>()
+        };
+        let mut q = ListQuery::new(ItemKind::Movie);
+        assert_eq!(names(&q), ["Beta", "alpha", "Gamma", "delta"]);
+        q.sort = Sort::NameAsc;
+        assert_eq!(names(&q), ["alpha", "Beta", "delta", "Gamma"]);
+        q.sort = Sort::AddedDesc;
+        assert_eq!(names(&q), ["Beta", "Gamma", "alpha", "delta"]);
+        q.sort = Sort::RatingDesc;
+        q.min_rating = 7.0;
+        assert_eq!(names(&q), ["alpha", "Beta"]);
+        q.min_rating = 0.0;
+        q.hidden_groups.insert("A".into());
+        assert_eq!(names(&q), ["Gamma"]);
+        q.hidden_groups.clear();
+        q.offset = 1;
+        q.limit = 2;
+        let (total, page) = c.query(&q);
+        assert_eq!((total, page.len()), (4, 2));
+    }
+
+    #[test]
+    fn update_source_keeps_items() {
+        let (mut c, s) = sample();
+        let n = c.len();
+        c.update_source(
+            s,
+            SourceKind::M3u {
+                location: "http://new/list.m3u".into(),
+            },
+        )
+        .unwrap();
+        assert_eq!(c.len(), n);
+        let SourceKind::M3u { location } = &c.source(s).unwrap().kind else {
+            panic!()
+        };
+        assert_eq!(location, "http://new/list.m3u");
+        assert!(
+            c.update_source(s, SourceKind::Xtream(XtreamCredentials::new("h", "u", "p")))
+                .is_err()
+        );
     }
 
     #[test]

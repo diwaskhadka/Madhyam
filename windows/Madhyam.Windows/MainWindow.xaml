@@ -18,18 +18,20 @@
 
         <!-- ================================================= navigation rail -->
         <DockPanel Background="{StaticResource Rail}">
-            <StackPanel DockPanel.Dock="Top" Margin="0,16,0,0" HorizontalAlignment="Center">
-                <Border Width="40" Height="40" CornerRadius="12" Background="{StaticResource RailActive}" Margin="0,0,0,20">
+            <StackPanel DockPanel.Dock="Top" Margin="0,14,0,0" HorizontalAlignment="Center">
+                <Border Width="40" Height="40" CornerRadius="12" Background="{StaticResource RailActive}" Margin="0,0,0,14">
                     <TextBlock Text="&#xE7F4;" FontFamily="{StaticResource Icons}" FontSize="18"
                                Foreground="{StaticResource Accent}" HorizontalAlignment="Center" VerticalAlignment="Center" />
                 </Border>
-                <RadioButton x:Name="NavLive" Style="{StaticResource RailButton}" Content="&#xE7F4;" ToolTip="Live TV" Tag="Live" Checked="Nav_Checked" />
-                <RadioButton x:Name="NavMovies" Style="{StaticResource RailButton}" Content="&#xE8B2;" ToolTip="Movies" Tag="Movies" Checked="Nav_Checked" />
-                <RadioButton x:Name="NavSeries" Style="{StaticResource RailButton}" Content="&#xE8F1;" ToolTip="Series" Tag="Series" Checked="Nav_Checked" />
-                <Border Height="1" Width="28" Background="{StaticResource Line}" Margin="0,10" />
+                <RadioButton x:Name="NavDashboard" Style="{StaticResource RailButton}" Content="&#xE80F;" ToolTip="Dashboard" Tag="Dashboard" Checked="Nav_Checked" />
+                <RadioButton x:Name="NavSearch" Style="{StaticResource RailButton}" Content="&#xE721;" ToolTip="Advanced search (Ctrl+K)" Tag="Search" Checked="Nav_Checked" />
                 <RadioButton x:Name="NavFavorites" Style="{StaticResource RailButton}" Content="&#xEB51;" ToolTip="Favorites" Tag="Favorites" Checked="Nav_Checked" />
                 <RadioButton x:Name="NavRecent" Style="{StaticResource RailButton}" Content="&#xE81C;" ToolTip="Recently watched" Tag="Recent" Checked="Nav_Checked" />
-                <RadioButton x:Name="NavSearch" Style="{StaticResource RailButton}" Content="&#xE721;" ToolTip="Search everything (Ctrl+K)" Tag="Search" Checked="Nav_Checked" />
+                <Border Height="1" Width="28" Background="{StaticResource Line}" Margin="0,8" />
+                <RadioButton x:Name="NavMovies" Style="{StaticResource RailButton}" Content="&#xE8B2;" ToolTip="Movies" Tag="Movies" Checked="Nav_Checked" />
+                <RadioButton x:Name="NavLive" Style="{StaticResource RailButton}" Content="&#xE7F4;" ToolTip="Live TV" Tag="Live" Checked="Nav_Checked" />
+                <RadioButton x:Name="NavSeries" Style="{StaticResource RailButton}" Content="&#xE8F1;" ToolTip="Series" Tag="Series" Checked="Nav_Checked" />
+                <RadioButton x:Name="NavAdded" Style="{StaticResource RailButton}" Content="&#xE823;" ToolTip="Recently added" Tag="Added" Checked="Nav_Checked" />
             </StackPanel>
             <StackPanel DockPanel.Dock="Bottom" Margin="0,0,0,10" HorizontalAlignment="Center">
                 <RadioButton x:Name="NavSettings" Style="{StaticResource RailButton}" Content="&#xE713;" ToolTip="Settings" Tag="Settings" Checked="Nav_Checked" />
@@ -39,83 +41,93 @@
 
         <Grid Grid.Column="1">
             <Grid.RowDefinitions>
-                <RowDefinition x:Name="TopRow" Height="68" />
+                <RowDefinition x:Name="TopRow" Height="62" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
             <!-- ============================================= top bar -->
-            <Grid Margin="14,12,14,4">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" MinWidth="240" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-
+            <StackPanel Orientation="Horizontal" Margin="12,10,12,4">
                 <!-- Playlist switcher -->
-                <Border x:Name="PlaylistButton" CornerRadius="12" Background="{StaticResource Card}" Padding="8,0,12,0"
-                        Cursor="Hand" MouseLeftButtonUp="PlaylistButton_Click" ToolTip="Switch playlist">
+                <Border x:Name="PlaylistButton" CornerRadius="12" Background="{StaticResource Card}" Padding="8,0,10,0" Width="250"
+                        Cursor="Hand" MouseLeftButtonUp="PlaylistButton_Click" ToolTip="Playlists, playlist info and account info">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <Border Width="32" Height="32" CornerRadius="8" Background="{StaticResource Chip}" VerticalAlignment="Center">
-                            <TextBlock Text="&#xE8FD;" FontFamily="{StaticResource Icons}" FontSize="14"
+                        <Border Width="30" Height="30" CornerRadius="8" Background="{StaticResource Chip}" VerticalAlignment="Center">
+                            <TextBlock Text="&#xE8FD;" FontFamily="{StaticResource Icons}" FontSize="13"
                                        HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
-                        <StackPanel Grid.Column="1" Margin="10,0" VerticalAlignment="Center">
-                            <TextBlock x:Name="PlaylistName" Text="No playlist" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                            <TextBlock x:Name="PlaylistCount" Text="Add a source to begin" FontSize="11.5" Foreground="{StaticResource Muted}" MaxWidth="420" TextTrimming="CharacterEllipsis" />
+                        <StackPanel Grid.Column="1" Margin="9,0" VerticalAlignment="Center">
+                            <TextBlock x:Name="PlaylistName" Text="No playlist" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                            <TextBlock x:Name="PlaylistCount" Text="Add a source to begin" FontSize="11" Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis" />
                         </StackPanel>
-                        <TextBlock Grid.Column="2" Text="&#xE70D;" FontFamily="{StaticResource Icons}" FontSize="12"
+                        <TextBlock Grid.Column="2" Text="&#xE70D;" FontFamily="{StaticResource Icons}" FontSize="11"
                                    Foreground="{StaticResource Muted}" VerticalAlignment="Center" />
                     </Grid>
                 </Border>
 
-                <!-- Search pill -->
-                <Border Grid.Column="1" Margin="12,0" CornerRadius="12" Background="{StaticResource Card}" Padding="14,0">
+                <!-- Search pill (compact) -->
+                <Border x:Name="SearchPill" Margin="10,0,0,0" CornerRadius="12" Background="{StaticResource Card}" Padding="12,0" Width="460"
+                        BorderThickness="1" BorderBrush="Transparent">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock Text="&#xE721;" FontFamily="{StaticResource Icons}" FontSize="15" VerticalAlignment="Center"
+                        <TextBlock Text="&#xE721;" FontFamily="{StaticResource Icons}" FontSize="13" VerticalAlignment="Center"
                                    Foreground="{StaticResource Muted}" />
-                        <TextBlock x:Name="SectionLabel" Grid.Column="1" Text="Live TV" FontWeight="SemiBold" FontSize="14"
-                                   Margin="12,0,14,0" VerticalAlignment="Center" MaxWidth="260" TextTrimming="CharacterEllipsis" />
+                        <TextBlock x:Name="SectionLabel" Grid.Column="1" Text="Advanced search" FontWeight="SemiBold" FontSize="12.5"
+                                   Margin="10,0,12,0" VerticalAlignment="Center" MaxWidth="190" TextTrimming="CharacterEllipsis" />
                         <Grid Grid.Column="2">
-                            <TextBlock x:Name="SearchHint" Text="Filter this section…" Foreground="{StaticResource Muted}" FontSize="14"
-                                       VerticalAlignment="Center" IsHitTestVisible="False" />
-                            <TextBox x:Name="SearchBox" Background="Transparent" BorderThickness="0" Padding="0" FontSize="14"
-                                     VerticalContentAlignment="Center" TextChanged="SearchBox_TextChanged" />
+                            <TextBlock x:Name="SearchHint" Text="Search in this playlist…" Foreground="{StaticResource Muted}" FontSize="13"
+                                       VerticalAlignment="Center" IsHitTestVisible="False" TextTrimming="CharacterEllipsis" />
+                            <TextBox x:Name="SearchBox" Background="Transparent" BorderThickness="0" Padding="0" FontSize="13"
+                                     VerticalContentAlignment="Center" TextChanged="SearchBox_TextChanged" KeyDown="SearchBox_KeyDown"
+                                     GotKeyboardFocus="SearchBox_Focus" LostKeyboardFocus="SearchBox_Focus" />
                         </Grid>
-                        <Border Grid.Column="3" CornerRadius="6" Background="{StaticResource Chip}" Padding="7,2" VerticalAlignment="Center">
-                            <TextBlock Text="Ctrl K" FontSize="11" Foreground="{StaticResource Muted}" />
+                        <Button x:Name="SearchClear" Grid.Column="3" Style="{StaticResource IconButton}" Content="&#xE711;" FontSize="10"
+                                Width="26" Height="26" Visibility="Collapsed" Click="SearchClear_Click" ToolTip="Clear" />
+                        <Border Grid.Column="4" CornerRadius="6" Background="{StaticResource Chip}" Padding="7,2" VerticalAlignment="Center" Margin="6,0,0,0">
+                            <TextBlock Text="Ctrl+K" FontSize="10.5" Foreground="{StaticResource Muted}" />
                         </Border>
                     </Grid>
                 </Border>
 
-                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Style="{StaticResource IconButton}" Content="&#xE710;" ToolTip="Add a playlist" Click="Add_Click" />
-                    <Button x:Name="RefreshButton" Style="{StaticResource IconButton}" Content="&#xE72C;" ToolTip="Refresh this playlist" Click="Refresh_Click" />
-                    <Button Style="{StaticResource IconButton}" Content="&#xE740;" ToolTip="Fullscreen (F11)" Click="Fullscreen_Click" />
-                </StackPanel>
-            </Grid>
+                <Button Style="{StaticResource IconButton}" Content="&#xE710;" ToolTip="Add a playlist" Click="Add_Click" Margin="8,0,0,0" />
+                <Button x:Name="RefreshButton" Style="{StaticResource IconButton}" Content="&#xE72C;" ToolTip="Refresh this playlist" Click="Refresh_Click" />
+                <Button Style="{StaticResource IconButton}" Content="&#xE740;" ToolTip="Full screen (F11)" Click="Fullscreen_Click" />
+                <TextBlock x:Name="Status" Foreground="{StaticResource Accent}" VerticalAlignment="Center" Margin="12,0,0,0" MaxWidth="520"
+                           TextTrimming="CharacterEllipsis" FontSize="12.5" />
+            </StackPanel>
 
             <!-- ============================================= body -->
-            <Grid Grid.Row="1" Margin="14,8,14,14">
+            <Grid Grid.Row="1" x:Name="Body" Margin="12,6,12,12">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition x:Name="ColCats" Width="240" />
-                    <ColumnDefinition x:Name="ColList" Width="350" />
+                    <ColumnDefinition x:Name="ColCats" Width="250" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
-                <!-- Categories -->
-                <DockPanel x:Name="CatsPanel" Margin="0,0,14,0">
-                    <TextBlock x:Name="CatsTitle" DockPanel.Dock="Top" Text="Categories" FontSize="17" FontWeight="SemiBold" Margin="12,4,0,12" />
+                <!-- Categories (Live / Movies / Series) -->
+                <DockPanel x:Name="CatsPanel" Margin="0,0,12,0">
+                    <Grid DockPanel.Dock="Top" Margin="8,2,0,8">
+                        <TextBlock x:Name="CatsTitle" Text="Categories" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button x:Name="CatSearchBtn" Style="{StaticResource IconButton}" Content="&#xE721;" Width="30" Height="30" FontSize="13"
+                                    ToolTip="Search categories" Click="CatSearch_Click" />
+                            <Button x:Name="CatSortBtn" Style="{StaticResource IconButton}" Content="&#xE8CB;" Width="30" Height="30" FontSize="13"
+                                    ToolTip="Sort categories" Click="CatSort_Click" />
+                            <Button Style="{StaticResource IconButton}" Content="&#xE9E9;" Width="30" Height="30" FontSize="13"
+                                    ToolTip="Manage categories (show / hide)" Click="CatManage_Click" />
+                        </StackPanel>
+                    </Grid>
+                    <TextBox x:Name="CatFilter" DockPanel.Dock="Top" Margin="4,0,4,8" Visibility="Collapsed" TextChanged="CatFilter_TextChanged"
+                             ToolTip="Filter categories" />
                     <ListBox x:Name="GroupList" Style="{StaticResource PlainList}" ItemContainerStyle="{StaticResource CategoryItem}"
                              SelectionChanged="GroupList_SelectionChanged">
                         <ListBox.ItemTemplate>
@@ -129,7 +141,7 @@
                                                Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" />
                                     <Border Grid.Column="1" CornerRadius="9" Background="{StaticResource Chip}" Padding="7,1" Margin="10,0,0,0"
                                             VerticalAlignment="Center" MinWidth="26">
-                                        <TextBlock Text="{Binding Count}" FontSize="11" Foreground="{StaticResource Muted}" HorizontalAlignment="Center" />
+                                        <TextBlock Text="{Binding Count, StringFormat=N0}" FontSize="11" Foreground="{StaticResource Muted}" HorizontalAlignment="Center" />
                                     </Border>
                                 </Grid>
                             </DataTemplate>
@@ -137,111 +149,211 @@
                     </ListBox>
                 </DockPanel>
 
-                <!-- Channel cards (live, favorites, recent, search) -->
-                <DockPanel x:Name="ListPanel" Grid.Column="1" Margin="0,0,14,0">
-                    <StackPanel DockPanel.Dock="Top" Margin="4,4,4,12">
+                <!-- ===== Live TV: channel list + player/guide ===== -->
+                <Grid x:Name="LiveLayout" Grid.Column="1">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition x:Name="ColList" Width="340" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <DockPanel x:Name="ListPanel" Margin="0,0,12,0">
+                        <Border DockPanel.Dock="Top" CornerRadius="10" Background="{StaticResource Panel}" Padding="12,6,6,6" Margin="0,0,0,8">
+                            <Grid>
+                                <TextBlock x:Name="ListTitle" Text="All channels" FontSize="14.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                                           VerticalAlignment="Center" Margin="0,0,96,0" />
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                    <TextBlock x:Name="ListCount" FontSize="12" Foreground="{StaticResource Muted}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                    <Button x:Name="LiveSortBtn" Style="{StaticResource IconButton}" Content="&#xE8CB;" Width="30" Height="30" FontSize="13"
+                                            ToolTip="Sort A–Z" Click="LiveSort_Click" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
                         <Grid>
-                            <TextBlock x:Name="ListTitle" Text="All channels" FontSize="17" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Margin="0,0,70,0" />
-                            <TextBlock x:Name="ListCount" HorizontalAlignment="Right" VerticalAlignment="Bottom" FontSize="12" Foreground="{StaticResource Muted}" />
-                        </Grid>
-                        <TextBlock x:Name="Status" Foreground="{StaticResource Accent}" TextWrapping="Wrap" FontSize="12" Margin="0,4,0,0" />
-                    </StackPanel>
-                    <Grid>
-                        <TextBlock x:Name="ListEmpty" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="6,10" Visibility="Collapsed" />
-                        <ListBox x:Name="ItemList" Style="{StaticResource PlainList}" ItemContainerStyle="{StaticResource RowItem}"
-                                 MouseLeftButtonUp="ItemList_MouseLeftButtonUp" KeyDown="ItemList_KeyDown"
-                                 SelectionChanged="ItemList_SelectionChanged">
-                            <ListBox.ContextMenu>
-                                <ContextMenu>
-                                    <MenuItem Header="Play" Click="Play_Click" />
-                                    <MenuItem Header="Add / remove favorite" Click="Favorite_Click" />
-                                </ContextMenu>
-                            </ListBox.ContextMenu>
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="44" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <Border Width="40" Height="40" CornerRadius="8" Background="{StaticResource Chip}" VerticalAlignment="Center">
-                                            <Grid>
-                                                <TextBlock Text="{Binding Initials}" FontSize="14" Foreground="{StaticResource Muted}"
-                                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                <Image Source="{Binding Logo}" Stretch="Uniform" Margin="3" RenderOptions.BitmapScalingMode="HighQuality" />
-                                            </Grid>
-                                        </Border>
-                                        <StackPanel Grid.Column="1" Margin="10,0,4,0" VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding Title}" FontSize="13.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                            <TextBlock FontSize="12" Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis" Margin="0,1,0,0">
-                                                <TextBlock.Style>
-                                                    <Style TargetType="TextBlock">
-                                                        <Setter Property="Text" Value="{Binding Subtitle}" />
+                            <TextBlock x:Name="ListEmpty" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="6,10" Visibility="Collapsed" />
+                            <ListBox x:Name="ItemList" Style="{StaticResource PlainList}" ItemContainerStyle="{StaticResource RowItem}"
+                                     MouseLeftButtonUp="ItemList_MouseLeftButtonUp" KeyDown="ItemList_KeyDown"
+                                     SelectionChanged="ItemList_SelectionChanged" ScrollViewer.ScrollChanged="ItemList_ScrollChanged">
+                                <ListBox.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Play" Click="Play_Click" />
+                                        <MenuItem Header="Add / remove favorite" Click="Favorite_Click" />
+                                    </ContextMenu>
+                                </ListBox.ContextMenu>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="44" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Border Width="40" Height="40" CornerRadius="8" Background="{StaticResource Chip}" VerticalAlignment="Center">
+                                                <Grid>
+                                                    <TextBlock Text="{Binding Initials}" FontSize="13" Foreground="{StaticResource Muted}"
+                                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                    <Image Source="{Binding Logo}" Stretch="Uniform" Margin="3" RenderOptions.BitmapScalingMode="HighQuality" />
+                                                </Grid>
+                                            </Border>
+                                            <StackPanel Grid.Column="1" Margin="10,0,4,0" VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Title}" FontSize="13.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{Binding NowTitle}" FontSize="12" Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis" Margin="0,1,0,0" />
+                                                <Grid Margin="0,3,0,0" Visibility="{Binding HasNow, Converter={StaticResource BoolVis}}">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Text="{Binding StartText}" FontSize="11" Foreground="{StaticResource Muted}" />
+                                                    <ProgressBar Grid.Column="1" Style="{StaticResource ThinProgress}" Value="{Binding Progress, Mode=OneWay}"
+                                                                 Margin="8,0" VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Column="2" Text="{Binding EndText}" FontSize="11" Foreground="{StaticResource Muted}" />
+                                                </Grid>
+                                            </StackPanel>
+                                            <Button Grid.Column="2" Content="{Binding StarGlyph}" Tag="{Binding}" Click="Star_Click"
+                                                    ToolTip="Favorite" VerticalAlignment="Top" Width="30" Height="30" FontSize="13">
+                                                <Button.Style>
+                                                    <Style TargetType="Button" BasedOn="{StaticResource IconButton}">
+                                                        <Setter Property="Foreground" Value="{StaticResource Muted}" />
                                                         <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding IsLive}" Value="True">
-                                                                <Setter Property="Text" Value="{Binding NowTitle}" />
+                                                            <DataTrigger Binding="{Binding IsFavorite}" Value="True">
+                                                                <Setter Property="Foreground" Value="{StaticResource Star}" />
                                                             </DataTrigger>
                                                         </Style.Triggers>
                                                     </Style>
-                                                </TextBlock.Style>
-                                            </TextBlock>
-                                            <Grid Margin="0,3,0,0" Visibility="{Binding HasNow, Converter={StaticResource BoolVis}}">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="Auto" />
-                                                    <ColumnDefinition Width="*" />
-                                                    <ColumnDefinition Width="Auto" />
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Text="{Binding StartText}" FontSize="11" Foreground="{StaticResource Muted}" />
-                                                <ProgressBar Grid.Column="1" Style="{StaticResource ThinProgress}" Value="{Binding Progress, Mode=OneWay}"
-                                                             Margin="8,0" VerticalAlignment="Center" />
-                                                <TextBlock Grid.Column="2" Text="{Binding EndText}" FontSize="11" Foreground="{StaticResource Muted}" />
-                                            </Grid>
-                                        </StackPanel>
-                                        <Button Grid.Column="2" Content="{Binding StarGlyph}" Tag="{Binding}" Click="Star_Click"
-                                                ToolTip="Favorite" VerticalAlignment="Top" Width="30" Height="30" FontSize="13">
-                                            <Button.Style>
-                                                <Style TargetType="Button" BasedOn="{StaticResource IconButton}">
-                                                    <Setter Property="Foreground" Value="{StaticResource Muted}" />
+                                                </Button.Style>
+                                            </Button>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Grid>
+                    </DockPanel>
+
+                    <!-- Player + guide -->
+                    <Grid x:Name="PlayerPanel" Grid.Column="1">
+                        <Grid.RowDefinitions>
+                            <RowDefinition x:Name="VideoRow" Height="*" MinHeight="200" />
+                            <RowDefinition x:Name="GuideRow" Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid x:Name="LiveVideoBox" Background="Black">
+                            <StackPanel x:Name="VideoHint" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <TextBlock Text="&#xE7F4;" FontFamily="{StaticResource Icons}" FontSize="40" Foreground="{StaticResource Thumb}" HorizontalAlignment="Center" />
+                                <TextBlock Text="Select a channel to start watching" Foreground="{StaticResource Muted}" Margin="0,12,0,0" />
+                            </StackPanel>
+                            <Grid x:Name="LiveVideoHost">
+                                <vlc:VideoView x:Name="Video" Visibility="Collapsed" />
+                            </Grid>
+                        </Grid>
+
+                        <!-- EPG list (Settings → Programme guide → List) -->
+                        <DockPanel x:Name="GuidePanel" Grid.Row="1" Margin="0,12,0,0" Visibility="Collapsed">
+                            <Grid DockPanel.Dock="Top" Margin="0,0,0,8">
+                                <Button Style="{StaticResource IconButton}" Content="&#xE76B;" HorizontalAlignment="Left" Click="GuidePrev_Click" ToolTip="Previous day" />
+                                <TextBlock x:Name="GuideDay" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="14" FontWeight="SemiBold" />
+                                <Button Style="{StaticResource IconButton}" Content="&#xE76C;" HorizontalAlignment="Right" Click="GuideNext_Click" ToolTip="Next day" />
+                            </Grid>
+                            <TextBlock x:Name="GuideEmpty" DockPanel.Dock="Top" Foreground="{StaticResource Muted}" Margin="6,4" TextWrapping="Wrap"
+                                       Text="No programme guide for this channel." Visibility="Collapsed" />
+                            <ListBox x:Name="GuideList" Style="{StaticResource PlainList}" ItemContainerStyle="{StaticResource CardItem}" MaxHeight="340">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel>
+                                            <StackPanel.Style>
+                                                <Style TargetType="StackPanel">
                                                     <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding IsFavorite}" Value="True">
-                                                            <Setter Property="Foreground" Value="{StaticResource Star}" />
+                                                        <DataTrigger Binding="{Binding IsPast}" Value="True">
+                                                            <Setter Property="Opacity" Value="0.5" />
                                                         </DataTrigger>
                                                     </Style.Triggers>
                                                 </Style>
-                                            </Button.Style>
-                                        </Button>
-                                    </Grid>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
-                    </Grid>
-                </DockPanel>
+                                            </StackPanel.Style>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding TimeRange}" FontSize="12" Foreground="{StaticResource Muted}" VerticalAlignment="Center" />
+                                                <Border CornerRadius="6" BorderThickness="1" BorderBrush="{StaticResource LiveRed}" Padding="7,1" Margin="12,0,0,0"
+                                                        Visibility="{Binding IsLive, Converter={StaticResource BoolVis}}">
+                                                    <TextBlock Text="LIVE" FontSize="10" FontWeight="Bold" Foreground="{StaticResource LiveRed}" />
+                                                </Border>
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding Title}" FontSize="14.5" FontWeight="SemiBold" Margin="0,6,0,0" TextTrimming="CharacterEllipsis" />
+                                            <ProgressBar Style="{StaticResource ThinProgress}" Value="{Binding Progress, Mode=OneWay}" Margin="0,8,0,0"
+                                                         Visibility="{Binding IsLive, Converter={StaticResource BoolVis}}" />
+                                            <TextBlock Text="{Binding Desc}" FontSize="12" Foreground="{StaticResource Muted}" TextWrapping="Wrap"
+                                                       MaxHeight="34" TextTrimming="CharacterEllipsis" Margin="0,6,0,0"
+                                                       Visibility="{Binding HasDesc, Converter={StaticResource BoolVis}}" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </DockPanel>
 
-                <!-- Poster grid (movies, series) -->
-                <DockPanel x:Name="GridPanel" Grid.Column="1" Grid.ColumnSpan="2" Visibility="Collapsed">
-                    <Border DockPanel.Dock="Top" CornerRadius="12" Background="{StaticResource Panel}" Padding="18,10" Margin="0,0,0,14">
+                        <!-- EPG timeline ribbon (default) -->
+                        <Border x:Name="TimelinePanel" Grid.Row="1" Margin="0,10,0,0" CornerRadius="12"
+                                Background="{StaticResource Panel}" Padding="0,8,0,6">
+                            <DockPanel>
+                                <Grid DockPanel.Dock="Top" Margin="14,0,8,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock x:Name="TlChannel" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock x:Name="TlNow" FontSize="12" Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Button x:Name="LiveMute" Style="{StaticResource IconButton}" Content="&#xE767;" ToolTip="Mute" Click="Mute_Click" />
+                                        <Button Style="{StaticResource IconButton}" Content="&#xE740;" ToolTip="Full screen (F11)" Click="Fullscreen_Click" />
+                                        <Button Style="{StaticResource IconButton}" Content="&#xE81D;" ToolTip="Jump to now" Click="TimelineNow_Click" />
+                                        <Button Style="{StaticResource IconButton}" Content="&#xE76B;" ToolTip="Previous day" Click="GuidePrev_Click" />
+                                        <TextBlock x:Name="TlDay" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" Margin="6,0" MinWidth="110" TextAlignment="Center" />
+                                        <Button Style="{StaticResource IconButton}" Content="&#xE76C;" ToolTip="Next day" Click="GuideNext_Click" />
+                                    </StackPanel>
+                                </Grid>
+                                <TextBlock x:Name="TlEmpty" DockPanel.Dock="Top" Foreground="{StaticResource Muted}" Margin="14,6" Visibility="Collapsed"
+                                           Text="No programme guide for this channel." />
+                                <ScrollViewer x:Name="TlScroll" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                                              PreviewMouseWheel="TlScroll_PreviewMouseWheel">
+                                    <Canvas x:Name="TlCanvas" Height="112" HorizontalAlignment="Left" />
+                                </ScrollViewer>
+                            </DockPanel>
+                        </Border>
+                    </Grid>
+                </Grid>
+
+                <!-- ===== Movies / Series poster grid ===== -->
+                <DockPanel x:Name="GridPanel" Grid.Column="1" Visibility="Collapsed">
+                    <Border DockPanel.Dock="Top" CornerRadius="12" Background="{StaticResource Panel}" Padding="16,8" Margin="0,0,0,12">
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <TextBlock x:Name="GridTitle" Text="All items" FontSize="17" FontWeight="SemiBold" />
-                                <TextBlock x:Name="GridCount" Foreground="{StaticResource Muted}" Margin="14,0,0,0" VerticalAlignment="Center" />
+                            <StackPanel VerticalAlignment="Center">
+                                <TextBlock x:Name="GridTitle" Text="All items" FontSize="15.5" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                <TextBlock x:Name="GridCount" Foreground="{StaticResource Muted}" FontSize="12" />
                             </StackPanel>
                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                <TextBlock Text="Per page" Foreground="{StaticResource Muted}" VerticalAlignment="Center" Margin="0,0,4,0" />
+                                <Button x:Name="SortBtn" Style="{StaticResource ChipButton}" Click="Sort_Click" ToolTip="Sort">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="&#xE8CB;" FontFamily="{StaticResource Icons}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                        <TextBlock x:Name="SortLabel" Text="Sort: Provider order" />
+                                    </StackPanel>
+                                </Button>
+                                <Button x:Name="RefineBtn" Style="{StaticResource ChipButton}" Click="Refine_Click" ToolTip="Minimum rating" Margin="8,0,0,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="&#xE71C;" FontFamily="{StaticResource Icons}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                        <TextBlock x:Name="RefineLabel" Text="Refine" />
+                                    </StackPanel>
+                                </Button>
+                                <TextBlock Text="Per page" Foreground="{StaticResource Muted}" VerticalAlignment="Center" Margin="18,0,2,0" FontSize="12" />
                                 <Button x:Name="Per25" Style="{StaticResource ChipButton}" Content="25" Tag="25" Click="PerPage_Click" />
                                 <Button x:Name="Per50" Style="{StaticResource ChipButton}" Content="50" Tag="50" Click="PerPage_Click" />
                                 <Button x:Name="Per100" Style="{StaticResource ChipButton}" Content="100" Tag="100" Click="PerPage_Click" />
-                                <TextBlock x:Name="PageText" Margin="20,0,8,0" VerticalAlignment="Center" />
+                                <TextBlock x:Name="PageText" Margin="16,0,6,0" VerticalAlignment="Center" FontSize="12.5" />
                                 <Button x:Name="PrevPage" Style="{StaticResource ChipButton}" FontFamily="{StaticResource Icons}" Content="&#xE76B;" Click="PrevPage_Click" />
                                 <Button x:Name="NextPage" Style="{StaticResource ChipButton}" FontFamily="{StaticResource Icons}" Content="&#xE76C;" Click="NextPage_Click" />
                             </StackPanel>
                         </Grid>
                     </Border>
-                    <TextBlock x:Name="GridStatus" DockPanel.Dock="Top" Foreground="{StaticResource Accent}" Margin="4,0,0,10" Visibility="Collapsed" />
                     <ScrollViewer x:Name="GridScroll" VerticalScrollBarVisibility="Auto">
                         <ItemsControl x:Name="PosterGrid">
                             <ItemsControl.ItemsPanel>
@@ -251,13 +363,14 @@
                             </ItemsControl.ItemsPanel>
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <Button Tag="{Binding}" Click="Poster_Click" Cursor="Hand" Margin="0,0,20,24" Width="{DynamicResource PosterW}" Focusable="False" Foreground="{StaticResource Fg}" ToolTip="{Binding Name}">
+                                    <Button Tag="{Binding}" Click="Poster_Click" Cursor="Hand" Margin="0,0,18,22" Width="{DynamicResource PosterW}"
+                                            Focusable="False" Foreground="{StaticResource Fg}" ToolTip="{Binding Name}">
                                         <Button.Template>
                                             <ControlTemplate TargetType="Button">
                                                 <StackPanel>
                                                     <Grid Width="{DynamicResource PosterW}" Height="{DynamicResource PosterH}">
                                                         <Border CornerRadius="12" Background="{StaticResource Card}">
-                                                            <TextBlock Text="{Binding Initials}" FontSize="30" Foreground="{StaticResource Muted}"
+                                                            <TextBlock Text="&#xE8B2;" FontFamily="{StaticResource Icons}" FontSize="30" Foreground="{StaticResource Muted}"
                                                                        HorizontalAlignment="Center" VerticalAlignment="Center" />
                                                         </Border>
                                                         <Border CornerRadius="12">
@@ -278,7 +391,7 @@
                                                         </Border>
                                                     </Grid>
                                                     <TextBlock Text="{Binding DisplayName}" FontSize="13" TextAlignment="Center" TextWrapping="Wrap"
-                                                               MaxHeight="36" TextTrimming="CharacterEllipsis" Margin="4,10,4,0"
+                                                               MaxHeight="36" TextTrimming="CharacterEllipsis" Margin="4,9,4,0"
                                                                Visibility="{DynamicResource PosterTitleVis}" />
                                                 </StackPanel>
                                                 <ControlTemplate.Triggers>
@@ -295,229 +408,79 @@
                     </ScrollViewer>
                 </DockPanel>
 
-                <!-- Details page (movie / series) -->
-                <Grid x:Name="DetailsPanel" Grid.Column="0" Grid.ColumnSpan="3" Visibility="Collapsed">
+                <!-- ===== Movie / series page: details, or in-page player + About below ===== -->
+                <Grid x:Name="VodPage" Grid.Column="1" Visibility="Collapsed">
                     <Border CornerRadius="16" Background="{StaticResource Panel}" ClipToBounds="True">
-                        <Grid>
-                            <Border Opacity="0.22">
-                                <Border.Background>
-                                    <ImageBrush x:Name="DetBackdrop" Stretch="UniformToFill" />
-                                </Border.Background>
-                                <Border.Effect>
-                                    <BlurEffect Radius="40" />
-                                </Border.Effect>
-                            </Border>
-                            <Border>
-                                <Border.Background>
-                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                                        <GradientStop Color="{StaticResource ShadeColor}" Offset="0" />
-                                        <GradientStop Color="{StaticResource ShadeEndColor}" Offset="0.85" />
-                                    </LinearGradientBrush>
-                                </Border.Background>
-                            </Border>
-                        </Grid>
+                        <ContentControl x:Name="VodBackdrop" />
                     </Border>
-                    <ScrollViewer VerticalScrollBarVisibility="Auto">
-                        <StackPanel Margin="36,24,36,30">
-                            <Button Style="{StaticResource IconButton}" Content="&#xE72B;" ToolTip="Back (Esc)" HorizontalAlignment="Left"
-                                    Click="DetailsBack_Click" Width="44" Height="44" FontSize="18" />
-                            <Grid Margin="0,20,0,0">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <Grid Width="270" Height="400" VerticalAlignment="Top">
-                                    <Border CornerRadius="14" Background="{StaticResource Card}">
-                                        <TextBlock x:Name="DetInitials" FontSize="40" Foreground="{StaticResource Muted}"
-                                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                    </Border>
-                                    <Border CornerRadius="14">
-                                        <Border.Background>
-                                            <ImageBrush x:Name="DetPoster" Stretch="UniformToFill" />
-                                        </Border.Background>
-                                    </Border>
-                                </Grid>
-                                <StackPanel Grid.Column="1" Margin="40,6,0,0">
-                                    <TextBlock x:Name="DetTitle" FontSize="38" FontWeight="Bold" TextWrapping="Wrap" />
-                                    <WrapPanel x:Name="DetChips" Margin="0,16,0,0" />
-                                    <TextBlock x:Name="DetPlot" FontSize="15" TextWrapping="Wrap" Foreground="{StaticResource Fg}" Opacity="0.85" MaxWidth="820"
-                                               HorizontalAlignment="Left" LineHeight="23" Margin="0,16,0,0" />
-                                    <StackPanel Orientation="Horizontal" Margin="0,26,0,0">
-                                        <Button x:Name="DetPlay" Style="{StaticResource PrimaryButton}" Click="DetPlay_Click">
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock Text="&#xE768;" FontFamily="{StaticResource Icons}" Foreground="{StaticResource PrimaryFg}" VerticalAlignment="Center" />
-                                                <TextBlock x:Name="DetPlayText" Text="Play" Foreground="{StaticResource PrimaryFg}" Margin="10,0,0,0" />
-                                            </StackPanel>
-                                        </Button>
-                                        <Button x:Name="DetFav" Style="{StaticResource SecondaryButton}" Margin="12,0,0,0" Click="DetFav_Click">
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock x:Name="DetFavIcon" Text="&#xE734;" FontFamily="{StaticResource Icons}" VerticalAlignment="Center" />
-                                                <TextBlock x:Name="DetFavText" Text="Add to favorites" Margin="10,0,0,0" />
-                                            </StackPanel>
-                                        </Button>
-                                    </StackPanel>
-                                    <TextBlock x:Name="EpisodesTitle" Text="Episodes" FontSize="20" FontWeight="SemiBold" Margin="0,32,0,12" Visibility="Collapsed" />
-                                    <ItemsControl x:Name="EpisodeList" MaxWidth="900" HorizontalAlignment="Left">
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <Button Tag="{Binding}" Click="Episode_Click" Cursor="Hand" Focusable="False" Foreground="{StaticResource Fg}">
-                                                    <Button.Template>
-                                                        <ControlTemplate TargetType="Button">
-                                                            <Border x:Name="Bd" CornerRadius="10" Background="{StaticResource Card}" Padding="16,12" Margin="0,0,0,8">
-                                                                <Grid>
-                                                                    <Grid.ColumnDefinitions>
-                                                                        <ColumnDefinition Width="90" />
-                                                                        <ColumnDefinition Width="*" />
-                                                                        <ColumnDefinition Width="Auto" />
-                                                                    </Grid.ColumnDefinitions>
-                                                                    <TextBlock Foreground="{StaticResource Muted}" VerticalAlignment="Center">
-                                                                        <Run Text="S" /><Run Text="{Binding Season, Mode=OneWay}" /><Run Text=" · E" /><Run Text="{Binding Episode, Mode=OneWay}" />
-                                                                    </TextBlock>
-                                                                    <StackPanel Grid.Column="1">
-                                                                        <TextBlock Text="{Binding Name}" FontSize="15" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                                                        <TextBlock Text="{Binding Plot}" Foreground="{StaticResource Muted}" FontSize="12"
-                                                                                   TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
-                                                                    </StackPanel>
-                                                                    <TextBlock Grid.Column="2" Text="&#xE768;" FontFamily="{StaticResource Icons}"
-                                                                               Foreground="{StaticResource Accent}" VerticalAlignment="Center" Margin="12,0,0,0" />
-                                                                </Grid>
-                                                            </Border>
-                                                            <ControlTemplate.Triggers>
-                                                                <Trigger Property="IsMouseOver" Value="True">
-                                                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource CardHover}" />
-                                                                </Trigger>
-                                                            </ControlTemplate.Triggers>
-                                                        </ControlTemplate>
-                                                    </Button.Template>
-                                                </Button>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                </StackPanel>
-                            </Grid>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition x:Name="VodPlayerRow" Height="0" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <StackPanel Orientation="Horizontal" Margin="18,14,18,0">
+                            <Button Style="{StaticResource IconButton}" Content="&#xE72B;" ToolTip="Back (Esc)" Click="VodBack_Click"
+                                    Width="40" Height="40" FontSize="16" Background="{StaticResource Badge}" />
+                            <TextBlock x:Name="VodHeaderTitle" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center" Margin="12,0,0,0"
+                                       TextTrimming="CharacterEllipsis" MaxWidth="900" />
                         </StackPanel>
-                    </ScrollViewer>
-                </Grid>
 
-                <!-- Settings page -->
-                <ContentControl x:Name="SettingsHost" Grid.Column="0" Grid.ColumnSpan="3" Visibility="Collapsed" />
-
-                <!-- Player + guide -->
-                <Grid x:Name="PlayerPanel" Grid.Column="2">
-                    <Grid.RowDefinitions>
-                        <RowDefinition x:Name="VideoRow" Height="1.35*" MinHeight="200" />
-                        <RowDefinition x:Name="GuideRow" Height="*" />
-                    </Grid.RowDefinitions>
-                    <Grid Background="Black">
-                        <StackPanel x:Name="VideoHint" HorizontalAlignment="Center" VerticalAlignment="Center">
-                            <TextBlock Text="&#xE7F4;" FontFamily="{StaticResource Icons}" FontSize="40" Foreground="{StaticResource Thumb}" HorizontalAlignment="Center" />
-                            <TextBlock Text="Select a channel to start watching" Foreground="{StaticResource Muted}" Margin="0,12,0,0" />
-                        </StackPanel>
-                        <vlc:VideoView x:Name="Video" Visibility="Collapsed" />
-                    </Grid>
-
-                    <!-- EPG for the selected channel -->
-                    <DockPanel x:Name="GuidePanel" Grid.Row="1" Margin="0,14,0,0">
-                        <Grid DockPanel.Dock="Top" Margin="0,0,0,10">
-                            <Button Style="{StaticResource IconButton}" Content="&#xE76B;" HorizontalAlignment="Left" Click="GuidePrev_Click" ToolTip="Previous day" />
-                            <TextBlock x:Name="GuideDay" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="15" FontWeight="SemiBold" />
-                            <Button Style="{StaticResource IconButton}" Content="&#xE76C;" HorizontalAlignment="Right" Click="GuideNext_Click" ToolTip="Next day" />
-                        </Grid>
-                        <TextBlock x:Name="GuideEmpty" DockPanel.Dock="Top" Foreground="{StaticResource Muted}" Margin="6,4" TextWrapping="Wrap"
-                                   Text="No programme guide for this channel." Visibility="Collapsed" />
-                        <ListBox x:Name="GuideList" Style="{StaticResource PlainList}" ItemContainerStyle="{StaticResource CardItem}">
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <StackPanel>
-                                        <StackPanel.Style>
-                                            <Style TargetType="StackPanel">
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsPast}" Value="True">
-                                                        <Setter Property="Opacity" Value="0.5" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </StackPanel.Style>
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="{Binding TimeRange}" FontSize="12" Foreground="{StaticResource Muted}" VerticalAlignment="Center" />
-                                            <Border CornerRadius="6" BorderThickness="1" BorderBrush="{StaticResource LiveRed}" Padding="7,1" Margin="12,0,0,0"
-                                                    Visibility="{Binding IsLive, Converter={StaticResource BoolVis}}">
-                                                <TextBlock Text="LIVE" FontSize="10" FontWeight="Bold" Foreground="{StaticResource LiveRed}" />
-                                            </Border>
-                                        </StackPanel>
-                                        <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="SemiBold" Margin="0,6,0,0" TextTrimming="CharacterEllipsis">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Foreground" Value="{StaticResource Fg}" />
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding IsLive}" Value="True">
-                                                            <Setter Property="Foreground" Value="{StaticResource Accent}" />
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
-                                        <ProgressBar Style="{StaticResource ThinProgress}" Value="{Binding Progress, Mode=OneWay}" Margin="0,8,0,0"
-                                                     Visibility="{Binding IsLive, Converter={StaticResource BoolVis}}" />
-                                        <TextBlock Text="{Binding Desc}" FontSize="12" Foreground="{StaticResource Muted}" TextWrapping="Wrap"
-                                                   MaxHeight="34" TextTrimming="CharacterEllipsis" Margin="0,6,0,0"
-                                                   Visibility="{Binding HasDesc, Converter={StaticResource BoolVis}}" />
-                                    </StackPanel>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
-                    </DockPanel>
-
-                    <!-- EPG timeline ribbon (Settings → Programme guide → Timeline) -->
-                    <Border x:Name="TimelinePanel" Grid.Row="1" Visibility="Collapsed" Margin="0,12,0,0" CornerRadius="12"
-                            Background="{StaticResource Panel}" Padding="0,10,0,6">
-                        <DockPanel>
-                            <Grid DockPanel.Dock="Top" Margin="14,0,8,6">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <StackPanel VerticalAlignment="Center">
-                                    <TextBlock x:Name="TlChannel" FontSize="14" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                    <TextBlock x:Name="TlNow" FontSize="12" Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis" />
-                                </StackPanel>
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Button Style="{StaticResource IconButton}" Content="&#xE81D;" ToolTip="Jump to now" Click="TimelineNow_Click" />
-                                    <Button Style="{StaticResource IconButton}" Content="&#xE76B;" ToolTip="Previous day" Click="GuidePrev_Click" />
-                                    <TextBlock x:Name="TlDay" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" Margin="6,0" MinWidth="110" TextAlignment="Center" />
-                                    <Button Style="{StaticResource IconButton}" Content="&#xE76C;" ToolTip="Next day" Click="GuideNext_Click" />
-                                </StackPanel>
-                            </Grid>
-                            <TextBlock x:Name="TlEmpty" DockPanel.Dock="Top" Foreground="{StaticResource Muted}" Margin="14,6" Visibility="Collapsed"
-                                       Text="No programme guide for this channel." />
-                            <ScrollViewer x:Name="TlScroll" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
-                                          PreviewMouseWheel="TlScroll_PreviewMouseWheel">
-                                <Canvas x:Name="TlCanvas" Height="112" HorizontalAlignment="Left" />
-                            </ScrollViewer>
-                        </DockPanel>
-                    </Border>
-
-                    <!-- Transport bar for films / episodes -->
-                    <Border x:Name="ControlBar" Grid.Row="1" VerticalAlignment="Top" Visibility="Collapsed" CornerRadius="12"
-                            Background="{StaticResource Panel}" Padding="16,12" Margin="0,14,0,0">
-                        <StackPanel>
-                            <TextBlock x:Name="PlayingTitle" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Margin="0,0,0,8" />
+                        <!-- Player (fixed; only the area below scrolls, because native video cannot be clipped by a ScrollViewer) -->
+                        <Border x:Name="VodPlayerBox" Grid.Row="1" Margin="18,10,18,8" CornerRadius="12" Background="Black" BorderThickness="1"
+                                BorderBrush="{StaticResource Line}" Visibility="Collapsed">
                             <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <Button x:Name="PlayPause" Style="{StaticResource IconButton}" Content="&#xE769;" ToolTip="Play / pause (Space)" Click="PlayPause_Click" />
-                                <Slider x:Name="SeekBar" Grid.Column="1" Margin="12,0" VerticalAlignment="Center" Minimum="0" Maximum="1"
-                                        IsMoveToPointEnabled="True" PreviewMouseUp="SeekBar_PreviewMouseUp" />
-                                <TextBlock x:Name="TimeText" Grid.Column="2" Foreground="{StaticResource Muted}" VerticalAlignment="Center" Margin="0,0,12,0" />
-                                <Button Grid.Column="3" Style="{StaticResource IconButton}" Content="&#xE711;" ToolTip="Close player (Esc)" Click="ClosePlayer_Click" />
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <Grid x:Name="VodVideoHost" Background="Black" />
+                                <Border x:Name="VodControls" Grid.Row="1" Background="{StaticResource Panel}" Padding="10,6" CornerRadius="0,0,12,12">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Button x:Name="PlayPause" Style="{StaticResource IconButton}" Content="&#xE769;" ToolTip="Play / pause (Space)" Click="PlayPause_Click" />
+                                            <Button Style="{StaticResource IconButton}" Content="−10" FontFamily="{StaticResource UiFont}" FontSize="12" ToolTip="Back 10 s (←)" Click="Back10_Click" />
+                                            <Button Style="{StaticResource IconButton}" Content="+10" FontFamily="{StaticResource UiFont}" FontSize="12" ToolTip="Forward 10 s (→)" Click="Fwd10_Click" />
+                                            <Button x:Name="NextEpisodeBtn" Style="{StaticResource IconButton}" Content="&#xE893;" ToolTip="Next episode" Click="NextEpisode_Click" Visibility="Collapsed" />
+                                        </StackPanel>
+                                        <Grid Grid.Column="1" Margin="10,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock x:Name="TimePos" Foreground="{StaticResource Muted}" VerticalAlignment="Center" FontSize="12" MinWidth="52" />
+                                            <Slider x:Name="SeekBar" Grid.Column="1" Margin="8,0" VerticalAlignment="Center" Minimum="0" Maximum="1"
+                                                    IsMoveToPointEnabled="True" PreviewMouseUp="SeekBar_PreviewMouseUp" />
+                                            <TextBlock x:Name="TimeLen" Grid.Column="2" Foreground="{StaticResource Muted}" VerticalAlignment="Center" FontSize="12" MinWidth="52" />
+                                        </Grid>
+                                        <StackPanel Grid.Column="2" Orientation="Horizontal">
+                                            <Button x:Name="VodMute" Style="{StaticResource IconButton}" Content="&#xE767;" ToolTip="Mute (M)" Click="Mute_Click" />
+                                            <Slider x:Name="VolumeBar" Width="80" Minimum="0" Maximum="100" Value="100" VerticalAlignment="Center"
+                                                    ValueChanged="VolumeBar_ValueChanged" IsMoveToPointEnabled="True" />
+                                            <Button x:Name="AudioBtn" Style="{StaticResource IconButton}" Content="&#xE8D6;" ToolTip="Audio track" Click="AudioTracks_Click" />
+                                            <Button x:Name="SubsBtn" Style="{StaticResource IconButton}" Content="&#xE7F0;" ToolTip="Subtitles" Click="Subtitles_Click" />
+                                            <Button x:Name="SpeedBtn" Style="{StaticResource IconButton}" Content="&#xEC4A;" ToolTip="Playback speed" Click="Speed_Click" />
+                                            <Button Style="{StaticResource IconButton}" Content="&#xE740;" ToolTip="Full screen (F11)" Click="Fullscreen_Click" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
                             </Grid>
-                        </StackPanel>
-                    </Border>
+                        </Border>
+
+                        <ScrollViewer x:Name="VodScroll" Grid.Row="2" VerticalScrollBarVisibility="Auto">
+                            <StackPanel x:Name="VodContent" Margin="34,14,34,30" />
+                        </ScrollViewer>
+                    </Grid>
                 </Grid>
+
+                <!-- ===== Full-width pages: dashboard, search, favorites, recent, recently added, settings ===== -->
+                <ContentControl x:Name="PageHost" Grid.Column="0" Grid.ColumnSpan="2" Visibility="Collapsed" />
             </Grid>
         </Grid>
     </Grid>

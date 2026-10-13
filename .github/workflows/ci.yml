@@ -114,15 +114,22 @@ jobs:
           python windows/ci/make_demo_snapshot.py target/release/madhyam_core_ffi.dll $data
           New-Item -ItemType Directory -Force shots | Out-Null
           $cases = [ordered]@{
-            "1-live"           = @("--mode", "Live")
-            "2-movies"         = @("--mode", "Movies")
-            "3-movie-details"  = @("--mode", "Movies", "--open-first")
-            "4-series-details" = @("--mode", "Series", "--open-first")
-            "5-favorites"      = @("--mode", "Favorites")
-            "6-search"         = @("--mode", "Live", "--search", "news")
-            "7-settings"       = @("--mode", "Live", "--settings", "General")
-            "8-settings-guide" = @("--mode", "Live", "--settings", "Guide")
-            "9-light-live"     = @("--mode", "Live", "--light")
+            "01-dashboard"      = @("--mode", "Dashboard")
+            "02-live"           = @("--mode", "Live")
+            "03-movies"         = @("--mode", "Movies")
+            "04-movie-details"  = @("--mode", "Movies", "--open-first")
+            "05-series-details" = @("--mode", "Series", "--open-first")
+            "06-favorites"      = @("--mode", "Favorites")
+            "07-recent"         = @("--mode", "Recent")
+            "08-added"          = @("--mode", "Added")
+            "09-search"         = @("--mode", "Search", "--search", "the")
+            "10-live-search"    = @("--mode", "Live", "--search", "news")
+            "11-settings-src"   = @("--mode", "Live", "--settings", "Sources")
+            "12-settings-dash"  = @("--mode", "Live", "--settings", "Dashboard")
+            "13-light-dash"     = @("--mode", "Dashboard", "--light")
+            "14-light-details"  = @("--mode", "Series", "--open-first", "--light")
+            "15-movie-playing"  = @("--mode", "Movies", "--open-first", "--play-first")
+            "16-episode-playing" = @("--mode", "Series", "--open-first", "--play-first")
           }
           foreach ($name in $cases.Keys) {
             $out = Join-Path (Resolve-Path shots) "$name.png"

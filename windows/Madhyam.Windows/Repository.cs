@@ -8,7 +8,35 @@ using MadhyamCoreNet;
 
 namespace Madhyam.Windows;
 
-public sealed record Source(int Id, string Name, string Kind);
+public sealed record Source(int Id, string Name, string Kind)
+{
+    public string Location { get; init; } = "";
+    public string Username { get; init; } = "";
+    public long UpdatedAt { get; init; }
+    public string KindLabel => Kind == "xtream" ? "Xtream Code" : "M3U playlist";
+}
+
+/// <summary>Xtream account endpoint answer.</summary>
+public sealed record AccountInfo(string Status, DateTime? Expires, int MaxConnections, int ActiveConnections, bool IsTrial,
+                                 DateTime? Created, string ServerUrl, string Timezone, string Formats);
+
+/// <summary>Extra information for a film (get_vod_info) or series (get_series_info).</summary>
+public sealed class DetailsInfo
+{
+    public string? Plot { get; set; }
+    public string? Cast { get; set; }
+    public string? Director { get; set; }
+    public string? Genre { get; set; }
+    public string? Released { get; set; }
+    public string? Duration { get; set; }
+    public string? Rating { get; set; }
+    public string? Country { get; set; }
+    public string? Language { get; set; }
+    public string? Poster { get; set; }
+    public string? Backdrop { get; set; }
+    /// <summary>YouTube video id (not a URL).</summary>
+    public string? Trailer { get; set; }
+}
 
 public sealed record Group(string Name, int Count)
 {
@@ -52,6 +80,35 @@ public sealed class ItemVm : Observable
     public string? Genre { get; init; }
     public string? Season { get; init; }
     public string? Episode { get; init; }
+    public int SourceId { get; init; }
+    /// <summary>For episodes: id of the series item (opens the series page).</summary>
+    public string? SeriesId { get; init; }
+    public long AddedAt { get; init; }
+    public long PlayedAt { get; init; }
+    public double PositionSec { get; init; }
+    public double DurationSec { get; init; }
+    public double DurationHint { get; init; } // from the provider (episodes)
+
+    public double WatchedRatio => DurationSec > 0 ? Math.Clamp(PositionSec / DurationSec, 0, 1) : 0;
+    public bool IsWatched => WatchedRatio >= 0.95;
+    public string TypeBadge => Kind switch { "live" => "LIVE", "series" => "SERIES", "episode" => "EPISODE", _ => "MOVIE" };
+    public string TimeLeftText =>
+        DurationSec > 0 ? $"{FormatDuration(DurationSec - PositionSec)} left" : "";
+    public string AddedText => AddedAt > 0 ? DateTimeOffset.FromUnixTimeSeconds(AddedAt).LocalDateTime.ToString("d MMM, HH:mm") : "";
+    public string PlayedText => PlayedAt > 0 ? DateTimeOffset.FromUnixTimeSeconds(PlayedAt).LocalDateTime.ToString("d MMM, HH:mm") : "";
+    public string DurationText => DurationHint > 0 ? FormatClock(DurationHint) : "";
+
+    public static string FormatDuration(double seconds)
+    {
+        var t = TimeSpan.FromSeconds(Math.Max(0, seconds));
+        return t.TotalHours >= 1 ? $"{(int)t.TotalHours}h {t.Minutes}m" : $"{Math.Max(1, t.Minutes)}m";
+    }
+
+    public static string FormatClock(double seconds)
+    {
+        var t = TimeSpan.FromSeconds(Math.Max(0, seconds));
+        return t.TotalHours >= 1 ? t.ToString(@"hh\:mm\:ss") : t.ToString(@"mm\:ss");
+    }
 
     public bool IsLive => Kind == "live";
     public bool IsSeries => Kind == "series";
@@ -62,6 +119,14 @@ public sealed class ItemVm : Observable
     /// <summary>Position in the current list, shown as "12. Channel".</summary>
     public int Number { get => _number; set { Set(ref _number, value); Raise(nameof(Title)); } }
     public string Title => Number > 0 && IsLive ? $"{Number}. {DisplayName}" : DisplayName;
+
+    /// <summary>Re-evaluate display text after a naming setting changed.</summary>
+    public void Refresh()
+    {
+        Raise(nameof(DisplayName));
+        Raise(nameof(Title));
+        Raise(nameof(Initials));
+    }
 
     /// <summary>"CA EN: CBC Calgary" → "CBC Calgary" when Settings → Strip country prefixes is on.</summary>
     public string DisplayName => AppSettings.Current.StripPrefixes && IsLive ? StripPrefix(Name) : Name;
@@ -173,9 +238,31 @@ public sealed class Repository : IDisposable
             ? s
             : null;
 
+    private static long Long(JsonElement e, string key) =>
+        e.ValueKind == JsonValueKind.Object && e.TryGetProperty(key, out var v)
+            ? v.ValueKind switch
+            {
+                JsonValueKind.Number => v.TryGetInt64(out var n) ? n : (long)v.GetDouble(),
+                JsonValueKind.String => long.TryParse(v.GetString(), out var n) ? n : 0,
+                _ => 0,
+            }
+            : 0;
+
+    private static double Dbl(JsonElement e, string key) =>
+        e.ValueKind == JsonValueKind.Object && e.TryGetProperty(key, out var v)
+            ? v.ValueKind switch
+            {
+                JsonValueKind.Number => v.GetDouble(),
+                JsonValueKind.String => double.TryParse(v.GetString(), System.Globalization.NumberStyles.Float,
+                    System.Globalization.CultureInfo.InvariantCulture, out var d) ? d : 0,
+                _ => 0,
+            }
+            : 0;
+
     private static ItemVm ParseItem(JsonElement o)
     {
         var extra = o.TryGetProperty("extra", out var x) ? x : default;
+        var progress = o.TryGetProperty("progress", out var pr) ? pr : default;
         var kind = Str(o, "kind") ?? "live";
         var plot = Str(extra, "plot");
         var year = Str(extra, "year");
@@ -196,6 +283,13 @@ public sealed class Repository : IDisposable
             Genre = Str(extra, "genre"),
             Season = Str(extra, "season"),
             Episode = Str(extra, "episode"),
+            SourceId = (int)Long(o, "source"),
+            SeriesId = Str(o, "series"),
+            AddedAt = Long(extra, "added") is var a and > 0 ? a : Long(extra, "last_modified"),
+            PlayedAt = Long(o, "played_at"),
+            PositionSec = Dbl(progress, "position"),
+            DurationSec = Dbl(progress, "duration"),
+            DurationHint = Dbl(extra, "duration_secs") is var d and > 0 ? d : Dbl(extra, "duration"),
         };
     }
 
@@ -246,18 +340,97 @@ public sealed class Repository : IDisposable
 
     public Task<List<Source>> Sources() => Bg(() =>
         _core.Call("sources").EnumerateArray()
-            .Select(s => new Source(s.GetProperty("id").GetInt32(), Str(s, "name") ?? "", Str(s, "kind") ?? "m3u"))
+            .Select(s => new Source(s.GetProperty("id").GetInt32(), Str(s, "name") ?? "", Str(s, "kind") ?? "m3u")
+            {
+                Location = Str(s, "location") ?? "",
+                Username = Str(s, "username") ?? "",
+                UpdatedAt = Long(s, "updated_at"),
+            })
             .ToList());
+
+    /// <summary>Change a source's name and connection details, then re-download it.</summary>
+    public async Task UpdateSource(int id, string name, string? location, string? server, string? username, string? password)
+    {
+        await Bg(() => _core.Call("update_source", new
+        {
+            source = id,
+            name,
+            location = string.IsNullOrWhiteSpace(location) ? null : location.Trim(),
+            server = string.IsNullOrWhiteSpace(server) ? null : server.Trim(),
+            username = string.IsNullOrWhiteSpace(username) ? null : username.Trim(),
+            password = string.IsNullOrEmpty(password) ? null : password,
+        }));
+        await Refresh(id);
+    }
+
+    /// <summary>Xtream account status (login, expiry, connections).</summary>
+    public async Task<AccountInfo> Account(int source)
+    {
+        var url = await Bg(() => _core.Call("account_url", new { source }).GetString() ?? "");
+        using var doc = JsonDocument.Parse(await GetBytes(url, source));
+        var root = doc.RootElement;
+        if (!root.TryGetProperty("user_info", out var u)) throw new IptvException("api", "The server did not return account information.");
+        root.TryGetProperty("server_info", out var si);
+        static DateTime? Date(long t) => t > 0 ? DateTimeOffset.FromUnixTimeSeconds(t).LocalDateTime : null;
+        var auth = u.TryGetProperty("auth", out var a) && (a.ValueKind == JsonValueKind.Number ? a.GetInt32() == 1 : a.ToString() is "1" or "true");
+        if (!auth) throw new IptvException("api", "Login rejected: check the username and password.");
+        var formats = u.TryGetProperty("allowed_output_formats", out var f) && f.ValueKind == JsonValueKind.Array
+            ? string.Join(", ", f.EnumerateArray().Select(x => x.ToString()))
+            : "";
+        var server = Str(si, "url") is { } host ? $"{Str(si, "server_protocol") ?? "http"}://{host}:{Str(si, "port") ?? ""}".TrimEnd(':') : "";
+        return new AccountInfo(Str(u, "status") ?? "", Date(Long(u, "exp_date")), (int)Long(u, "max_connections"),
+            (int)Long(u, "active_cons"), Str(u, "is_trial") is "1", Date(Long(u, "created_at")), server, Str(si, "timezone") ?? "", formats);
+    }
+
+    /// <summary>Quick reachability check: Xtream login, or the first bytes of an M3U.</summary>
+    public async Task<string> TestConnection(int source)
+    {
+        var src = (await Sources()).First(s => s.Id == source);
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        if (src.Kind == "xtream")
+        {
+            var acc = await Account(source);
+            return $"Connected in {sw.ElapsedMilliseconds} ms · account {acc.Status}" +
+                   (acc.Expires is { } e ? $", expires {e:d MMM yyyy}" : "");
+        }
+        if (System.IO.File.Exists(src.Location)) return "Local playlist file found.";
+        using var req = new HttpRequestMessage(HttpMethod.Get, src.Location);
+        ApplyUserAgent(req, source);
+        using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
+        return resp.IsSuccessStatusCode
+            ? $"Reachable in {sw.ElapsedMilliseconds} ms (HTTP {(int)resp.StatusCode})."
+            : $"Server answered HTTP {(int)resp.StatusCode}.";
+    }
+
+    private static void ApplyUserAgent(HttpRequestMessage req, int source)
+    {
+        if (AppSettings.Current.SourceUserAgent.TryGetValue(source, out var ua) && !string.IsNullOrWhiteSpace(ua))
+        {
+            req.Headers.UserAgent.Clear();
+            req.Headers.TryAddWithoutValidation("User-Agent", ua);
+        }
+    }
+
+    private async Task<byte[]> GetBytes(string url, int source)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+        ApplyUserAgent(req, source);
+        using var resp = await _http.SendAsync(req);
+        if (!resp.IsSuccessStatusCode) throw new HttpRequestException($"HTTP {(int)resp.StatusCode}");
+        return await resp.Content.ReadAsByteArrayAsync();
+    }
 
     public async Task<int> AddM3u(string name, string url)
     {
         var id = await Bg(() => _core.Call("add_m3u_source", new { name, location = url }).GetProperty("id").GetInt32());
+        AppSettings.Current.SourceAdded[id] = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         return await RefreshOrRemove(id);
     }
 
     public async Task<int> AddXtream(string name, string server, string username, string password)
     {
         var id = await Bg(() => _core.Call("add_xtream_source", new { name, server, username, password }).GetProperty("id").GetInt32());
+        AppSettings.Current.SourceAdded[id] = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         return await RefreshOrRemove(id);
     }
 
@@ -294,7 +467,7 @@ public sealed class Repository : IDisposable
         {
             var location = await Bg(() => _core.Call("sources").EnumerateArray()
                 .First(s => s.GetProperty("id").GetInt32() == id).GetProperty("location").GetString() ?? "");
-            var file = await Download(location, "playlist");
+            var file = await Download(location, "playlist", id);
             try { await Bg(() => _core.Call("import_m3u_file", new { source = id, path = file })); }
             finally { File.Delete(file); }
         }
@@ -311,7 +484,7 @@ public sealed class Repository : IDisposable
         foreach (var url in urls.Where(u => u.Length > 0))
         {
             string file;
-            try { file = await Download(url, "guide"); }
+            try { file = await Download(url, "guide", id); }
             catch (Exception e) { Log($"guide download failed: {e.Message}"); continue; }
             try
             {
@@ -328,7 +501,7 @@ public sealed class Repository : IDisposable
     }
 
     /// <summary>Stream a URL (or local file) to a temp file, gunzipping .gz content.</summary>
-    private async Task<string> Download(string location, string name)
+    private async Task<string> Download(string location, string name, int? source = null)
     {
         var tmp = Path.Combine(Path.GetTempPath(), $"madhyam-{name}-{Guid.NewGuid():N}.tmp");
         try
@@ -341,7 +514,9 @@ public sealed class Repository : IDisposable
             }
             else
             {
-                resp = await _http.GetAsync(location, HttpCompletionOption.ResponseHeadersRead);
+                using var req = new HttpRequestMessage(HttpMethod.Get, location);
+                if (source is { } sid) ApplyUserAgent(req, sid);
+                resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
                 if (!resp.IsSuccessStatusCode) throw new HttpRequestException($"HTTP {(int)resp.StatusCode} downloading {name}");
                 input = await resp.Content.ReadAsStreamAsync();
             }
@@ -380,8 +555,133 @@ public sealed class Repository : IDisposable
         _core.Call("groups", new { source, kind }).EnumerateArray()
             .Select(g => new Group(Str(g, "name") ?? "", g.GetProperty("count").GetInt32())).ToList());
 
-    public Task<List<ItemVm>> List(int source, string kind, string group) =>
-        Bg(() => Items(_core.Call("list", new { source, kind, group, limit = 5000 })));
+    /// <summary>
+    /// Sorted, filtered, paged listing (core "query"). group = null means all
+    /// categories of the kind; source = null means every playlist.
+    /// </summary>
+    public Task<(int Total, List<ItemVm> Items)> Query(string kind, int? source, string? group, IEnumerable<string>? hidden,
+                                                      string sort = "provider", double minRating = 0, int offset = 0, int limit = 100) =>
+        Bg(() =>
+        {
+            var r = _core.Call("query", new
+            {
+                kind,
+                source,
+                group,
+                hidden_groups = hidden?.ToArray() ?? Array.Empty<string>(),
+                sort,
+                min_rating = minRating,
+                offset,
+                limit,
+            });
+            return (r.GetProperty("total").GetInt32(), Items(r.GetProperty("items")));
+        });
+
+    public Task<List<ItemVm>> ContinueWatching(int limit = 20) => Bg(() => Items(_core.Call("continue_watching", new { limit })));
+
+    public Task<List<ItemVm>> Favorites(string? kind) => Bg(() => Items(_core.Call("favorites", new { kind })));
+
+    public Task<List<ItemVm>> Recent(string? kind, int limit = 60) => Bg(() => Items(_core.Call("recent", new { kind, limit })));
+
+    public Task RemoveFromHistory(string id) => Bg(() => { _core.Call("remove_history", new { id }); Save(); });
+
+    public Task ClearHistory() => Bg(() => { _core.Call("clear_history"); Save(); });
+
+    public Task<ItemVm?> Item(string id) => Bg(() =>
+    {
+        try { return ParseItem(_core.Call("item", new { id })); }
+        catch (IptvException) { return null; }
+    });
+
+    /// <summary>Mark a film or episode as watched / not watched.</summary>
+    public Task SetWatched(ItemVm it, bool watched) => Bg(() =>
+    {
+        var dur = it.DurationSec > 0 ? it.DurationSec : it.DurationHint > 0 ? it.DurationHint : 1;
+        _core.Call("set_progress", new { id = it.Id, position = watched ? dur : 0, duration = dur });
+        Save();
+    });
+
+    public Task<(double Position, double Duration)> Progress(string id) => Bg(() =>
+    {
+        var it = _core.Call("item", new { id });
+        return it.TryGetProperty("progress", out var p) ? (Dbl(p, "position"), Dbl(p, "duration")) : (0.0, 0.0);
+    });
+
+    // ---------------------------------------------------------------- details
+
+    private readonly Dictionary<string, DetailsInfo> _details = new();
+    private readonly Dictionary<string, byte[]> _seriesBodies = new();
+
+    /// <summary>Extra film details from the Xtream panel (cached for the session).</summary>
+    public async Task<DetailsInfo?> MovieDetails(ItemVm movie)
+    {
+        if (_details.TryGetValue(movie.Id, out var cached)) return cached;
+        string url;
+        try { url = await Bg(() => _core.Call("vod_info_url", new { id = movie.Id }).GetString() ?? ""); }
+        catch (IptvException) { return null; } // M3U films have no details endpoint
+        using var doc = JsonDocument.Parse(await GetBytes(url, movie.SourceId));
+        var info = doc.RootElement.TryGetProperty("info", out var i) ? i : default;
+        var d = ParseDetails(info);
+        _details[movie.Id] = d;
+        return d;
+    }
+
+    /// <summary>Series details; the same answer also carries the episodes.</summary>
+    public async Task<DetailsInfo?> SeriesDetails(ItemVm series)
+    {
+        if (_details.TryGetValue(series.Id, out var cached)) return cached;
+        var body = await SeriesBody(series);
+        using var doc = JsonDocument.Parse(body);
+        var info = doc.RootElement.TryGetProperty("info", out var i) ? i : default;
+        var d = ParseDetails(info);
+        _details[series.Id] = d;
+        return d;
+    }
+
+    private async Task<byte[]> SeriesBody(ItemVm series)
+    {
+        if (_seriesBodies.TryGetValue(series.Id, out var b)) return b;
+        var url = await Bg(() => _core.Call("series_info_url", new { id = series.Id }).GetString() ?? "");
+        b = await GetBytes(url, series.SourceId);
+        _seriesBodies[series.Id] = b;
+        return b;
+    }
+
+    private static DetailsInfo ParseDetails(JsonElement info)
+    {
+        string? Any(params string[] keys) => keys.Select(k => Str(info, k)).FirstOrDefault(v => v != null);
+        string? backdrop = null;
+        if (info.ValueKind == JsonValueKind.Object && info.TryGetProperty("backdrop_path", out var bp))
+            backdrop = bp.ValueKind == JsonValueKind.Array ? bp.EnumerateArray().Select(x => x.GetString()).FirstOrDefault(x => !string.IsNullOrEmpty(x))
+                     : bp.ValueKind == JsonValueKind.String ? bp.GetString() : null;
+        var trailer = Any("youtube_trailer", "trailer");
+        if (trailer != null)
+        {
+            // Accept bare ids and full YouTube URLs.
+            var m = System.Text.RegularExpressions.Regex.Match(trailer, @"(?:v=|youtu\.be/|embed/)([\w-]{11})");
+            trailer = m.Success ? m.Groups[1].Value : trailer.Length == 11 ? trailer : null;
+        }
+        var secs = Dbl(info, "duration_secs");
+        var duration = secs > 0 ? ItemVm.FormatClock(secs) : Any("duration", "episode_run_time");
+        if (duration != null && int.TryParse(duration, out var mins) && mins < 600) duration = $"{mins} min";
+        var rating = Any("rating", "rating_5based");
+        if (rating is "0" or "0.0") rating = null;
+        return new DetailsInfo
+        {
+            Plot = Any("plot", "description"),
+            Cast = Any("cast", "actors"),
+            Director = Any("director"),
+            Genre = Any("genre"),
+            Released = Any("releasedate", "releaseDate", "release_date"),
+            Duration = duration,
+            Rating = rating,
+            Country = Any("country"),
+            Language = Str(info.ValueKind == JsonValueKind.Object && info.TryGetProperty("audio", out var au) ? au : default, "language") ?? Any("language"),
+            Poster = Any("movie_image", "cover_big", "cover"),
+            Backdrop = backdrop,
+            Trailer = trailer,
+        };
+    }
 
     public Task<List<ItemVm>> Search(string query, string? kind = null) =>
         string.IsNullOrWhiteSpace(query)
@@ -441,8 +741,6 @@ public sealed class Repository : IDisposable
         Save();
     });
 
-    public Task<List<ItemVm>> Favorites() => Bg(() => Items(_core.Call("favorites")));
-    public Task<List<ItemVm>> Recent() => Bg(() => Items(_core.Call("recent", new { limit = 30 })));
 
     public Task<bool> ToggleFavorite(string id) => Bg(() =>
     {
@@ -457,8 +755,7 @@ public sealed class Repository : IDisposable
     {
         var eps = await Bg(() => Items(_core.Call("episodes", new { id = series.Id })));
         if (eps.Count > 0) return eps;
-        var url = await Bg(() => _core.Call("series_info_url", new { id = series.Id }).GetString() ?? "");
-        var body = await _http.GetByteArrayAsync(url);
+        var body = await SeriesBody(series);
         return await Bg(() =>
         {
             _core.Import("series_info", body, new { id = series.Id });

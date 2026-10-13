@@ -100,6 +100,7 @@ def main(lib, out):
             png(poster, 200, 300, top, bottom)
             vods.append({"stream_id": 1000 + i, "name": title, "stream_icon": poster, "category_id": str(ci + 1),
                          "rating": str(rating), "year": str(year), "container_extension": "mp4",
+                         "added": str(int(time.time()) - i * 86400 - 3600),
                          "plot": f"{title} is a fictional film used to preview Madhyam's movie page. "
                                  "Every sunrise needs a signal; this one arrives a little late."})
             i += 1
@@ -109,6 +110,7 @@ def main(lib, out):
         poster = os.path.join(art, f"series{si}.png")
         png(poster, 200, 300, top, bottom)
         series.append({"series_id": 500 + si, "name": title, "cover": poster, "category_id": "1", "genre": genre,
+                       "last_modified": str(int(time.time()) - si * 43200 - 7200),
                        "rating": str(7 + si * 0.4), "releaseDate": f"{2020 + si}-01-01",
                        "plot": f"{title}: a fictional {genre.lower()} series for screenshots."})
     parts = {
@@ -131,7 +133,22 @@ def main(lib, out):
     core.import_bytes("series_info", json.dumps({"episodes": episodes}).encode(), id=first_series["id"])
 
     some = core.call("search", query="world")[0]
-    core.call("set_favorite", id=some["id"])
+    core.call("set_favorite", id=some["id"], on=True)
+    for q in ("arena", "jazz"):
+        core.call("set_favorite", id=core.call("search", query=q, kind="live")[0]["id"], on=True)
+    film = core.call("search", query="quantum", kind="movie")[0]
+    core.call("set_favorite", id=film["id"], on=True)
+    core.call("set_favorite", id=first_series["id"], on=True)
+    # Watch history and progress for Continue watching / Recently viewed.
+    eps = core.call("episodes", id=first_series["id"])
+    started = [(film["id"], 2400, 6600),
+               (core.call("search", query="beacon", kind="movie")[0]["id"], 1200, 5400),
+               (eps[0]["id"], 2700, 2700), (eps[1]["id"], 900, 2700)]
+    for item_id, pos, dur in started:
+        core.call("record_play", id=item_id)
+        core.call("set_progress", id=item_id, position=pos, duration=dur)
+    for q in ("metro", "goal", "wild"):
+        core.call("record_play", id=core.call("search", query=q, kind="live")[0]["id"])
     core.call("save_snapshot", path=os.path.join(out, "catalog.jsonl"))
     print("demo snapshot:", core.call("stats"))
 

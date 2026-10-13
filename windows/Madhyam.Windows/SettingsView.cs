@@ -25,6 +25,8 @@ public sealed class SettingsView : UserControl
     private static readonly (string Key, string Icon, string Label)[] Sections =
     {
         ("General", "\uE713", "General"),
+        ("Sources", "\uE8FD", "Sources"),
+        ("Dashboard", "\uE80F", "Dashboard"),
         ("Playback", "\uE768", "Playback"),
         ("Guide", "\uE787", "Programme guide"),
         ("Data", "\uE8F1", "Backup & data"),
@@ -67,7 +69,15 @@ public sealed class SettingsView : UserControl
         _nav.SelectedIndex = 0;
     }
 
-    /// <summary>Open a section by key (General, Playback, Guide, Data, About).</summary>
+    private string _current = "General";
+
+    /// <summary>Rebuild the visible section (after sources changed).</summary>
+    public void Refresh()
+    {
+        if (_current is "Sources" or "About") Show(_current);
+    }
+
+    /// <summary>Open a section by key (General, Sources, Dashboard, Playback, Guide, Data, About).</summary>
     public void Open(string key)
     {
         var i = Array.FindIndex(Sections, x => string.Equals(x.Key, key, StringComparison.OrdinalIgnoreCase));
@@ -187,11 +197,14 @@ public sealed class SettingsView : UserControl
 
     private void Show(string key)
     {
+        _current = key;
         _content.Children.Clear();
         _scroll.ScrollToTop();
         switch (key)
         {
             case "General": General(); break;
+            case "Sources": SourcesPage(); break;
+            case "Dashboard": DashboardPage(); break;
             case "Playback": Playback(); break;
             case "Guide": Guide(); break;
             case "Data": Data(); break;
@@ -239,7 +252,7 @@ public sealed class SettingsView : UserControl
             }));
 
         Row("Startup view", "The section Madhyam opens on.",
-            Choice(new[] { ("Live", "Live TV"), ("Movies", "Movies"), ("Series", "Series"), ("Favorites", "Favorites"), ("Last", "Where I left off") },
+            Choice(new[] { ("Dashboard", "Dashboard"), ("Live", "Live TV"), ("Movies", "Movies"), ("Series", "Series"), ("Favorites", "Favorites"), ("Last", "Where I left off") },
                 S.StartupView, v => { S.StartupView = v; Save(); }), controlBelow: true);
 
         Row("Window on startup", "Open at the last size and position, maximized, or full screen. F11 toggles full screen at any time.",
@@ -251,6 +264,179 @@ public sealed class SettingsView : UserControl
 
         Row("Show channel numbers", "Number channels in the order the provider lists them.",
             Toggle(S.ShowNumbers, v => { S.ShowNumbers = v; Save(); _host.RefreshListAppearance(); }));
+    }
+
+    // ---------------------------------------------------------------- sources
+
+    private string _srcFilter = "all";
+    private string _srcSort = "added";
+
+    private void SourcesPage()
+    {
+        Header("Sources", "Your playlists and Xtream accounts. Switch, test, refresh, edit or remove them here.");
+
+        var tools = new DockPanel { Margin = new Thickness(0, 6, 0, 4) };
+        var add = Btn("Add source", () => { _host.OpenAddSource(); return Task.CompletedTask; }, primary: true);
+        add.Margin = new Thickness(0);
+        DockPanel.SetDock(add, Dock.Right);
+        tools.Children.Add(add);
+        var filters = new WrapPanel();
+        filters.Children.Add(Choice(new[] { ("all", "All"), ("m3u", "M3U"), ("xtream", "Xtream") }, _srcFilter, v => { _srcFilter = v; Show("Sources"); }));
+        var sort = Choice(new[] { ("added", "Newest first"), ("name", "Name A–Z") }, _srcSort, v => { _srcSort = v; Show("Sources"); });
+        sort.Margin = new Thickness(18, 0, 0, 0);
+        filters.Children.Add(sort);
+        tools.Children.Add(filters);
+        _content.Children.Add(tools);
+
+        var list = _host.SourcesList.Where(x => _srcFilter == "all" || x.Kind == _srcFilter);
+        list = _srcSort == "name"
+            ? list.OrderBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase)
+            : list.OrderByDescending(x => S.SourceAdded.TryGetValue(x.Id, out var t) ? t : x.Id);
+        var shown = list.ToList();
+        if (shown.Count == 0)
+        {
+            AddRow(new TextBlock
+            {
+                Text = _host.SourcesList.Count == 0 ? "No sources yet. Use “Add source” to add an Xtream account or an M3U playlist." : "No sources of this type.",
+                Foreground = Brush("Muted"),
+                TextWrapping = TextWrapping.Wrap,
+            });
+            return;
+        }
+        foreach (var src in shown) AddRow(SourceRow(src));
+    }
+
+    private static string When(long unix) => DateTimeOffset.FromUnixTimeSeconds(unix).LocalDateTime.ToString("d MMM yyyy, HH:mm");
+
+    private FrameworkElement SourceRow(Source src)
+    {
+        var active = _host.CurrentSource?.Id == src.Id;
+        var outer = new StackPanel();
+        var g = new Grid();
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        g.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        g.Children.Add(new Border
+        {
+            Width = 42,
+            Height = 42,
+            CornerRadius = new CornerRadius(11),
+            Background = Brush(active ? "RailActive" : "Chip"),
+            VerticalAlignment = VerticalAlignment.Top,
+            Child = new TextBlock
+            {
+                Text = src.Kind == "xtream" ? "\uE774" : "\uE8FD",
+                FontFamily = (FontFamily)Application.Current.FindResource("Icons"),
+                FontSize = 16,
+                Foreground = Brush(active ? "Accent" : "Fg"),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            },
+        });
+        var text = new StackPanel { Margin = new Thickness(14, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center };
+        var nameRow = new StackPanel { Orientation = Orientation.Horizontal };
+        nameRow.Children.Add(new TextBlock { Text = src.Name, FontSize = 15, FontWeight = FontWeights.SemiBold });
+        if (active)
+            nameRow.Children.Add(new Border
+            {
+                CornerRadius = new CornerRadius(6),
+                Background = Brush("RailActive"),
+                Padding = new Thickness(7, 1, 7, 1),
+                Margin = new Thickness(10, 0, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Child = new TextBlock { Text = "IN USE", FontSize = 10, FontWeight = FontWeights.Bold, Foreground = Brush("Accent") },
+            });
+        text.Children.Add(nameRow);
+        var meta = new List<string> { src.KindLabel };
+        if (S.SourceAdded.TryGetValue(src.Id, out var added)) meta.Add($"Added {When(added)}");
+        if (src.UpdatedAt > 0) meta.Add($"Updated {When(src.UpdatedAt)}");
+        text.Children.Add(new TextBlock { Text = string.Join("  |  ", meta), Foreground = Brush("Muted"), FontSize = 12.5, Margin = new Thickness(0, 3, 0, 0), TextWrapping = TextWrapping.Wrap });
+        text.Children.Add(new TextBlock
+        {
+            Text = src.Kind == "xtream" ? $"{src.Location}  ·  user {src.Username}" : src.Location,
+            Foreground = Brush("Muted"),
+            FontSize = 12,
+            Margin = new Thickness(0, 2, 0, 0),
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        });
+        Grid.SetColumn(text, 1);
+        g.Children.Add(text);
+
+        var status = new TextBlock { Foreground = Brush("Accent"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(56, 8, 0, 0), Visibility = Visibility.Collapsed };
+        void Say(string msg, bool bad = false)
+        {
+            status.Text = msg;
+            status.Foreground = Brush(bad ? "LiveRed" : "Accent");
+            status.Visibility = Visibility.Visible;
+        }
+
+        Button Icon(string glyph, string tip, Func<Task> run)
+        {
+            var b = new Button { Content = glyph, Style = (Style)Application.Current.FindResource("IconButton"), ToolTip = tip, Width = 36, Height = 36, FontSize = 14 };
+            b.Click += async (_, _) =>
+            {
+                b.IsEnabled = false;
+                try { await run(); }
+                catch (Exception e) { Say(MainWindow.Explain(e), bad: true); }
+                finally { b.IsEnabled = true; }
+            };
+            return b;
+        }
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+        if (!active)
+            actions.Children.Add(Icon("\uE8AB", "Use this playlist", async () => { await _host.SwitchSource(src); Show("Sources"); }));
+        actions.Children.Add(Icon("\uE703", "Test connection", async () =>
+        {
+            Say("Testing…");
+            Say(await _repo.TestConnection(src.Id));
+        }));
+        actions.Children.Add(Icon("\uE72C", "Refresh (download again)", async () =>
+        {
+            Say("Refreshing…");
+            await _host.RefreshSource(src);
+            Show("Sources");
+        }));
+        actions.Children.Add(Icon("\uE70F", "Edit", async () =>
+        {
+            var ua = S.SourceUserAgent.TryGetValue(src.Id, out var u) ? u : "";
+            var r = EditSourceWindow.Show(Window.GetWindow(this)!, src, ua);
+            if (r == null) return;
+            if (r.UserAgent.Length > 0) S.SourceUserAgent[src.Id] = r.UserAgent;
+            else S.SourceUserAgent.Remove(src.Id);
+            Save();
+            Say("Saving and downloading again…");
+            await _repo.UpdateSource(src.Id, r.Name, r.Location, r.Server, r.Username, r.Password);
+            await _host.ReloadSources(_host.CurrentSource?.Id);
+            Show("Sources");
+        }));
+        actions.Children.Add(Icon("\uE946", "Playlist info", () => _host.ShowPlaylistInfo(src)));
+        if (src.Kind == "xtream")
+            actions.Children.Add(Icon("\uE77B", "Account info", () => _host.ShowAccountInfo(src)));
+        actions.Children.Add(Icon("\uE74D", "Remove", async () =>
+        {
+            await _host.RemoveSource(src);
+            Show("Sources");
+        }));
+        Grid.SetColumn(actions, 2);
+        g.Children.Add(actions);
+        outer.Children.Add(g);
+        outer.Children.Add(status);
+        return outer;
+    }
+
+    // ---------------------------------------------------------------- dashboard
+
+    private void DashboardPage()
+    {
+        Header("Dashboard", "Choose what the start page shows.");
+        void Toggle(string title, string desc, bool value, Action<bool> set) =>
+            Row(title, desc, SettingsView.Toggle(value, v => { set(v); Save(); }));
+        Toggle("Banner", "A large banner with the film or episode you were watching, or shortcuts when there is none.", S.DashHero, v => S.DashHero = v);
+        Toggle("Continue watching", "Films and episodes you started but did not finish.", S.DashContinue, v => S.DashContinue = v);
+        Toggle("Favorite channels", "Your starred live channels with what is on now.", S.DashLiveFavorites, v => S.DashLiveFavorites = v);
+        Toggle("Recently watched channels", "The live channels you opened last.", S.DashRecentLive, v => S.DashRecentLive = v);
+        Toggle("Favorite movies and series", "", S.DashFavoriteVod, v => S.DashFavoriteVod = v);
+        Toggle("Recently added", "The newest movies and series on your Xtream server.", S.DashRecentlyAdded, v => S.DashRecentlyAdded = v);
     }
 
     private void Playback()
