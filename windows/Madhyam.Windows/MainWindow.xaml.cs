@@ -718,6 +718,12 @@ public partial class MainWindow : Window
     {
         var typing = Keyboard.FocusedElement is TextBox or PasswordBox;
         var ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
+        if (e.Key == Key.Escape && UiKit.OpenPopup is { IsOpen: true } pop)
+        {
+            pop.IsOpen = false; // Esc closes the menu, not the player
+            e.Handled = true;
+            return;
+        }
         switch (e.Key)
         {
             case Key.F11:

@@ -241,7 +241,7 @@
                             <Grid x:Name="LiveVideoHost">
                                 <vlc:VideoView x:Name="Video" Visibility="Collapsed">
                                     <!-- Drawn in VLC's overlay window above the video: click = pause, double-click = full screen. -->
-                                    <Grid x:Name="VideoOverlay" Background="#01000000" Loaded="Overlay_Loaded"
+                                    <Grid x:Name="VideoOverlay" Visibility="Collapsed" Background="#01000000" Loaded="Overlay_Loaded"
                                           MouseLeftButtonDown="Overlay_MouseLeftButtonDown" MouseMove="Overlay_MouseMove">
                                         <Border x:Name="Osd" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,22,0,0" CornerRadius="10"
                                                 Background="#CC000000" Padding="16,8" Visibility="Collapsed" IsHitTestVisible="False">
@@ -276,16 +276,22 @@
                                                     <StackPanel Orientation="Horizontal">
                                                         <Button x:Name="PlayPause" Style="{StaticResource PlayerButton}" Content="&#xE769;" ToolTip="Play / pause (Space, or click the picture)" Click="PlayPause_Click" />
                                                         <Button x:Name="Back10Btn" Style="{StaticResource PlayerButton}" ToolTip="Back 10 s (←)" Click="Back10_Click">
-                                                            <Grid>
-                                                                <TextBlock Text="&#xE7A7;" FontFamily="{StaticResource Icons}" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                                <TextBlock Text="10" FontFamily="{StaticResource UiFont}" FontSize="8" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,3,0,0" />
-                                                            </Grid>
+                                                            <Viewbox Width="24" Height="24">
+                                                                <Canvas Width="24" Height="24">
+                                                                    <Path Fill="White" Data="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"></Path>
+                                                                    <TextBlock Text="10" FontFamily="{StaticResource UiFont}" FontSize="6.6" FontWeight="Bold" Foreground="White"
+                                                                               Canvas.Left="8.2" Canvas.Top="9.3" />
+                                                                </Canvas>
+                                                            </Viewbox>
                                                         </Button>
                                                         <Button x:Name="Fwd10Btn" Style="{StaticResource PlayerButton}" ToolTip="Forward 10 s (→)" Click="Fwd10_Click">
-                                                            <Grid>
-                                                                <TextBlock Text="&#xE7A6;" FontFamily="{StaticResource Icons}" FontSize="22" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                                <TextBlock Text="10" FontFamily="{StaticResource UiFont}" FontSize="8" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,3,0,0" />
-                                                            </Grid>
+                                                            <Viewbox Width="24" Height="24">
+                                                                <Canvas Width="24" Height="24">
+                                                                    <Path Fill="White" Data="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"><Path.RenderTransform><ScaleTransform ScaleX="-1" CenterX="12" /></Path.RenderTransform></Path>
+                                                                    <TextBlock Text="10" FontFamily="{StaticResource UiFont}" FontSize="6.6" FontWeight="Bold" Foreground="White"
+                                                                               Canvas.Left="8.2" Canvas.Top="9.3" />
+                                                                </Canvas>
+                                                            </Viewbox>
                                                         </Button>
                                                         <Button x:Name="NextEpisodeBtn" Style="{StaticResource PlayerButton}" Content="&#xE893;" ToolTip="Next episode" Click="NextEpisode_Click" Visibility="Collapsed" />
                                                         <TextBlock x:Name="BarTitle" Foreground="White" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" Margin="12,0,0,0"

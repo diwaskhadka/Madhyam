@@ -385,6 +385,7 @@ public partial class MainWindow
         _vodPlaying = !it.IsLive;
         MoveVideo(it.IsLive ? LiveVideoHost : VodVideoHost);
         Video.Visibility = Visibility.Visible;
+        VideoOverlay.Visibility = Visibility.Visible;
         VideoHint.Visibility = it.IsLive ? Visibility.Collapsed : Visibility.Visible;
 
         using var media = new Media(_vlc, uri);
@@ -443,6 +444,10 @@ public partial class MainWindow
         var wasVod = _vodPlaying;
         _vodPlaying = false;
         Video.Visibility = Visibility.Collapsed;
+        // VLC's overlay window does not always follow the video when it is hidden or moved:
+        // empty it so no controls are left floating over other pages.
+        VideoOverlay.Visibility = Visibility.Collapsed;
+        UiKit.OpenPopup?.SetCurrentValue(System.Windows.Controls.Primitives.Popup.IsOpenProperty, false);
         VideoHint.Visibility = Visibility.Visible;
         MoveVideo(LiveVideoHost);
         if (_fullscreen) ToggleFullscreen();

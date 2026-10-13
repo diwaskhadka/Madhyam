@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
@@ -406,6 +407,9 @@ public static class UiKit
     /// trailing check mark, plus optional extra controls (delay steppers, chips).
     /// It is a real window, so it also draws above the video surface.
     /// </summary>
+    /// <summary>The pop-up currently shown (Esc closes it before anything else).</summary>
+    public static Popup? OpenPopup { get; private set; }
+
     public static Popup PopMenu(FrameworkElement anchor, string? title, IEnumerable<MenuRow> rows, IEnumerable<UIElement>? extra = null,
                                 bool above = false, double width = 250)
     {
@@ -431,7 +435,7 @@ public static class UiKit
         }
         if (extra != null)
             foreach (var e in extra) stack.Children.Add(e);
-        popup.Child = new Border
+        var root = new Border
         {
             Width = width,
             CornerRadius = new CornerRadius(12),
@@ -443,6 +447,14 @@ public static class UiKit
             Effect = new DropShadowEffect { BlurRadius = 18, ShadowDepth = 3, Opacity = 0.45 },
             Child = new ScrollViewer { Content = stack, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, MaxHeight = 520 },
         };
+        // A pop-up inherits fonts from its anchor; player and icon buttons use the icon font,
+        // which turned every label into boxes. Reset text properties explicitly.
+        TextElement.SetFontFamily(root, (FontFamily)Application.Current.FindResource("UiFont"));
+        TextElement.SetFontSize(root, 13.5);
+        TextElement.SetForeground(root, B("Fg"));
+        popup.Child = root;
+        popup.Closed += (_, _) => { if (OpenPopup == popup) OpenPopup = null; };
+        OpenPopup = popup;
         popup.IsOpen = true;
         return popup;
     }

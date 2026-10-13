@@ -348,7 +348,8 @@ public partial class MainWindow
             _ = ReloadDetailsProgress();
         }
         var info = _detailsInfo;
-        var poster = info?.Poster ?? it.Logo;
+        // The list's own image is the reliable one; the details endpoint's poster is a fallback.
+        var poster = it.Logo ?? info?.Poster;
 
         var key = info?.Backdrop ?? poster ?? "";
         if (key != _backdropKey)
