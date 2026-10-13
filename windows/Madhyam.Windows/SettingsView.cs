@@ -201,7 +201,6 @@ public sealed class SettingsView : UserControl
         _current = key;
         _content.Children.Clear();
         _scroll.ScrollToTop();
-        Motion.Rise(_content, 12, 220);
         switch (key)
         {
             case "General": General(); break;
@@ -401,7 +400,8 @@ public sealed class SettingsView : UserControl
         actions.Children.Add(Icon("\uE70F", "Edit", async () =>
         {
             var ua = S.SourceUserAgent.TryGetValue(src.Id, out var u) ? u : "";
-            var r = EditSourceWindow.Show(Window.GetWindow(this)!, src, ua);
+            var pw = src.Kind == "xtream" ? await _repo.SourcePassword(src.Id) : "";
+            var r = EditSourceWindow.Show(Window.GetWindow(this)!, src, ua, pw);
             if (r == null) return;
             if (r.UserAgent.Length > 0) S.SourceUserAgent[src.Id] = r.UserAgent;
             else S.SourceUserAgent.Remove(src.Id);
@@ -510,6 +510,20 @@ public sealed class SettingsView : UserControl
         Row("Online subtitles (OpenSubtitles.com)",
             "Search and download subtitles from the player's CC menu, like VLC's VLsub. Needs a free API key; logging in gives more downloads per day. Languages: comma-separated codes such as en, fr, es.",
             os, controlBelow: true);
+
+        var omdb = new TextBox { Text = S.OmdbApiKey, MinWidth = 320, MaxWidth = 420, HorizontalAlignment = HorizontalAlignment.Left };
+        omdb.LostFocus += (_, _) => { S.OmdbApiKey = omdb.Text.Trim(); Save(); };
+        var omdbBox = new StackPanel();
+        omdbBox.Children.Add(omdb);
+        omdbBox.Children.Add(Buttons(Btn("Get a free OMDb key", () =>
+        {
+            Process.Start(new ProcessStartInfo("https://www.omdbapi.com/apikey.aspx") { UseShellExecute = true });
+            return Task.CompletedTask;
+        })));
+        ((FrameworkElement)omdbBox.Children[1]).Margin = new Thickness(0, 8, 0, 0);
+        Row("IMDb and Rotten Tomatoes ratings",
+            "Shown on movie and series pages when found. Uses OMDb (free key, 1,000 look-ups a day). Leave empty to hide them.",
+            omdbBox, controlBelow: true);
 
         Row("Keyboard", "Space or click the picture: pause · ←/→ 10 s · ↑/↓ volume · M mute · J/K audio delay · G/H subtitle delay · double-click or F11 full screen",
             new TextBlock());

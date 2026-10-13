@@ -36,6 +36,8 @@ public sealed class DetailsInfo
     public string? Backdrop { get; set; }
     /// <summary>YouTube video id (not a URL).</summary>
     public string? Trailer { get; set; }
+    /// <summary>IMDb id such as "tt1234567" when the panel provides one.</summary>
+    public string? ImdbId { get; set; }
 }
 
 public sealed record Group(string Name, int Count)
@@ -363,6 +365,13 @@ public sealed class Repository : IDisposable
         await Refresh(id);
     }
 
+    /// <summary>The saved Xtream password (for the edit form), or "" for M3U.</summary>
+    public Task<string> SourcePassword(int source) => Bg(() =>
+    {
+        var v = _core.Call("source_password", new { source });
+        return v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+    });
+
     /// <summary>Xtream account status (login, expiry, connections).</summary>
     public async Task<AccountInfo> Account(int source)
     {
@@ -680,6 +689,7 @@ public sealed class Repository : IDisposable
             Poster = Any("movie_image", "cover_big", "cover"),
             Backdrop = backdrop,
             Trailer = trailer,
+            ImdbId = Any("imdb_id", "imdb") is { } imdb && System.Text.RegularExpressions.Regex.Match(imdb, @"tt\d{5,10}") is { Success: true } m2 ? m2.Value : null,
         };
     }
 

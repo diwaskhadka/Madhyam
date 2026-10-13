@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using LibVLCSharp.Shared;
 using Microsoft.Win32;
@@ -51,7 +52,7 @@ public partial class MainWindow
     private void SizePlayers()
     {
         static bool Ok(double v) => double.IsFinite(v) && v > 0;
-        var fs = _fullscreen && Playing != null;
+        var fs = _fullscreen && (Playing != null || _trailerOpen);
 
         // Live: card on top (16:9 video + header), guide below it.
         if (fs)
@@ -88,7 +89,9 @@ public partial class MainWindow
         else if (Ok(VodPage.ActualWidth) && Ok(VodPage.ActualHeight))
         {
             const double chrome = 34, header = 70;
-            var vw = Math.Min(Math.Min(VodPage.ActualWidth - 36 - chrome, 1280), (VodPage.ActualHeight - 60 - header - chrome - 90) * 16 / 9);
+            // A trailer gets a bigger card (less room kept for the page below).
+            var peek = _trailerOpen ? 10 : 90;
+            var vw = Math.Min(Math.Min(VodPage.ActualWidth - 36 - chrome, _trailerOpen ? 1500 : 1280), (VodPage.ActualHeight - 60 - header - chrome - peek) * 16 / 9);
             vw = Math.Max(320, vw);
             VodPlayerBox.Width = vw + chrome;
             VodPlayerBox.HorizontalAlignment = HorizontalAlignment.Center;
@@ -104,8 +107,46 @@ public partial class MainWindow
         EnsureBarTimers();
         // The overlay lives in VLC's own transparent window: forward its keys to ours.
         if (Window.GetWindow(VideoOverlay) is { } w && w != this && _hookedOverlays.Add(w))
+        {
             w.PreviewKeyDown += Window_PreviewKeyDown;
+            GuardOverlayScale(w);
+        }
     }
+
+    /// <summary>
+    /// The video library scales its overlay window's content with a LayoutTransform equal to
+    /// window size ÷ video size. While the window switches to full screen the video area is
+    /// briefly 0×0, the scale becomes infinite / NaN and WPF throws on every frame
+    /// ("Border should not return NaN values as its DesiredSize"). Replace such a scale at once.
+    /// </summary>
+    private static void GuardOverlayScale(Window w)
+    {
+        void Hook()
+        {
+            if (VisualTreeHelper.GetChildrenCount(w) == 0 || VisualTreeHelper.GetChild(w, 0) is not FrameworkElement root) return;
+            void Check()
+            {
+                if (root.LayoutTransform is ScaleTransform st)
+                {
+                    if (!st.IsFrozen)
+                    {
+                        st.Changed -= OnChanged;
+                        st.Changed += OnChanged;
+                    }
+                    if (!Sane(st.ScaleX) || !Sane(st.ScaleY)) root.LayoutTransform = Transform.Identity;
+                }
+            }
+            void OnChanged(object? s, EventArgs e) => Check();
+            System.ComponentModel.DependencyPropertyDescriptor
+                .FromProperty(FrameworkElement.LayoutTransformProperty, typeof(FrameworkElement))
+                .AddValueChanged(root, (_, _) => Check());
+            Check();
+        }
+        if (w.IsLoaded) Hook();
+        else w.Loaded += (_, _) => Hook();
+    }
+
+    private static bool Sane(double v) => double.IsFinite(v) && v > 0.05 && v < 20;
 
     private void Overlay_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
@@ -237,24 +278,13 @@ public partial class MainWindow
 
     private void HideSeekTip(object sender, MouseEventArgs e) => SeekTip.Visibility = Visibility.Collapsed;
 
-    private void VodClose_Click(object sender, RoutedEventArgs e) => StopPlayback();
+    private void VodClose_Click(object sender, RoutedEventArgs e)
+    {
+        if (_trailerOpen) CloseTrailer();
+        else StopPlayback();
+    }
 
     private void LiveClose_Click(object sender, RoutedEventArgs e) => StopPlayback();
-
-    private void CopyUrl_Click(object sender, RoutedEventArgs e)
-    {
-        if (Playing is not { } it) return;
-        try
-        {
-            Clipboard.SetText(it.Url);
-            ShowOsd("Stream URL copied");
-            SetStatus("Stream URL copied to the clipboard.");
-        }
-        catch (Exception ex)
-        {
-            SetStatus($"Could not copy: {ex.Message}");
-        }
-    }
 
     /// <summary>
     /// Card title: the film or series name, and for episodes "S03E01 · title"
@@ -264,6 +294,7 @@ public partial class MainWindow
     {
         if (it.Kind == "episode" && _details is { IsSeries: true } series)
         {
+            VodCardLabel.Text = "NOW PLAYING";
             VodCardTitle.Text = series.Name;
             var ep = it.Name;
             foreach (var cut in new[] { series.Name, CleanTitle(series.Name) })
@@ -275,6 +306,7 @@ public partial class MainWindow
         }
         else
         {
+            VodCardLabel.Text = "NOW PLAYING";
             VodCardTitle.Text = it.Name;
             VodCardSub.Text = string.Join("  ·  ", new[] { it.Year, it.Genre }.Where(x => !string.IsNullOrEmpty(x)));
         }

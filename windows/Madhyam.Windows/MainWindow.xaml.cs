@@ -464,14 +464,18 @@ public partial class MainWindow : Window
         more.Click += (_, ev) =>
         {
             ev.Handled = true;
-            var items = new List<UiKit.MenuRow> { new("\uE946", "Playlist info", false, () => { close(); _ = ShowPlaylistInfo(src); }) };
-            if (src.Kind == "xtream") items.Add(new("\uE77B", "Account info", false, () => { close(); _ = ShowAccountInfo(src); }));
-            items.Add(new("\uE701", "Check again", false, () => { close(); _ = CheckSource(src, announce: true); }));
-            items.Add(new("\uE72C", "Refresh playlist", false, () => { close(); _ = RefreshSource(src); }));
-            items.Add(new("", "-", false, () => { }));
-            items.Add(new("\uE74D", "Remove playlist", false, () => { close(); _ = RemoveSource(src); }, GlyphBrush: "LiveRed", LabelBrush: "LiveRed"));
-            // Sub-menu next to the row; the main menu stays open underneath until a choice is made.
-            UiKit.PopMenu(more, null, items, width: 230, placement: PlacementMode.Right, keepOthers: true);
+            close();
+            // Show the playlist's actions in the same place once the list has closed.
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                var items = new List<UiKit.MenuRow> { new("\uE946", "Playlist info", false, () => _ = ShowPlaylistInfo(src)) };
+                if (src.Kind == "xtream") items.Add(new("\uE77B", "Account info", false, () => _ = ShowAccountInfo(src)));
+                items.Add(new("\uE701", "Check again", false, () => _ = CheckSource(src, announce: true)));
+                items.Add(new("\uE72C", "Refresh playlist", false, () => _ = RefreshSource(src)));
+                items.Add(new("", "-", false, () => { }));
+                items.Add(new("\uE74D", "Remove playlist", false, () => _ = RemoveSource(src), GlyphBrush: "LiveRed", LabelBrush: "LiveRed"));
+                UiKit.PopMenu(PlaylistButton, src.Name, items, width: 300);
+            }), System.Windows.Threading.DispatcherPriority.Input);
         };
         Grid.SetColumn(more, 2);
         g.Children.Add(more);
@@ -610,7 +614,7 @@ public partial class MainWindow : Window
         var vod = _mode is Mode.Movies or Mode.Series;
         var live = _mode == Mode.Live;
         var details = vod && _details != null;
-        var fs = _fullscreen && Playing != null;
+        var fs = _fullscreen && (Playing != null || _trailerOpen);
 
         PageHost.Visibility = page && !fs ? Visibility.Visible : Visibility.Collapsed;
         var showCats = !page && !fs;
@@ -625,12 +629,12 @@ public partial class MainWindow : Window
         TimelinePanel.Visibility = live && !fs && timeline ? Visibility.Visible : Visibility.Collapsed;
 
         GridPanel.Visibility = vod && !details && !fs ? Visibility.Visible : Visibility.Collapsed;
-        VodPage.Visibility = details || (fs && _vodPlaying) ? Visibility.Visible : Visibility.Collapsed;
-        VodPlayerBox.Visibility = _vodPlaying ? Visibility.Visible : Visibility.Collapsed;
+        VodPage.Visibility = details || (fs && (_vodPlaying || _trailerOpen)) ? Visibility.Visible : Visibility.Collapsed;
+        VodPlayerBox.Visibility = _vodPlaying || _trailerOpen ? Visibility.Visible : Visibility.Collapsed;
         VodPlayerRow.Height = fs ? new GridLength(1, GridUnitType.Star) : GridLength.Auto;
         VodScroll.Visibility = fs ? Visibility.Collapsed : Visibility.Visible;
         VodHeader.Visibility = fs ? Visibility.Collapsed : Visibility.Visible;
-        VodHeaderTitle.Visibility = _vodPlaying ? Visibility.Collapsed : Visibility.Visible; // shown inside the card instead
+        VodHeaderTitle.Visibility = _vodPlaying || _trailerOpen ? Visibility.Collapsed : Visibility.Visible; // shown inside the card instead
         // Full screen: the card becomes a bare black video surface.
         foreach (var (card, shadow, header, frame) in new[] { (VodCard, VodCardShadow, (FrameworkElement)VodCardHeader, VodVideoFrame), (LiveCard, LiveCardShadow, LiveCardHeader, LiveVideoFrame) })
         {
@@ -684,6 +688,7 @@ public partial class MainWindow : Window
         var mode = Enum.Parse<Mode>(tag);
         // One video surface: leaving the section that is playing stops playback.
         if (Playing != null && mode != _mode) StopPlayback();
+        CloseTrailer();
         _mode = mode;
         _details = null;
         _group = null;
@@ -714,14 +719,6 @@ public partial class MainWindow : Window
     {
         var version = ++_loadVersion;
         Layout();
-        // Page change: the new section rises into place.
-        Motion.Rise(_mode switch
-        {
-            Mode.Live => LiveLayout,
-            Mode.Movies or Mode.Series => GridPanel,
-            _ => PageHost,
-        });
-        if (IsSection) Motion.Rise(CatsPanel, 10, 220);
         switch (_mode)
         {
             case Mode.Live or Mode.Movies or Mode.Series:
@@ -866,6 +863,10 @@ public partial class MainWindow : Window
                 ToggleFullscreen();
                 e.Handled = true;
                 break;
+            case Key.Escape when _trailerOpen:
+                CloseTrailer();
+                e.Handled = true;
+                break;
             case Key.Escape when _vodPlaying:
                 StopPlayback();
                 e.Handled = true;
@@ -937,24 +938,69 @@ public partial class MainWindow : Window
         }
     }
 
+    private Rect _savedBounds;
+    private ResizeMode _savedResize;
+
+    /// <summary>
+    /// Full screen in one step: cover the current monitor exactly (no restore-then-maximize
+    /// double resize, which flashed the desktop). A black curtain hides the switch.
+    /// </summary>
     private void ToggleFullscreen(bool force = false)
     {
-        if (!force && Playing == null && !_fullscreen) return; // nothing to show full screen
+        if (!force && Playing == null && !_trailerOpen && !_fullscreen) return; // nothing to show full screen
         _fullscreen = !_fullscreen;
-        if (_fullscreen)
+        var curtain = FullscreenCurtain.Show(this);
+        try
         {
-            _savedState = WindowState;
-            WindowStyle = WindowStyle.None;
-            WindowState = WindowState.Normal; // required for Maximized to cover the taskbar
-            WindowState = WindowState.Maximized;
+            if (_fullscreen)
+            {
+                _savedState = WindowState;
+                _savedResize = ResizeMode;
+                _savedBounds = WindowState == WindowState.Normal ? new Rect(Left, Top, Width, Height) : RestoreBounds;
+                var m = MonitorRect();
+                WindowStyle = WindowStyle.None;
+                ResizeMode = ResizeMode.NoResize;
+                if (WindowState == WindowState.Maximized)
+                {
+                    // Set the target bounds first so leaving "maximized" lands directly on the monitor.
+                    Left = m.Left; Top = m.Top; Width = m.Width; Height = m.Height;
+                    WindowState = WindowState.Normal;
+                }
+                Left = m.Left; Top = m.Top; Width = m.Width; Height = m.Height;
+                Topmost = true;
+            }
+            else
+            {
+                Topmost = false;
+                WindowStyle = WindowStyle.SingleBorderWindow;
+                ResizeMode = _savedResize;
+                if (_savedBounds.Width > 0)
+                {
+                    Left = _savedBounds.Left; Top = _savedBounds.Top; Width = _savedBounds.Width; Height = _savedBounds.Height;
+                }
+                WindowState = _savedState;
+            }
         }
-        else
+        finally
         {
-            WindowStyle = WindowStyle.SingleBorderWindow;
-            WindowState = _savedState;
+            // Always re-layout, even if the video library threw during the resize.
+            FullBtn.Content = _fullscreen ? "\uE73F" : "\uE740";
+            Layout();
+            curtain.Lift();
         }
-        FullBtn.Content = _fullscreen ? "\uE73F" : "\uE740";
-        Layout();
+    }
+
+    /// <summary>Bounds of the monitor the window is on, in WPF units.</summary>
+    private Rect MonitorRect()
+    {
+        var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        var mon = NativeMethods.MonitorFromWindow(hwnd, 2 /* nearest */);
+        var info = new NativeMethods.MonitorInfo { Size = System.Runtime.InteropServices.Marshal.SizeOf<NativeMethods.MonitorInfo>() };
+        if (mon == IntPtr.Zero || !NativeMethods.GetMonitorInfo(mon, ref info))
+            return new Rect(0, 0, SystemParameters.PrimaryScreenWidth, SystemParameters.PrimaryScreenHeight);
+        var dpi = VisualTreeHelper.GetDpi(this);
+        var r = info.Monitor;
+        return new Rect(r.Left / dpi.DpiScaleX, r.Top / dpi.DpiScaleY, (r.Right - r.Left) / dpi.DpiScaleX, (r.Bottom - r.Top) / dpi.DpiScaleY);
     }
 
     private void OnTick()

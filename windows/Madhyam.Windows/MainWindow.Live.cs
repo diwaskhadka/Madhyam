@@ -86,7 +86,6 @@ public partial class MainWindow
     {
         var show = CatFilterBox.Visibility != Visibility.Visible;
         CatFilterBox.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-        if (show) Motion.Rise(CatFilterBox, 8, 200);
         if (show) CatFilter.Focus();
         else CatFilter.Text = "";
     }

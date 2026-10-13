@@ -176,6 +176,7 @@ public static class UiKit
         }
         var card = new Button
         {
+            Tag = "press",
             Content = stack,
             Cursor = Cursors.Hand,
             Focusable = false,
@@ -229,7 +230,7 @@ public static class UiKit
             g.Children.Add(x);
         }
         var border = new Border { CornerRadius = new CornerRadius(12), Background = B("Card"), Padding = new Thickness(10), Child = g, BorderThickness = new Thickness(1.5), BorderBrush = Brushes.Transparent };
-        var card = new Button { Content = border, Cursor = Cursors.Hand, Focusable = false, Margin = new Thickness(0, 0, 12, 12), Template = BareTemplate(), ToolTip = it.Name };
+        var card = new Button { Tag = "press", Content = border, Cursor = Cursors.Hand, Focusable = false, Margin = new Thickness(0, 0, 12, 12), Template = BareTemplate(), ToolTip = it.Name };
         card.MouseEnter += (_, _) => border.BorderBrush = B("Accent");
         card.MouseLeave += (_, _) => border.BorderBrush = Brushes.Transparent;
         card.Click += (_, _) => open(it);
@@ -504,7 +505,6 @@ public static class UiKit
         TextElement.SetFontSize(root, 13.5);
         TextElement.SetForeground(root, B("Fg"));
         popup.Child = root;
-        popup.Opened += (_, _) => Motion.Unfold(root, above, placement == PlacementMode.Right);
         popup.Closed += (_, _) => { if (OpenPopup == popup) OpenPopup = null; };
         if (!keepOthers) OpenPopup?.SetCurrentValue(Popup.IsOpenProperty, false);
         if (!keepOthers) OpenPopup = popup;

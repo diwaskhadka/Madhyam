@@ -58,10 +58,16 @@ public static class Motion
             new MouseEventHandler((s, _) => Press(s as ButtonBase, false)), handledEventsToo: true);
     }
 
+    private static Style? TryStyle(string key) => Application.Current.TryFindResource(key) as Style;
+
     private static void Press(ButtonBase? b, bool down)
     {
         // Slider tracks use repeat buttons and must not wobble; checkboxes and radios keep their own look.
         if (b == null || b is RepeatButton || b is ToggleButton) return;
+        // Only icon buttons and picture cards: text never moves or scales.
+        var style = b.Style;
+        var iconish = style != null && (style == TryStyle("IconButton") || style == TryStyle("PlayerButton"));
+        if (!iconish && !Equals(b.Tag, "press")) return;
         if (b.RenderTransform is not ScaleTransform s || s.IsFrozen)
         {
             if (b.RenderTransform != Transform.Identity && b.RenderTransform is not ScaleTransform) return; // owned by something else
@@ -158,4 +164,84 @@ public static class ElasticScroll
         };
         CompositionTarget.Rendering += tick;
     }
+}
+
+
+/// <summary>Short black cover over the monitor while the window switches to / from full screen.</summary>
+public sealed class FullscreenCurtain
+{
+    private readonly Window? _w;
+
+    private FullscreenCurtain(Window? w) => _w = w;
+
+    public static FullscreenCurtain Show(Window owner)
+    {
+        try
+        {
+            var src = PresentationSource.FromVisual(owner);
+            var hwnd = new System.Windows.Interop.WindowInteropHelper(owner).Handle;
+            var mon = NativeMethods.MonitorFromWindow(hwnd, 2);
+            var info = new NativeMethods.MonitorInfo { Size = System.Runtime.InteropServices.Marshal.SizeOf<NativeMethods.MonitorInfo>() };
+            if (mon == IntPtr.Zero || !NativeMethods.GetMonitorInfo(mon, ref info) || src == null) return new FullscreenCurtain(null);
+            var dpi = VisualTreeHelper.GetDpi(owner);
+            var r = info.Monitor;
+            var w = new Window
+            {
+                WindowStyle = WindowStyle.None,
+                ResizeMode = ResizeMode.NoResize,
+                AllowsTransparency = true,
+                Background = Brushes.Black,
+                ShowInTaskbar = false,
+                ShowActivated = false,
+                Topmost = true,
+                Left = r.Left / dpi.DpiScaleX,
+                Top = r.Top / dpi.DpiScaleY,
+                Width = (r.Right - r.Left) / dpi.DpiScaleX,
+                Height = (r.Bottom - r.Top) / dpi.DpiScaleY,
+                Opacity = 1,
+            };
+            w.Show();
+            return new FullscreenCurtain(w);
+        }
+        catch
+        {
+            return new FullscreenCurtain(null);
+        }
+    }
+
+    /// <summary>Fade the curtain away once the new layout has been drawn.</summary>
+    public void Lift()
+    {
+        if (_w == null) return;
+        _w.Dispatcher.BeginInvoke(new Action(() =>
+        {
+            var a = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(260)) { BeginTime = TimeSpan.FromMilliseconds(120) };
+            a.Completed += (_, _) => _w.Close();
+            _w.BeginAnimation(UIElement.OpacityProperty, a);
+        }), System.Windows.Threading.DispatcherPriority.ContextIdle);
+    }
+}
+
+internal static class NativeMethods
+{
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    public struct RectI
+    {
+        public int Left, Top, Right, Bottom;
+    }
+
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    public struct MonitorInfo
+    {
+        public int Size;
+        public RectI Monitor;
+        public RectI Work;
+        public uint Flags;
+    }
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    public static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint flags);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    public static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
 }

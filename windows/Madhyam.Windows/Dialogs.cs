@@ -198,7 +198,7 @@ public sealed class EditSourceResult
 
 public static class EditSourceWindow
 {
-    public static EditSourceResult? Show(Window owner, Source s, string userAgent)
+    public static EditSourceResult? Show(Window owner, Source s, string userAgent, string password = "")
     {
         var w = DialogKit.Make(owner, "Edit playlist", 540);
         var root = new StackPanel { Margin = new Thickness(24) };
@@ -217,13 +217,33 @@ public static class EditSourceWindow
         {
             server = new TextBox { Text = s.Location };
             user = new TextBox { Text = s.Username };
-            pass = new PasswordBox();
+            pass = new PasswordBox { Password = password };
+            var plain = new TextBox { Text = password, Visibility = Visibility.Collapsed };
+            var shown = false;
+            var eye = new Button { Content = "\uE7B3", Style = St("IconButton"), Width = 36, Height = 36, FontSize = 14, ToolTip = "Show password", Margin = new Thickness(6, 0, 0, 0) };
+            eye.Click += (_, _) =>
+            {
+                shown = !shown;
+                if (shown) plain.Text = pass.Password; else pass.Password = plain.Text;
+                plain.Visibility = shown ? Visibility.Visible : Visibility.Collapsed;
+                pass.Visibility = shown ? Visibility.Collapsed : Visibility.Visible;
+                eye.Content = shown ? "\uED1A" : "\uE7B3";
+                eye.ToolTip = shown ? "Hide password" : "Show password";
+            };
+            plain.TextChanged += (_, _) => { if (shown) pass.Password = plain.Text; };
+            var passRow = new DockPanel();
+            DockPanel.SetDock(eye, Dock.Right);
+            passRow.Children.Add(eye);
+            var boxes = new Grid();
+            boxes.Children.Add(pass);
+            boxes.Children.Add(plain);
+            passRow.Children.Add(boxes);
             root.Children.Add(DialogKit.Label("Server URL"));
             root.Children.Add(server);
             root.Children.Add(DialogKit.Label("Username"));
             root.Children.Add(user);
-            root.Children.Add(DialogKit.Label("Password (leave empty to keep the current one)"));
-            root.Children.Add(pass);
+            root.Children.Add(DialogKit.Label("Password"));
+            root.Children.Add(passRow);
         }
         else
         {

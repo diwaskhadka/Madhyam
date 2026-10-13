@@ -191,6 +191,15 @@ pub fn dispatch(st: &mut State, method: &str, a: &Value) -> Result<Value> {
             c.rename_source(arg_source(a)?, &arg_str(a, "name")?)?;
             Value::Null
         }
+        // The stored Xtream password, only for the "Edit playlist" form (never part of `sources`).
+        "source_password" => match &c
+            .source(arg_source(a)?)
+            .ok_or_else(|| Error::NotFound("source".into()))?
+            .kind
+        {
+            SourceKind::Xtream(cr) => cr.password.as_str().into(),
+            SourceKind::M3u { .. } => Value::Null,
+        },
         // Edit a source. Omitted fields (and an empty password) keep their value.
         "update_source" => {
             let id = arg_source(a)?;

@@ -36,10 +36,25 @@ public partial class App : Application
         var showing = false;
         var lastText = "";
         var lastAt = DateTime.MinValue;
+        var lastLogged = "";
+        var lastLoggedAt = DateTime.MinValue;
         DispatcherUnhandledException += (_, args) =>
         {
             args.Handled = true; // keep the app alive; errors are logged
-            try { File.AppendAllText(Path.Combine(DataDir, "error.log"), $"{DateTime.Now:u} {args.Exception}\n\n"); } catch { }
+            var text0 = args.Exception.Message;
+            try
+            {
+                // Keep the log small (a repeating layout error once grew it to 100 MB).
+                var log = Path.Combine(DataDir, "error.log");
+                if (File.Exists(log) && new FileInfo(log).Length > 2_000_000) File.Move(log, log + ".old", overwrite: true);
+                if (text0 != lastLogged || DateTime.Now - lastLoggedAt > TimeSpan.FromSeconds(30))
+                {
+                    File.AppendAllText(log, $"{DateTime.Now:u} {args.Exception}\n\n");
+                    lastLogged = text0;
+                    lastLoggedAt = DateTime.Now;
+                }
+            }
+            catch { }
             var text = args.Exception.Message;
             if (showing || (text == lastText && DateTime.Now - lastAt < TimeSpan.FromMinutes(1))) return;
             showing = true;

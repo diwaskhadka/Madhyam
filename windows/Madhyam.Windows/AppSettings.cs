@@ -40,6 +40,8 @@ public sealed class AppSettings
     public string OsUsername { get; set; } = "";
     public string OsPassword { get; set; } = "";
     public string OsLanguages { get; set; } = "en";
+    /// <summary>OMDb API key for IMDb and Rotten Tomatoes ratings on movie / series pages (optional).</summary>
+    public string OmdbApiKey { get; set; } = "";
 
     // ---- Guide
     public string GuideView { get; set; } = "Timeline";    // Timeline | List

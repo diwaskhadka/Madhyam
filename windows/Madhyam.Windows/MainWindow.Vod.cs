@@ -3,6 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Shapes;
 using static Madhyam.Windows.UiKit;
 
 namespace Madhyam.Windows;
@@ -16,6 +17,7 @@ public partial class MainWindow
 {
     private ItemVm? _details;               // the film or series whose page is open
     private DetailsInfo? _detailsInfo;
+    private ExternalRatings? _ratings;
     private bool _detailsLoading;
     private List<ItemVm> _episodes = new();
     private string? _season;
@@ -94,7 +96,6 @@ public partial class MainWindow
         }
         foreach (var it in items) it.IsFavorite = _favorites.Contains(it.Id);
         PosterGrid.ItemsSource = items;
-        Motion.Rise(PosterGrid, 12, 220);
         GridCount.Text = _gridTotal == 0
             ? (_vodSearch != null ? "Nothing matches." : "No items here.")
             : $"{_gridTotal:N0} {(kind == "series" ? "series" : "movies")}";
@@ -188,11 +189,13 @@ public partial class MainWindow
     /// <summary>Open a film or series page: shows at once, then fills in details and episodes.</summary>
     private async Task ShowDetails(ItemVm it)
     {
+        CloseTrailer();
         if (_vodPlaying) StopPlayback();
         var fresh = await _repo.Item(it.Id) ?? it;
         fresh.IsFavorite = _favorites.Contains(fresh.Id);
         _details = fresh;
         _detailsInfo = null;
+        _ratings = null;
         _episodes = new List<ItemVm>();
         _season = null;
         _detailsLoading = true;
@@ -200,7 +203,6 @@ public partial class MainWindow
         VodHeaderTitle.Text = fresh.DisplayName;
         RenderVodPage();
         VodScroll.ScrollToTop();
-        Motion.Rise(VodPage, 18, 280);
 
         DetailsInfo? info = null;
         var eps = new List<ItemVm>();
@@ -223,6 +225,13 @@ public partial class MainWindow
         _season = ResumeEpisode()?.Season ?? eps.FirstOrDefault()?.Season;
         _detailsLoading = false;
         RenderVodPage();
+
+        // IMDb / Rotten Tomatoes (only shown when found).
+        var year = fresh.Year ?? (System.Text.RegularExpressions.Regex.Match(fresh.Name, @"\b(19|20)\d{2}\b") is { Success: true } ym ? ym.Value : null);
+        var ext = await Ratings.Fetch(Ratings.CleanTitle(fresh.Name), year, info?.ImdbId, fresh.IsSeries);
+        if (_details != fresh || ext == null) return;
+        _ratings = ext;
+        RenderVodPage();
     }
 
     private void CloseDetails()
@@ -234,6 +243,7 @@ public partial class MainWindow
     /// <summary>Leave the details page (and its player) without touching the grid.</summary>
     private void CloseDetailsSilently()
     {
+        CloseTrailer();
         if (_details == null) return;
         _details = null;
         if (_vodPlaying) StopPlayback();
@@ -247,8 +257,9 @@ public partial class MainWindow
 
     private void VodBack_Click(object sender, RoutedEventArgs e)
     {
-        // From the player go back to the details; from the details go back to the grid.
-        if (_vodPlaying) StopPlayback();
+        // From the player or trailer go back to the details; from the details go back to the grid.
+        if (_trailerOpen) CloseTrailer();
+        else if (_vodPlaying) StopPlayback();
         else CloseDetails();
     }
 
@@ -272,6 +283,7 @@ public partial class MainWindow
 
     private async Task PlayMovie(bool startOver = false)
     {
+        CloseTrailer();
         if (_details is not { IsSeries: false } it) return;
         if (startOver) await _repo.SetProgress(it.Id, 0, Math.Max(1, it.DurationSec));
         _playlist = new List<ItemVm> { it };
@@ -282,6 +294,7 @@ public partial class MainWindow
 
     private async Task PlayEpisode(ItemVm ep)
     {
+        CloseTrailer();
         _playlist = _episodes.ToList();
         var i = _playlist.FindIndex(e => e.Id == ep.Id);
         if (i < 0)
@@ -382,6 +395,45 @@ public partial class MainWindow
         }
     }
 
+    /// <summary>IMDb and Rotten Tomatoes chips, only when OMDb had a score.</summary>
+    private void AddExternalRatings(Panel chips)
+    {
+        if (_ratings is not { } r) return;
+        if (r.Imdb != null)
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            row.Children.Add(new Border
+            {
+                CornerRadius = new CornerRadius(4),
+                Background = new SolidColorBrush(Color.FromRgb(0xF5, 0xC5, 0x18)),
+                Padding = new Thickness(5, 0, 5, 1),
+                Margin = new Thickness(0, 0, 7, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+                Child = new TextBlock { Text = "IMDb", FontSize = 11, FontWeight = FontWeights.Black, Foreground = Brushes.Black },
+            });
+            row.Children.Add(new TextBlock { Text = $"{r.Imdb}/10", FontSize = 13, FontWeight = FontWeights.SemiBold, Foreground = B("Fg"), VerticalAlignment = VerticalAlignment.Center });
+            chips.Children.Add(new Border
+            {
+                CornerRadius = new CornerRadius(6), BorderThickness = new Thickness(1), BorderBrush = B("Line"), Background = B("Card"),
+                Padding = new Thickness(6, 3, 10, 3), Margin = new Thickness(0, 0, 8, 8), Child = row,
+                ToolTip = r.ImdbVotes != null ? $"IMDb · {r.ImdbVotes} votes" : "IMDb",
+            });
+        }
+        if (r.Rotten != null)
+        {
+            var fresh = int.TryParse(r.Rotten.TrimEnd('%'), out var pct) && pct >= 60;
+            var row = new StackPanel { Orientation = Orientation.Horizontal };
+            row.Children.Add(new Ellipse { Width = 12, Height = 12, Fill = new SolidColorBrush(fresh ? Color.FromRgb(0xFA, 0x32, 0x0A) : Color.FromRgb(0x2E, 0x9E, 0x4F)), Margin = new Thickness(0, 0, 7, 0), VerticalAlignment = VerticalAlignment.Center });
+            row.Children.Add(new TextBlock { Text = r.Rotten, FontSize = 13, FontWeight = FontWeights.SemiBold, Foreground = B("Fg"), VerticalAlignment = VerticalAlignment.Center });
+            chips.Children.Add(new Border
+            {
+                CornerRadius = new CornerRadius(6), BorderThickness = new Thickness(1), BorderBrush = B("Line"), Background = B("Card"),
+                Padding = new Thickness(8, 3, 10, 3), Margin = new Thickness(0, 0, 8, 8), Child = row,
+                ToolTip = fresh ? "Rotten Tomatoes · Fresh" : "Rotten Tomatoes · Rotten",
+            });
+        }
+    }
+
     private static IEnumerable<string> ChipTexts(ItemVm it, DetailsInfo? info)
     {
         var year = info?.Released is { Length: >= 4 } r ? r[..4] : it.Year;
@@ -424,6 +476,7 @@ public partial class MainWindow
         var chips = new WrapPanel { Margin = new Thickness(0, 14, 0, 4) };
         var rating = info?.Rating ?? (it.HasRating ? it.Rating : null);
         if (rating != null) chips.Children.Add(Chip($"★ {rating}", "Rating"));
+        AddExternalRatings(chips);
         foreach (var c in ChipTexts(it, info)) chips.Children.Add(Chip(c));
         right.Children.Add(chips);
 
@@ -510,6 +563,7 @@ public partial class MainWindow
         var chips = new WrapPanel { Margin = new Thickness(0, 10, 0, 0) };
         var rating = info?.Rating ?? (it.HasRating ? it.Rating : null);
         if (rating != null) chips.Children.Add(Chip($"★ {rating}", "Rating"));
+        AddExternalRatings(chips);
         foreach (var c in ChipTexts(it, info)) chips.Children.Add(Chip(c));
         right.Children.Add(chips);
         var plot = info?.Plot ?? it.Plot;
@@ -547,11 +601,44 @@ public partial class MainWindow
         return s;
     }
 
-    /// <summary>Play the trailer in Madhyam's own window (pauses the film if it is playing).</summary>
-    private void OpenTrailer(string youtubeId)
+    private Microsoft.Web.WebView2.Wpf.WebView2? _trailerView;
+    private bool _trailerOpen;
+
+    /// <summary>Play the trailer in the page's own player card (stops the film if it is playing).</summary>
+    private async void OpenTrailer(string youtubeId)
     {
-        if (Playing != null && _player.IsPlaying) _player.SetPause(true);
-        TrailerWindow.Open(youtubeId, _details?.Name ?? "Trailer");
+        if (_vodPlaying) StopPlayback();
+        _trailerView ??= new Microsoft.Web.WebView2.Wpf.WebView2 { DefaultBackgroundColor = System.Drawing.Color.Black };
+        if (!await TrailerPlayer.Init(_trailerView, on => { if (on != _fullscreen) ToggleFullscreen(force: true); }))
+        {
+            SetStatus("The Microsoft Edge WebView2 runtime is missing, so the trailer opens in your browser.");
+            TrailerPlayer.OpenInBrowser($"https://www.youtube.com/watch?v={youtubeId}");
+            return;
+        }
+        _trailerOpen = true;
+        VodCardLabel.Text = "TRAILER";
+        VodCardTitle.Text = _details?.Name ?? "Trailer";
+        VodCardSub.Text = "YouTube";
+        if (_trailerView.Parent is Panel old && old != VodVideoHost) old.Children.Remove(_trailerView);
+        if (_trailerView.Parent == null) VodVideoHost.Children.Add(_trailerView);
+        _trailerView.Visibility = Visibility.Visible;
+        _trailerView.CoreWebView2.Navigate(TrailerPlayer.Url(youtubeId).AbsoluteUri);
+        Layout();
+        VodScroll.ScrollToTop();
+    }
+
+    private void CloseTrailer()
+    {
+        if (!_trailerOpen) return;
+        _trailerOpen = false;
+        try { _trailerView?.CoreWebView2?.Navigate("about:blank"); } catch { /* already gone */ }
+        if (_trailerView != null)
+        {
+            _trailerView.Visibility = Visibility.Collapsed;
+            (_trailerView.Parent as Panel)?.Children.Remove(_trailerView);
+        }
+        if (_fullscreen) ToggleFullscreen();
+        Layout();
     }
 
     private FrameworkElement Trailer(ItemVm it, string youtubeId)
@@ -624,7 +711,6 @@ public partial class MainWindow
         {
             _season = v;
             RenderVodPage();
-            if (VodContent.Children.Count > 0) Motion.Rise(VodContent.Children[^1], 10, 200);
         }));
         s.Children.Add(bar);
         s.Children.Add(Wrap(eps.Select(e => EpisodeCard(series, e))));
