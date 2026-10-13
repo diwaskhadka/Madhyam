@@ -298,6 +298,22 @@ public sealed class Repository : IDisposable
     private static List<ItemVm> Items(JsonElement arr) =>
         arr.ValueKind == JsonValueKind.Array ? arr.EnumerateArray().Select(ParseItem).ToList() : new List<ItemVm>();
 
+    private System.Threading.Timer? _saveTimer;
+    private readonly object _saveLock = new();
+
+    /// <summary>
+    /// Save a little later, once: favorites, watched marks and history change in bursts
+    /// (a whole season at once), and every save writes the full catalog snapshot.
+    /// </summary>
+    private void SaveSoon()
+    {
+        lock (_saveLock)
+        {
+            _saveTimer ??= new System.Threading.Timer(_ => Save(), null, System.Threading.Timeout.Infinite, System.Threading.Timeout.Infinite);
+            _saveTimer.Change(1500, System.Threading.Timeout.Infinite);
+        }
+    }
+
     private void Save()
     {
         try { _core.Call("save_snapshot", new { path = SnapshotPath }); }
@@ -592,9 +608,9 @@ public sealed class Repository : IDisposable
 
     public Task<List<ItemVm>> Recent(string? kind, int limit = 60) => Bg(() => Items(_core.Call("recent", new { kind, limit })));
 
-    public Task RemoveFromHistory(string id) => Bg(() => { _core.Call("remove_history", new { id }); Save(); });
+    public Task RemoveFromHistory(string id) => Bg(() => { _core.Call("remove_history", new { id }); SaveSoon(); });
 
-    public Task ClearHistory() => Bg(() => { _core.Call("clear_history"); Save(); });
+    public Task ClearHistory() => Bg(() => { _core.Call("clear_history"); SaveSoon(); });
 
     public Task<ItemVm?> Item(string id) => Bg(() =>
     {
@@ -602,12 +618,23 @@ public sealed class Repository : IDisposable
         catch (IptvException) { return null; }
     });
 
+    /// <summary>Mark many episodes at once (one background call, one save).</summary>
+    public Task SetWatchedMany(IReadOnlyList<ItemVm> items, bool watched) => Bg(() =>
+    {
+        foreach (var it in items)
+        {
+            var dur = it.DurationSec > 0 ? it.DurationSec : it.DurationHint > 0 ? it.DurationHint : 1;
+            _core.Call("set_progress", new { id = it.Id, position = watched ? dur : 0, duration = dur });
+        }
+        SaveSoon();
+    });
+
     /// <summary>Mark a film or episode as watched / not watched.</summary>
     public Task SetWatched(ItemVm it, bool watched) => Bg(() =>
     {
         var dur = it.DurationSec > 0 ? it.DurationSec : it.DurationHint > 0 ? it.DurationHint : 1;
         _core.Call("set_progress", new { id = it.Id, position = watched ? dur : 0, duration = dur });
-        Save();
+        SaveSoon();
     });
 
     public Task<(double Position, double Duration)> Progress(string id) => Bg(() =>
@@ -756,7 +783,7 @@ public sealed class Repository : IDisposable
     {
         var on = !_core.Call("item", new { id }).GetProperty("favorite").GetBoolean();
         _core.Call("set_favorite", new { id, on });
-        Save();
+        SaveSoon();
         return on;
     });
 
@@ -769,7 +796,7 @@ public sealed class Repository : IDisposable
         return await Bg(() =>
         {
             _core.Import("series_info", body, new { id = series.Id });
-            Save();
+            SaveSoon();
             return Items(_core.Call("episodes", new { id = series.Id }));
         });
     }

@@ -578,7 +578,14 @@
                                         </StackPanel>
                                     </Grid>
                                     <Border x:Name="VodVideoFrame" CornerRadius="12" Background="Black" ClipToBounds="True">
-                                        <Grid x:Name="VodVideoHost" Background="Black" />
+                                        <Grid>
+                                            <Grid x:Name="VodVideoHost" Background="Black" />
+                                            <!-- Shown while the picture is scrolled partly out of view (sound keeps playing). -->
+                                            <StackPanel x:Name="VodTuckedHint" Visibility="Collapsed" HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,28">
+                                                <TextBlock Text="&#xE768;" FontFamily="{StaticResource Icons}" FontSize="26" Foreground="#99FFFFFF" HorizontalAlignment="Center" />
+                                                <TextBlock Text="Playing · scroll up to see the picture" Foreground="#99FFFFFF" FontSize="13" Margin="0,8,0,0" />
+                                            </StackPanel>
+                                        </Grid>
                                     </Border>
                                 </DockPanel>
                             </Border>

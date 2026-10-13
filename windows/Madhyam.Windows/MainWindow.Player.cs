@@ -103,8 +103,6 @@ public partial class MainWindow
 
     // ================================================================ player scrolls with the page
 
-    private bool _videoClipped;
-
     private void VodScroll_ScrollChanged(object sender, ScrollChangedEventArgs e) => UpdatePlayerScroll();
 
     /// <summary>
@@ -124,41 +122,31 @@ public partial class MainWindow
 
     private void VodPlayerBox_SizeChanged(object sender, SizeChangedEventArgs e) => UpdatePlayerScroll();
 
+    private bool _videoTucked;
+
+    /// <summary>
+    /// The picture is a native window and cannot be cut at the page edge (tested: window regions
+    /// did not take effect on the VLC surface), so it would draw over the top bar. Once any part of
+    /// it scrolls past the top, hide the picture and VLC's control overlay and show a placeholder in
+    /// the card; sound keeps playing and the picture returns as soon as it is fully in view again.
+    /// </summary>
     private void ClipNativeVideo()
     {
         var active = (_vodPlaying || _trailerOpen) && !_fullscreen && VodPlayerBox.IsVisible;
-        var hosts = new List<System.Windows.Interop.HwndHost>();
-        if (Video.Parent == VodVideoHost && UiKit.FindChild<System.Windows.Interop.HwndHost>(Video) is { } vlc) hosts.Add(vlc);
-        if (_trailerView is { Parent: not null } tv && tv.Parent == VodVideoHost) hosts.Add(tv);
         double hidden = 0;
-        if (active && hosts.Count > 0)
+        if (active)
         {
-            try { hidden = Math.Max(0, -VodVideoFrame.TranslatePoint(new Point(0, 0), VodScroll).Y); }
+            try { hidden = -VodVideoFrame.TranslatePoint(new Point(0, 0), VodScroll).Y; }
             catch (InvalidOperationException) { hidden = 0; }
         }
-        if (!active || hidden <= 0)
-        {
-            if (!_videoClipped) return;
-            _videoClipped = false;
-            foreach (var h in hosts) if (h.Handle != IntPtr.Zero) NativeMethods.SetWindowRgn(h.Handle, IntPtr.Zero, true);
-            if (OverlayHandle() is { } o0) NativeMethods.SetWindowRgn(o0, IntPtr.Zero, true);
-            return;
-        }
-        _videoClipped = true;
-        var dpi = VisualTreeHelper.GetDpi(VodVideoFrame);
-        var w = (int)Math.Ceiling(VodVideoFrame.ActualWidth * dpi.DpiScaleX) + 2;
-        var hgt = (int)Math.Ceiling(VodVideoFrame.ActualHeight * dpi.DpiScaleY) + 2;
-        var top = (int)Math.Round(hidden * dpi.DpiScaleY);
-        IntPtr Region() => top >= hgt ? NativeMethods.CreateRectRgn(0, 0, 0, 0) : NativeMethods.CreateRectRgn(0, top, w, hgt);
-        foreach (var h in hosts) if (h.Handle != IntPtr.Zero) NativeMethods.SetWindowRgn(h.Handle, Region(), true);
-        if (OverlayHandle() is { } o) NativeMethods.SetWindowRgn(o, Region(), true);
-    }
-
-    private IntPtr? OverlayHandle()
-    {
-        if (Video.Parent != VodVideoHost || Window.GetWindow(VideoOverlay) is not { } w || w == this) return null;
-        var h = new System.Windows.Interop.WindowInteropHelper(w).Handle;
-        return h == IntPtr.Zero ? null : h;
+        var tuck = active && hidden > 0.5;
+        if (tuck == _videoTucked) return;
+        _videoTucked = tuck;
+        var vlcHere = Video.Parent == VodVideoHost;
+        if (vlcHere) Video.Visibility = tuck ? Visibility.Hidden : Visibility.Visible;
+        if (vlcHere) VideoOverlay.Visibility = tuck ? Visibility.Collapsed : Visibility.Visible;
+        if (_trailerView is { } tv && tv.Parent == VodVideoHost) tv.Visibility = tuck ? Visibility.Hidden : Visibility.Visible;
+        VodTuckedHint.Visibility = tuck ? Visibility.Visible : Visibility.Collapsed;
     }
 
     /// <summary>The wheel over the video goes to VLC's overlay window: scroll the page from there.</summary>

@@ -268,10 +268,10 @@ public partial class MainWindow
         _episodes.Where(e => e.PositionSec > 0 && !e.IsWatched).OrderByDescending(e => e.PlayedAt).FirstOrDefault()
         ?? (_episodes.Any(e => e.IsWatched) ? _episodes.FirstOrDefault(e => !e.IsWatched) : null);
 
-    private async Task ReloadDetailsProgress()
+    private async Task ReloadDetailsProgress(int delayMs = 300)
     {
         if (_details is not { } d) return;
-        await Task.Delay(300); // let the last progress write land
+        if (delayMs > 0) await Task.Delay(delayMs); // let the player's last progress write land
         var fresh = await _repo.Item(d.Id);
         var eps = d.IsSeries ? await _repo.Episodes(d) : _episodes;
         if (_details != d || fresh == null) return;
@@ -528,7 +528,7 @@ public partial class MainWindow
             {
                 await _repo.SetWatched(it, !it.IsWatched);
                 _progressStale = false;
-                await ReloadDetailsProgress();
+                await ReloadDetailsProgress(delayMs: 0);
             }, secondary: true));
         }
         if (info?.Trailer is { } yt)
@@ -609,13 +609,8 @@ public partial class MainWindow
     private async void OpenTrailer(string youtubeId)
     {
         if (_vodPlaying) StopPlayback();
-        _trailerView ??= new Microsoft.Web.WebView2.Wpf.WebView2 { DefaultBackgroundColor = System.Drawing.Color.Black };
-        if (!await TrailerPlayer.Init(_trailerView, on => { if (on != _fullscreen) ToggleFullscreen(force: true); }))
-        {
-            SetStatus("The Microsoft Edge WebView2 runtime is missing, so the trailer opens in your browser.");
-            TrailerPlayer.OpenInBrowser($"https://www.youtube.com/watch?v={youtubeId}");
-            return;
-        }
+        _trailerView ??= TrailerPlayer.Create();
+        // Show the card and put the web view in the window first: WebView2 only initialises once it is loaded.
         _trailerOpen = true;
         VodCardLabel.Text = "TRAILER";
         VodCardTitle.Text = _details?.Name ?? "Trailer";
@@ -623,9 +618,16 @@ public partial class MainWindow
         if (_trailerView.Parent is Panel old && old != VodVideoHost) old.Children.Remove(_trailerView);
         if (_trailerView.Parent == null) VodVideoHost.Children.Add(_trailerView);
         _trailerView.Visibility = Visibility.Visible;
-        _trailerView.CoreWebView2.Navigate(TrailerPlayer.Url(youtubeId).AbsoluteUri);
         Layout();
         VodScroll.ScrollToTop();
+        if (!await TrailerPlayer.Init(_trailerView, on => { if (on != _fullscreen) ToggleFullscreen(force: true); }))
+        {
+            CloseTrailer();
+            SetStatus("The Microsoft Edge WebView2 runtime is missing, so the trailer opens in your browser.");
+            TrailerPlayer.OpenInBrowser($"https://www.youtube.com/watch?v={youtubeId}");
+            return;
+        }
+        if (_trailerOpen) _trailerView.CoreWebView2.Navigate(TrailerPlayer.Url(youtubeId).AbsoluteUri);
     }
 
     private void CloseTrailer()
@@ -633,6 +635,8 @@ public partial class MainWindow
         if (!_trailerOpen) return;
         _trailerOpen = false;
         try { _trailerView?.CoreWebView2?.Navigate("about:blank"); } catch { /* already gone */ }
+        _videoTucked = false;
+        VodTuckedHint.Visibility = Visibility.Collapsed;
         if (_trailerView != null)
         {
             _trailerView.Visibility = Visibility.Collapsed;
@@ -702,9 +706,9 @@ public partial class MainWindow
         var allWatched = eps.All(e => e.IsWatched);
         var mark = Primary(allWatched ? "Mark season as unwatched" : "Mark season as watched", allWatched ? "" : "", async () =>
         {
-            foreach (var e in eps) await _repo.SetWatched(e, !allWatched);
+            await _repo.SetWatchedMany(eps, !allWatched);
             _progressStale = false;
-            await ReloadDetailsProgress();
+            await ReloadDetailsProgress(delayMs: 0);
         }, secondary: true);
         DockPanel.SetDock(mark, Dock.Right);
         bar.Children.Add(mark);
@@ -773,7 +777,7 @@ public partial class MainWindow
         {
             e.Handled = true;
             await _repo.SetWatched(ep, !ep.IsWatched);
-            await ReloadDetailsProgress();
+            await ReloadDetailsProgress(delayMs: 0);
         };
         img.Children.Add(watchBtn);
 

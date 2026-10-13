@@ -12,18 +12,35 @@ public static class TrailerPlayer
 {
     private const string Host = "madhyam.local";
 
-    /// <summary>Prepare a WebView2 once. Returns false when the Edge WebView2 runtime is missing.</summary>
+    private static bool _pageWritten;
+
+    /// <summary>
+    /// A WebView2 for trailers. Its data folder is given through CreationProperties before it
+    /// is ever shown, so initialisation happens exactly once (a second, different environment
+    /// is what raised "already initialized with a different CoreWebView2Environment").
+    /// </summary>
+    public static WebView2 Create() => new()
+    {
+        CreationProperties = new CoreWebView2CreationProperties { UserDataFolder = Path.Combine(App.DataDir, "webview2") },
+        DefaultBackgroundColor = System.Drawing.Color.Black,
+    };
+
+    /// <summary>Finish setting up (the control must already be in the window). False when the WebView2 runtime is missing.</summary>
     public static async Task<bool> Init(WebView2 web, Action<bool> fullscreenChanged)
     {
-        if (web.CoreWebView2 != null) return true;
         try
         {
-            var env = await CoreWebView2Environment.CreateAsync(null, Path.Combine(App.DataDir, "webview2"));
-            await web.EnsureCoreWebView2Async(env);
-            var folder = Path.Combine(App.DataDir, "trailer");
-            Directory.CreateDirectory(folder);
-            await File.WriteAllTextAsync(Path.Combine(folder, "trailer.html"), Page);
+            var first = web.CoreWebView2 == null;
+            await web.EnsureCoreWebView2Async();
             var core = web.CoreWebView2!;
+            var folder = Path.Combine(App.DataDir, "trailer");
+            if (!_pageWritten)
+            {
+                Directory.CreateDirectory(folder);
+                await File.WriteAllTextAsync(Path.Combine(folder, "trailer.html"), Page);
+                _pageWritten = true;
+            }
+            if (!first) return true;
             core.SetVirtualHostNameToFolderMapping(Host, folder, CoreWebView2HostResourceAccessKind.Allow);
             core.Settings.AreDevToolsEnabled = false;
             core.Settings.IsStatusBarEnabled = false;
@@ -37,7 +54,7 @@ public static class TrailerPlayer
             };
             return true;
         }
-        catch (Exception ex) when (ex is WebView2RuntimeNotFoundException or System.Runtime.InteropServices.COMException or InvalidOperationException)
+        catch (Exception ex) when (ex is WebView2RuntimeNotFoundException or System.Runtime.InteropServices.COMException or InvalidOperationException or ArgumentException)
         {
             Repository.Log($"WebView2 unavailable: {ex.Message}");
             return false;

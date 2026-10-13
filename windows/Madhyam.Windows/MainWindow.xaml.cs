@@ -948,54 +948,97 @@ public partial class MainWindow : Window
 
     private Rect _savedBounds;
     private ResizeMode _savedResize;
+    private System.Windows.Threading.DispatcherTimer? _fsAnim;
 
     /// <summary>
-    /// Full screen in one step: cover the current monitor exactly (no restore-then-maximize
-    /// double resize, which flashed the desktop). A black curtain hides the switch.
+    /// Full screen with a maximize-style animation: the window grows from where it is to cover the
+    /// whole monitor (and shrinks back), in one smooth motion, no black screen.
     /// </summary>
     private void ToggleFullscreen(bool force = false)
     {
         if (!force && Playing == null && !_trailerOpen && !_fullscreen) return; // nothing to show full screen
+        _fsAnim?.Stop();
         _fullscreen = !_fullscreen;
-        var curtain = FullscreenCurtain.Show(this);
         try
         {
             if (_fullscreen)
             {
                 _savedState = WindowState;
                 _savedResize = ResizeMode;
-                _savedBounds = WindowState == WindowState.Normal ? new Rect(Left, Top, Width, Height) : RestoreBounds;
-                var m = MonitorRect();
-                WindowStyle = WindowStyle.None;
-                ResizeMode = ResizeMode.NoResize;
+                var from = WindowState == WindowState.Normal ? new Rect(Left, Top, Width, Height) : MaximizedRect();
+                _savedBounds = WindowState == WindowState.Normal ? from : RestoreBounds;
+                var to = MonitorRect();
                 if (WindowState == WindowState.Maximized)
                 {
-                    // Set the target bounds first so leaving "maximized" lands directly on the monitor.
-                    Left = m.Left; Top = m.Top; Width = m.Width; Height = m.Height;
+                    // Leave "maximized" without moving: start from exactly where the maximized window was.
+                    Left = from.Left; Top = from.Top; Width = from.Width; Height = from.Height;
                     WindowState = WindowState.Normal;
+                    Left = from.Left; Top = from.Top; Width = from.Width; Height = from.Height;
                 }
-                Left = m.Left; Top = m.Top; Width = m.Width; Height = m.Height;
+                Layout();                    // full-screen layout first, then grow the window
+                WindowStyle = WindowStyle.None;
+                ResizeMode = ResizeMode.NoResize;
                 Topmost = true;
+                AnimateBounds(from, to, null);
             }
             else
             {
                 Topmost = false;
-                WindowStyle = WindowStyle.SingleBorderWindow;
-                ResizeMode = _savedResize;
-                if (_savedBounds.Width > 0)
+                var from = new Rect(Left, Top, Width, Height);
+                var to = _savedState == WindowState.Maximized ? MaximizedRect() : _savedBounds;
+                AnimateBounds(from, to, () =>
                 {
-                    Left = _savedBounds.Left; Top = _savedBounds.Top; Width = _savedBounds.Width; Height = _savedBounds.Height;
-                }
-                WindowState = _savedState;
+                    WindowStyle = WindowStyle.SingleBorderWindow;
+                    ResizeMode = _savedResize;
+                    if (_savedBounds.Width > 0)
+                    {
+                        Left = _savedBounds.Left; Top = _savedBounds.Top; Width = _savedBounds.Width; Height = _savedBounds.Height;
+                    }
+                    WindowState = _savedState;
+                    Layout();
+                });
             }
         }
         finally
         {
-            // Always re-layout, even if the video library threw during the resize.
             FullBtn.Content = _fullscreen ? "\uE73F" : "\uE740";
-            Layout();
-            curtain.Lift();
+            if (_fullscreen) Layout();
         }
+    }
+
+    /// <summary>Ease the window's bounds from one rectangle to another (~200 ms).</summary>
+    private void AnimateBounds(Rect from, Rect to, Action? done)
+    {
+        var start = DateTime.UtcNow;
+        const double ms = 200;
+        _fsAnim = new System.Windows.Threading.DispatcherTimer(System.Windows.Threading.DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(12) };
+        _fsAnim.Tick += (_, _) =>
+        {
+            var t = Math.Min(1, (DateTime.UtcNow - start).TotalMilliseconds / ms);
+            var e = 1 - Math.Pow(1 - t, 3); // ease out
+            Left = from.Left + (to.Left - from.Left) * e;
+            Top = from.Top + (to.Top - from.Top) * e;
+            Width = Math.Max(MinWidth, from.Width + (to.Width - from.Width) * e);
+            Height = Math.Max(MinHeight, from.Height + (to.Height - from.Height) * e);
+            if (t >= 1)
+            {
+                _fsAnim?.Stop();
+                done?.Invoke();
+            }
+        };
+        _fsAnim.Start();
+    }
+
+    /// <summary>The work area (screen minus taskbar) of the window's monitor: where "maximized" puts it.</summary>
+    private Rect MaximizedRect()
+    {
+        var hwnd = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+        var mon = NativeMethods.MonitorFromWindow(hwnd, 2);
+        var info = new NativeMethods.MonitorInfo { Size = System.Runtime.InteropServices.Marshal.SizeOf<NativeMethods.MonitorInfo>() };
+        if (mon == IntPtr.Zero || !NativeMethods.GetMonitorInfo(mon, ref info)) return SystemParameters.WorkArea;
+        var dpi = VisualTreeHelper.GetDpi(this);
+        var r = info.Work;
+        return new Rect(r.Left / dpi.DpiScaleX, r.Top / dpi.DpiScaleY, (r.Right - r.Left) / dpi.DpiScaleX, (r.Bottom - r.Top) / dpi.DpiScaleY);
     }
 
     /// <summary>Bounds of the monitor the window is on, in WPF units.</summary>
