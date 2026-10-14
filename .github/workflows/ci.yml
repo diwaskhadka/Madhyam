@@ -159,6 +159,34 @@ jobs:
         with:
           name: Madhyam-windows-x64
           path: Madhyam-windows-x64.zip
+      - name: Build the Windows installer (Inno Setup)
+        shell: pwsh
+        run: |
+          $iscc = (Get-Command iscc.exe -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) { $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null; $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+          $v = "0.0.${{ github.run_number }}".TrimStart('v')
+          & $iscc /Q "/DAppVersion=$v" "/DSourceDir=$PWD\publish\Madhyam" "/DOutputDir=$PWD\setup" windows/installer/Madhyam.iss
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::Inno Setup failed ($LASTEXITCODE)"; exit 1 }
+          $exe = Get-ChildItem setup/*.exe | Select-Object -First 1
+          Write-Host "::notice::Installer: $($exe.Name), $([math]::Round($exe.Length / 1MB, 1)) MB"
+      - name: Installer test - install, start, uninstall
+        shell: pwsh
+        run: |
+          $exe = (Get-ChildItem setup/*.exe | Select-Object -First 1).FullName
+          $p = Start-Process $exe -ArgumentList "/VERYSILENT", "/CURRENTUSER", "/SUPPRESSMSGBOXES", "/NORESTART", "/LOG=setup.log" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Get-Content setup.log -Tail 30 | ForEach-Object { Write-Host "::error::$_" }; exit 1 }
+          $app = Join-Path $env:LOCALAPPDATA "Programs\Madhyam\Madhyam.exe"
+          if (-not (Test-Path $app)) { Write-Host "::error::Madhyam.exe not installed at $app"; exit 1 }
+          if (-not (Test-Path (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Madhyam.lnk"))) { Write-Host "::error::Start menu shortcut missing"; exit 1 }
+          $r = Start-Process $app -PassThru; Start-Sleep -Seconds 15
+          if ($r.HasExited) { Write-Host "::error::installed Madhyam exited during startup"; exit 1 }
+          Stop-Process -Id $r.Id -Force; Start-Sleep -Seconds 2
+          $un = Get-ChildItem (Split-Path $app) -Filter "unins*.exe" | Select-Object -First 1
+          $u = Start-Process $un.FullName -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait -PassThru
+          Start-Sleep -Seconds 3
+          if (Test-Path $app) { Write-Host "::error::uninstall left Madhyam.exe behind"; exit 1 }
+          Write-Host "::notice::Installer installs, starts and uninstalls cleanly"
 
   android:
     name: android (jniLibs + APK)
