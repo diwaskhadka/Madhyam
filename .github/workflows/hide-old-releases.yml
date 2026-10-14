@@ -1,0 +1,32 @@
+name: Hide old releases
+
+# Turns every published release except the one to keep into a draft (visible only to the
+# repo owner). Nothing is deleted: a draft keeps its files and can be published again.
+on:
+  workflow_dispatch:
+    inputs:
+      keep:
+        description: "Release tag to keep public (empty = the latest release)"
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  hide:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      KEEP: ${{ github.event.inputs.keep }}
+    steps:
+      - run: |
+          set -e
+          repo="$GITHUB_REPOSITORY"
+          keep="${KEEP:-$(gh api repos/$repo/releases/latest --jq .tag_name)}"
+          echo "Keeping $keep public"
+          gh api repos/$repo/releases --paginate --jq '.[] | select(.draft == false) | "\(.id) \(.tag_name)"' |
+          while read -r id tag; do
+            if [ "$tag" = "$keep" ]; then continue; fi
+            gh api -X PATCH repos/$repo/releases/$id -F draft=true --jq '"hidden \(.tag_name)"'
+          done
+          echo "Public now:"; gh api repos/$repo/releases --paginate --jq '.[] | select(.draft == false) | .tag_name'
