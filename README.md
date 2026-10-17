@@ -39,7 +39,7 @@ This means proxies, custom certificates, Android's network-security config and b
 | User state | Favorites, progress/continue-watching, recent channels, export/merge for sync |
 | Persistence | Atomic JSON-Lines snapshot for instant offline start-up |
 | C ABI | Tested end-to-end from another language ([`bindings/python/e2e_test.py`](bindings/python/e2e_test.py)): local fake panel, 8-thread hammering, error codes |
-| Kotlin (JNA) / C# (P/Invoke) wrappers | Written, **not yet compiled** (no Android SDK or .NET in the build sandbox) |
+| Kotlin (JNA) / C# (P/Invoke) wrappers | Used by the Android TV app (`android/`) and the Windows app (`windows/`); CI builds both |
 
 There are 33 Rust tests, including a smoke fuzzer that feeds 20,000 mutated and random inputs through every parser. It found one real panic, which is now fixed with a regression test.
 

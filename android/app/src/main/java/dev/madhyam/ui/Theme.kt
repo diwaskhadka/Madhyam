@@ -1,7 +1,9 @@
 package dev.madhyam.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
+import androidx.tv.material3.LocalContentColor
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.darkColorScheme
 
@@ -29,7 +31,9 @@ fun MadhyamTheme(content: @Composable () -> Unit) {
                 background = Background,
                 surface = Panel,
             ),
-            content = content,
-        )
+        ) {
+            // Text outside a TV Surface takes LocalContentColor, which defaults to black.
+            CompositionLocalProvider(LocalContentColor provides Color(0xFFECEEF6), content = content)
+        }
     }
 }

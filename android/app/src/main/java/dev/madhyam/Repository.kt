@@ -20,7 +20,17 @@ import java.util.zip.GZIPInputStream
 
 // ----------------------------------------------------------------- models
 
-data class Source(val id: Int, val name: String, val kind: String)
+data class Source(
+    val id: Int,
+    val name: String,
+    val kind: String,
+    val location: String = "",
+    val username: String = "",
+    val updatedAt: Long = 0,
+) {
+    val isXtream get() = kind == "xtream"
+    val isFreeTv get() = FreeTv.isFreeTv(location)
+}
 
 data class Group(val name: String, val count: Int)
 
@@ -35,9 +45,20 @@ data class Item(
     val referrer: String?,
     val archiveDays: Int,
     val plot: String?,
+    val year: String? = null,
+    val rating: String? = null,
 ) {
     val isLive get() = kind == "live"
     val isSeries get() = kind == "series"
+
+    /** Name as shown, optionally without a "UK: " / "|EN| " style prefix (live channels only). */
+    fun displayName(stripPrefix: Boolean): String = if (stripPrefix && isLive) stripPrefix(name) else name
+
+    companion object {
+        private val PREFIX = Regex("""^\s*(\|[^|]{1,12}\||\[[^]]{1,12}]|[A-Za-z0-9]{1,6}\s*[:|\-]\s+)\s*""")
+
+        fun stripPrefix(name: String): String = PREFIX.replace(name, "").ifBlank { name }
+    }
 }
 
 data class Programme(val title: String, val start: Long, val stop: Long, val desc: String) {
@@ -47,6 +68,16 @@ data class Programme(val title: String, val start: Long, val stop: Long, val des
 }
 
 data class NowNext(val now: Programme?, val next: Programme?)
+
+data class Page(val total: Int, val items: List<Item>)
+
+data class Account(
+    val status: String,
+    val expires: Long?,
+    val maxConnections: Int,
+    val activeConnections: Int,
+    val isTrial: Boolean,
+)
 
 private fun JSONObject.str(k: String): String? = optString(k, "").takeIf { it.isNotEmpty() && !isNull(k) }
 
@@ -63,6 +94,8 @@ private fun parseItem(o: JSONObject): Item {
         referrer = extra.str("referrer"),
         archiveDays = o.optInt("archive_days"),
         plot = extra.str("plot"),
+        year = extra.str("year"),
+        rating = extra.str("rating")?.takeIf { it != "0" },
     )
 }
 
@@ -83,6 +116,8 @@ class Repository(context: Context) {
     private val core = MadhyamCore()
     private val snapshot = File(context.filesDir, "catalog.jsonl")
     private val cache = context.cacheDir
+    private val secrets = Secrets(File(context.filesDir, "secrets.json"))
+    val settings: AppSettings = AppSettings.load(context)
 
     /** Downloaded guides, re-imported at start-up (the snapshot deliberately excludes EPG). */
     private val epgDir = File(context.filesDir, "epg")
@@ -110,6 +145,9 @@ class Repository(context: Context) {
         if (snapshot.exists()) {
             try {
                 core.call("load_snapshot", args("path" to snapshot.path))
+                restoreSecrets()
+                // Before 0.5.0 the password was written in plain text: rewrite the file without it.
+                if (secrets.available && snapshotHasPasswords()) save()
             } catch (e: IptvException) {
                 Log.w(TAG, "snapshot unreadable, starting empty", e)
                 snapshot.delete()
@@ -124,37 +162,71 @@ class Repository(context: Context) {
         }
     }
 
+    private fun snapshotHasPasswords(): Boolean = snapshot.useLines { lines ->
+        lines.take(50).any { it.contains("\"t\":\"source\"") && it.contains("\"kind\":\"xtream\"") && !it.contains("\"password\":\"\"") }
+    }
+
     /** Age of the cached guide in ms, or null if none is cached. */
     fun epgAgeMs(source: Int): Long? =
         epgFiles(source).minOfOrNull { it.lastModified() }?.let { System.currentTimeMillis() - it }
 
     suspend fun hasEpg(source: Int): Boolean = io { core.arr("epg_fetch_urls", args("source" to source)).length() > 0 }
 
+    // ------------------------------------------------------------ secrets
+
+    private fun xtreamIds(): List<Int> {
+        val a = core.arr("sources")
+        return (0 until a.length()).map { a.getJSONObject(it) }.filter { it.optString("kind") == "xtream" }.map { it.getInt("id") }
+    }
+
+    private fun enginePassword(id: Int): String = core.call("source_password", args("source" to id)) as? String ?: ""
+
+    /** Copy every Xtream password from the engine into the encrypted store, dropping removed sources. */
+    private fun syncSecrets() {
+        if (!secrets.available) return
+        val ids = xtreamIds()
+        var changed = secrets.retain(ids.toSet())
+        for (id in ids) changed = secrets.put(id, enginePassword(id)) || changed
+        if (changed) secrets.save()
+    }
+
+    /** After loading a (redacted) snapshot, give the engine its passwords back. */
+    private fun restoreSecrets() {
+        for (id in xtreamIds()) {
+            if (enginePassword(id).isNotEmpty()) continue // an older, unredacted file: migrated on the next save
+            secrets.get(id)?.let { core.call("update_source", args("source" to id, "password" to it)) }
+        }
+    }
+
     private fun save() {
         try {
-            core.call("save_snapshot", args("path" to snapshot.path))
-        } catch (e: IptvException) {
+            syncSecrets()
+            core.call("save_snapshot", args("path" to snapshot.path, "redact_passwords" to secrets.available))
+        } catch (e: Exception) {
             Log.w(TAG, "could not save snapshot", e)
         }
     }
+
+    // ------------------------------------------------------------ sources
 
     suspend fun sources(): List<Source> = io {
         val a = core.arr("sources")
         (0 until a.length()).map {
             val o = a.getJSONObject(it)
-            Source(o.getInt("id"), o.optString("name"), o.optString("kind"))
+            Source(
+                o.getInt("id"),
+                o.optString("name"),
+                o.optString("kind"),
+                o.optString("location"),
+                o.optString("username"),
+                o.optLong("updated_at"),
+            )
         }
     }
 
     suspend fun addM3u(name: String, url: String): Int {
         val id = io { core.obj("add_m3u_source", args("name" to name, "location" to url)).getInt("id") }
-        try {
-            refresh(id)
-        } catch (e: Exception) {
-            io { core.call("remove_source", args("source" to id)) }
-            throw e
-        }
-        return id
+        return refreshOrRemove(id)
     }
 
     suspend fun addXtream(name: String, server: String, user: String, pass: String): Int {
@@ -164,6 +236,16 @@ class Repository(context: Context) {
                 args("name" to name, "server" to server, "username" to user, "password" to pass),
             ).getInt("id")
         }
+        return refreshOrRemove(id)
+    }
+
+    /** Add iptv-org's Free TV playlist (or return the one already added). */
+    suspend fun addFreeTv(): Int {
+        sources().firstOrNull { it.isFreeTv }?.let { return it.id }
+        return addM3u(FreeTv.NAME, FreeTv.ALL_URL)
+    }
+
+    private suspend fun refreshOrRemove(id: Int): Int {
         try {
             refresh(id)
         } catch (e: Exception) {
@@ -171,6 +253,29 @@ class Repository(context: Context) {
             throw e
         }
         return id
+    }
+
+    /** Change a source's name and connection details (blank = keep), then re-download it. */
+    suspend fun updateSource(id: Int, name: String, location: String?, server: String?, username: String?, password: String?) {
+        io {
+            core.call(
+                "update_source",
+                args(
+                    "source" to id,
+                    "name" to name.trim().ifBlank { null },
+                    "location" to location?.trim()?.ifBlank { null },
+                    "server" to server?.trim()?.ifBlank { null },
+                    "username" to username?.trim()?.ifBlank { null },
+                    "password" to password?.ifEmpty { null },
+                ),
+            )
+        }
+        refresh(id)
+    }
+
+    suspend fun renameSource(id: Int, name: String) = io {
+        core.call("rename_source", args("source" to id, "name" to name))
+        save()
     }
 
     suspend fun removeSource(id: Int) = io {
@@ -188,12 +293,14 @@ class Repository(context: Context) {
             when (src.optString("kind")) {
                 "xtream" -> core.syncXtream(id, http)
                 else -> {
-                    val file = download(src.getString("location"), "playlist")
+                    val location = src.getString("location")
+                    val file = download(location, "playlist")
                     try {
                         core.call("import_m3u_file", args("source" to id, "path" to file.path))
                     } finally {
                         file.delete()
                     }
+                    if (FreeTv.isFreeTv(location)) tagCountries(id)
                 }
             }
             save()
@@ -203,6 +310,24 @@ class Repository(context: Context) {
         } catch (e: Exception) {
             // A missing guide must never block watching TV.
             Log.w(TAG, "EPG refresh failed for source $id", e)
+        }
+    }
+
+    /**
+     * Tag Free TV channels with their countries (iptv-org's index by country), so Live TV can
+     * switch to countries. Best effort: categories still work without it.
+     */
+    private fun tagCountries(id: Int) {
+        try {
+            val file = download(FreeTv.COUNTRY_INDEX_URL, "countries")
+            try {
+                val n = core.importBytes("m3u_tags", file.readBytes(), args("source" to id, "field" to FreeTv.COUNTRY_FIELD))
+                Log.i(TAG, "free tv: $n channels tagged with a country")
+            } finally {
+                file.delete()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "free tv country index failed", e)
         }
     }
 
@@ -230,6 +355,29 @@ class Repository(context: Context) {
         epgFiles(id).filter { it.name !in keep }.forEach { it.delete() }
         save()
     }
+
+    /** Xtream account status (expiry, connections). */
+    suspend fun account(source: Int): Account = io {
+        val url = core.call("account_url", args("source" to source)) as String
+        val body = get(url)
+        val root = JSONObject(String(body))
+        val u = root.optJSONObject("user_info") ?: throw IptvException("api", "The server did not return account information.")
+        val auth = u.opt("auth")?.toString().let { it == "1" || it == "true" }
+        if (!auth) throw IptvException("api", "Login rejected: check the username and password.")
+        Account(
+            status = u.optString("status"),
+            expires = u.optString("exp_date").toLongOrNull()?.takeIf { it > 0 },
+            maxConnections = u.optString("max_connections").toIntOrNull() ?: 0,
+            activeConnections = u.optString("active_cons").toIntOrNull() ?: 0,
+            isTrial = u.optString("is_trial") == "1",
+        )
+    }
+
+    private fun get(url: String): ByteArray =
+        http.newCall(Request.Builder().url(url).build()).execute().use { r ->
+            if (!r.isSuccessful) throw IOException("HTTP ${r.code}")
+            r.body?.bytes() ?: ByteArray(0)
+        }
 
     /**
      * Stream a URL (or local path) to a cache file, transparently gunzipping
@@ -267,24 +415,51 @@ class Repository(context: Context) {
 
     // ------------------------------------------------------------ browsing
 
-    suspend fun groups(source: Int, kind: String): List<Group> = io {
-        val a = core.arr("groups", args("source" to source, "kind" to kind))
+    /** Groups of a source; [groupField] groups by an item field instead (Free TV "country"). */
+    suspend fun groups(source: Int, kind: String, groupField: String? = null): List<Group> = io {
+        val a = core.arr("groups", args("source" to source, "kind" to kind, "group_field" to groupField))
         (0 until a.length()).map { a.getJSONObject(it).let { g -> Group(g.optString("name"), g.optInt("count")) } }
     }
 
-    suspend fun items(source: Int, kind: String, group: String?, limit: Int = 5000): List<Item> = io {
-        core.arr("list", args("source" to source, "kind" to kind, "group" to group, "limit" to limit)).items()
+    /**
+     * Sorted, filtered, paged listing. [group] = null means every category of the kind
+     * except [hidden] ones.
+     */
+    suspend fun query(
+        source: Int,
+        kind: String,
+        group: String?,
+        hidden: Collection<String> = emptyList(),
+        sort: String = "provider",
+        offset: Int = 0,
+        limit: Int = 200,
+        groupField: String? = null,
+    ): Page = io {
+        val r = core.obj(
+            "query",
+            args(
+                "source" to source,
+                "kind" to kind,
+                "group" to group,
+                "group_field" to groupField,
+                "hidden_groups" to JSONArray(hidden.toList()),
+                "sort" to sort,
+                "offset" to offset,
+                "limit" to limit,
+            ),
+        )
+        Page(r.optInt("total"), (r.optJSONArray("items") ?: JSONArray()).items())
     }
 
     suspend fun search(query: String, kind: String? = null): List<Item> = io {
         if (query.isBlank()) emptyList() else core.arr("search", args("query" to query, "kind" to kind, "limit" to 200)).items()
     }
 
-    suspend fun favorites(): List<Item> = io { core.arr("favorites").items() }
+    suspend fun favorites(kind: String? = null): List<Item> = io { core.arr("favorites", args("kind" to kind)).items() }
 
-    suspend fun recent(): List<Item> = io { core.arr("recent", args("limit" to 30)).items() }
+    suspend fun recent(kind: String? = null): List<Item> = io { core.arr("recent", args("kind" to kind, "limit" to 60)).items() }
 
-    suspend fun isFavorite(id: String): Boolean = io { core.obj("item", args("id" to id)).optBoolean("favorite") }
+    suspend fun favoriteIds(): Set<String> = io { core.arr("favorites").items().map { it.id }.toSet() }
 
     suspend fun setFavorite(id: String, on: Boolean) = io {
         core.call("set_favorite", args("id" to id, "on" to on))
@@ -296,11 +471,7 @@ class Repository(context: Context) {
         var eps = core.arr("episodes", args("id" to series.id)).items()
         if (eps.isEmpty()) {
             val url = core.call("series_info_url", args("id" to series.id)) as String
-            val body = http.newCall(Request.Builder().url(url).build()).execute().use { r ->
-                if (!r.isSuccessful) throw IOException("HTTP ${r.code} for series info")
-                r.body?.bytes() ?: ByteArray(0)
-            }
-            core.importBytes("series_info", body, args("id" to series.id))
+            core.importBytes("series_info", get(url), args("id" to series.id))
             eps = core.arr("episodes", args("id" to series.id)).items()
             save()
         }
@@ -316,6 +487,14 @@ class Repository(context: Context) {
             val o = res.optJSONObject(id)
             NowNext(parseProgramme(o?.optJSONObject("now")), parseProgramme(o?.optJSONObject("next")))
         }
+    }
+
+    /** A channel's programmes from now until [hours] ahead (for the guide under the preview). */
+    suspend fun upcoming(id: String, hours: Int = 24): List<Programme> = io {
+        val now = System.currentTimeMillis() / 1000
+        val r = core.obj("guide", args("ids" to JSONArray(listOf(id)), "from" to now, "to" to now + hours * 3600L))
+        val a = r.optJSONArray(id) ?: JSONArray()
+        (0 until a.length()).mapNotNull { parseProgramme(a.optJSONObject(it)) }.filter { it.stop > now }
     }
 
     // ------------------------------------------------------- playback state
@@ -335,10 +514,15 @@ class Repository(context: Context) {
         core.call("set_progress", args("id" to id, "position" to positionMs / 1000.0, "duration" to durationMs / 1000.0))
     }
 
+    suspend fun clearHistory() = io {
+        core.call("clear_history")
+        save()
+    }
+
     suspend fun persist() = io { save() }
 
     companion object {
         const val TAG = "Madhyam"
-        const val USER_AGENT = "Mozilla/5.0 (Linux; Android TV) Madhyam/0.1"
+        const val USER_AGENT = "Mozilla/5.0 (Linux; Android TV) Madhyam/0.5"
     }
 }
