@@ -94,7 +94,7 @@ class OpenSubtitles(private val http: OkHttpClient, private val appVersion: Stri
         val b = Request.Builder()
             .url(base + path)
             .header("Api-Key", apiKey.trim())
-            .header("User-Agent", "Madhyam v$appVersion")
+            .header("User-Agent", "${Brand.NAME} v$appVersion")
             .header("Accept", "application/json")
         token?.let { b.header("Authorization", "Bearer $it") }
         if (body != null) b.post(body.toString().toRequestBody(json))

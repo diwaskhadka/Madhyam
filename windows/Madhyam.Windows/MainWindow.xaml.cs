@@ -293,7 +293,7 @@ public partial class MainWindow : Window
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Some files could not be removed: {ex.Message}", "Reset Madhyam");
+                MessageBox.Show($"Some files could not be removed: {ex.Message}", $"Reset {Brand.Name}");
             }
         }
         if ((_restartOnExit || ResetOnExit) && Environment.ProcessPath is { } exe) System.Diagnostics.Process.Start(exe);
@@ -688,7 +688,7 @@ public partial class MainWindow : Window
 
     public async Task RemoveSource(Source s)
     {
-        if (MessageBox.Show(this, $"Remove \"{s.Name}\" and its channels, movies and series?", "Madhyam", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
+        if (MessageBox.Show(this, $"Remove \"{s.Name}\" and its channels, movies and series?", Brand.Name, MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
         await Run($"Removing {s.Name}…", async () =>
         {
             StopPlayback();

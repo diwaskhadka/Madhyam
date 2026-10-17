@@ -2,7 +2,7 @@
 
     python make_demo_snapshot.py <path/to/madhyam_core_ffi.dll> <out-dir>
 
-Writes <out-dir>/catalog.jsonl (what Madhyam loads at start) plus generated
+Writes <out-dir>/catalog.jsonl (what the app loads at start) plus generated
 logo/poster PNGs. All names are fictional.
 """
 

@@ -7,7 +7,7 @@ using Microsoft.Win32;
 namespace Madhyam.Windows;
 
 /// <summary>
-/// User preferences, stored as settings.json in %LOCALAPPDATA%\Madhyam.
+/// User preferences, stored as settings.json in %LOCALAPPDATA%\Madhyam (App.DataDir).
 /// Every property has a default, so an old or missing file always loads.
 /// </summary>
 public sealed class AppSettings

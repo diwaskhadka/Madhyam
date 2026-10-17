@@ -5,7 +5,7 @@ using Microsoft.Web.WebView2.Wpf;
 namespace Madhyam.Windows;
 
 /// <summary>
-/// YouTube trailers inside Madhyam's own player card (WebView2). The page is served from a
+/// YouTube trailers inside the app's own player card (WebView2). The page is served from a
 /// local https origin because YouTube refuses embeds that send no referrer.
 /// </summary>
 public static class TrailerPlayer
@@ -24,7 +24,7 @@ public static class TrailerPlayer
         CreationProperties = new CoreWebView2CreationProperties
         {
             UserDataFolder = Path.Combine(App.DataDir, "webview2"),
-            // Start the trailer straight away (the Play click in Madhyam is the user's gesture).
+            // Start the trailer straight away (the Play click in the app is the user's gesture).
             AdditionalBrowserArguments = "--autoplay-policy=no-user-gesture-required",
         },
         DefaultBackgroundColor = System.Drawing.Color.Black,

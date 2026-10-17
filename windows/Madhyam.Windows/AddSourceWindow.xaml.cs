@@ -7,6 +7,7 @@ public partial class AddSourceWindow : Window
     public AddSourceWindow()
     {
         InitializeComponent();
+        Intro.Text = $"{Brand.Name} plays your own Xtream Codes account or M3U playlist. It ships with no channels.";
         Loaded += (_, _) => ServerBox.Focus();
     }
 

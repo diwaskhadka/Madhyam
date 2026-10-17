@@ -2,3 +2,5 @@
 /jniLibs
 **/__pycache__
 *.jsonl
+/windows/**/bin/
+/windows/**/obj/

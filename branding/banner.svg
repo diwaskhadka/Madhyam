@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 180" width="320" height="180">
+  <!-- Madhyam TV banner (Android TV home row, 320x180). The text is live type: build.py
+       renders it with the system's Devanagari font (Nirmala UI on Windows), so render PNGs with
+       build.py rather than a converter that lacks Devanagari shaping. -->
+  <rect width="320" height="180" fill="#FFFFFF"/>
+  <g transform="translate(6 34) scale(0.219)">
+    <g fill="none" stroke-width="88" stroke-linecap="round">
+      <path d="M141 398 L371 256" stroke="#DC143C"/>
+      <path d="M141 114 L141 398" stroke="#003893"/>
+      <path d="M141 114 L371 256" stroke="#DC143C"/>
+    </g>
+    <path d="M97 138.5 L185 192.8 L185 236 Z" fill="#00225A"/>
+    <path d="M185 319.2 L227 293 L185 422.5 Z" fill="#A50F2D"/>
+  </g>
+  <text x="112" y="76" font-family="Segoe UI, Roboto, sans-serif" font-weight="700" font-size="26" fill="#003893">Madhyam</text>
+  <text x="112" y="114" font-family="Nirmala UI, Noto Sans Devanagari, sans-serif" font-weight="700" font-size="28" fill="#003893">माध्यम</text>
+  <rect x="112" y="131" width="22" height="2" fill="#DC143C"/>
+  <text x="140" y="137" font-family="Segoe UI, Roboto, sans-serif" font-weight="600" font-size="12" letter-spacing="4" fill="#003893">IPTV</text>
+  <rect x="182" y="131" width="22" height="2" fill="#DC143C"/>
+</svg>

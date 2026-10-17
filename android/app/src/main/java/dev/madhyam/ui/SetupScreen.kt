@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Button
 import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.Text
+import dev.madhyam.Brand
 import dev.madhyam.MainViewModel
 
 /** Add a playlist: Xtream Codes login, M3U URL, or the Free TV channels. */
@@ -43,7 +44,7 @@ fun SetupScreen(vm: MainViewModel) {
     ) {
         Text("Add a playlist", fontSize = 32.sp)
         Text(
-            "Madhyam plays your own Xtream Codes account or M3U playlist. It ships with no channels, " +
+            "${Brand.NAME} plays your own Xtream Codes account or M3U playlist. It ships with no channels, " +
                 "but you can add the free public channels collected by iptv-org.",
             color = Muted,
         )

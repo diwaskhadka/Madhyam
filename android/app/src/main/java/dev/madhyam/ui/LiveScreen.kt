@@ -279,10 +279,18 @@ private fun Preview(vm: MainViewModel) {
     }
 }
 
-/** A Media3 PlayerView showing [player]; several can exist, the newest one gets the picture. */
+/**
+ * A Media3 PlayerView showing [player]; several can exist, the newest one gets the picture.
+ * [subtitleLift] raises subtitles by that fraction of the height, above an overlay at the bottom.
+ */
 @OptIn(UnstableApi::class)
 @Composable
-fun VideoSurface(player: Player, modifier: Modifier = Modifier, resizeMode: Int = AspectRatioFrameLayout.RESIZE_MODE_FIT) {
+fun VideoSurface(
+    player: Player,
+    modifier: Modifier = Modifier,
+    resizeMode: Int = AspectRatioFrameLayout.RESIZE_MODE_FIT,
+    subtitleLift: Float = 0f,
+) {
     AndroidView(
         factory = { ctx ->
             PlayerView(ctx).apply {
@@ -294,7 +302,11 @@ fun VideoSurface(player: Player, modifier: Modifier = Modifier, resizeMode: Int 
                 this.player = player
             }
         },
-        update = { it.resizeMode = resizeMode },
+        update = {
+            it.resizeMode = resizeMode
+            // Move the whole view: broadcast captions (CEA-608) place themselves and ignore padding.
+            it.subtitleView?.translationY = -subtitleLift * it.height
+        },
         onRelease = { it.player = null },
         modifier = modifier,
     )

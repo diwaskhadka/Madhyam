@@ -243,7 +243,7 @@ public partial class MainWindow
             };
             content.Children.Add(icon);
             right.Children.Add(Text("WELCOME BACK", 11.5, "Accent", FontWeights.Bold));
-            var t = Text(_source?.Name ?? "Madhyam", 30, "Fg", FontWeights.SemiBold);
+            var t = Text(_source?.Name ?? Brand.Name, 30, "Fg", FontWeights.SemiBold);
             t.Margin = new Thickness(0, 6, 0, 0);
             right.Children.Add(t);
             right.Children.Add(Text(PlaylistCount.Text, 14, "Muted"));
@@ -407,7 +407,7 @@ public partial class MainWindow
         {
             clear = Primary("Clear history", "", async () =>
             {
-                if (MessageBox.Show(this, "Remove everything from Recently viewed?\n\nFavorites and resume positions are kept.", "Madhyam", MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
+                if (MessageBox.Show(this, "Remove everything from Recently viewed?\n\nFavorites and resume positions are kept.", Brand.Name, MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
                 await _repo.ClearHistory();
                 await ShowPage(++_loadVersion);
             }, secondary: true);

@@ -108,7 +108,7 @@ fun VodScreen(vm: MainViewModel) {
                 }
             }
             LazyVerticalGrid(
-                columns = GridCells.Adaptive(136.dp),
+                columns = GridCells.Adaptive(coverWidth(vm.settings.coverSize)), // Settings › Appearance › Cover size
                 state = state,
                 modifier = Modifier
                     .weight(1f)
@@ -214,7 +214,7 @@ fun PosterCard(
             colors = ClickableSurfaceDefaults.colors(containerColor = Panel, focusedContainerColor = Panel),
             scale = ClickableSurfaceDefaults.scale(focusedScale = 1.1f),
             border = ClickableSurfaceDefaults.border(
-                focusedBorder = Border(androidx.compose.foundation.BorderStroke(3.dp, Color.White), shape = RoundedCornerShape(10.dp)),
+                focusedBorder = Border(androidx.compose.foundation.BorderStroke(3.dp, TextColor), shape = RoundedCornerShape(10.dp)),
             ),
         ) {
             Box(Modifier.fillMaxSize()) {
@@ -232,13 +232,15 @@ fun PosterCard(
                 }
             }
         }
+        // Settings › Appearance › Titles under covers (the title still shows on the focused cover).
+        if (!vm.settings.titlesUnderCovers && !focused) return@Column
         val sub = if (item.isEpisode) item.seasonEpisode else item.year
         Text(
             item.name,
             fontSize = 13.sp,
             maxLines = if (focused) 2 else 1,
             overflow = TextOverflow.Ellipsis,
-            color = if (focused) Color.White else Color(0xFFCCD0E0),
+            color = if (focused) TextColor else TextColor.copy(alpha = 0.8f),
             modifier = Modifier.padding(top = 12.dp),
         )
         if (!sub.isNullOrBlank()) Text(sub, fontSize = 11.sp, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -310,4 +312,11 @@ fun <T> OptionDialog(title: String, options: List<Pair<T, String>>, current: T, 
             }
         }
     }
+}
+
+/** Poster column width for Settings › Appearance › Cover size. */
+fun coverWidth(size: String): Dp = when (size) {
+    "Small" -> 112.dp
+    "Large" -> 172.dp
+    else -> 136.dp
 }

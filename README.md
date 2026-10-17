@@ -1,4 +1,20 @@
-# Madhyam — madhyam-core
+# Madhyam (माध्यम) — madhyam-core
+
+Madhyam is an IPTV player for your own playlists, on Windows and Android TV, built on one
+Rust engine.
+
+## Download
+
+The [latest release](https://github.com/diwaskhadka/Madhyam/releases/latest) has every platform, all with the same version number:
+
+| Platform | File | Install |
+|---|---|---|
+| Windows 10 / 11 (64-bit) | `Madhyam-Setup-X.Y.Z.exe` | Run it; it installs for your account and upgrades in place. |
+| Android TV / Google TV (Android 5+) | `Madhyam-vX.Y.Z-androidtv.apk` | Sideload it (e.g. *Send Files to TV*, or `adb install`). Newer versions install over it. |
+
+What changed on each platform: [CHANGELOG.md](CHANGELOG.md). How releases are made: [docs/RELEASING.md](docs/RELEASING.md). Name, icon and colours: [branding/](branding/README.md).
+
+## The engine
 
 A platform-independent IPTV engine in Rust. It handles M3U/M3U8 playlists, XMLTV guides and Xtream Codes panels. It keeps everything in an indexed catalog with search, now/next and the EPG grid, plus favorites, watch progress and offline snapshots.
 

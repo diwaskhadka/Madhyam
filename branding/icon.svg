@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Madhyam app icon, the master for every platform (see branding/README.md).
+       A folded ribbon play mark in Nepal-flag crimson and blue on a white rounded square.
+       The Android vector drawables in android/app/src/main/res/drawable*/ic_launcher*.xml repeat
+       this geometry; keep them in step when it changes. -->
+  <rect width="512" height="512" rx="112" fill="#FFFFFF"/>
+  <g id="glyph">
+    <g fill="none" stroke-width="88" stroke-linecap="round">
+      <path d="M141 398 L371 256" stroke="#DC143C"/>
+      <path d="M141 114 L141 398" stroke="#003893"/>
+      <path d="M141 114 L371 256" stroke="#DC143C"/>
+    </g>
+    <path d="M97 138.5 L185 192.8 L185 236 Z" fill="#00225A"/>
+    <path d="M185 319.2 L227 293 L185 422.5 Z" fill="#A50F2D"/>
+  </g>
+</svg>

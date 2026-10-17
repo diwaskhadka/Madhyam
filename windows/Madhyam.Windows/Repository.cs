@@ -214,7 +214,7 @@ public sealed class ProgrammeVm
 /// </summary>
 public sealed class Repository : IDisposable
 {
-    public const string UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Madhyam/0.1";
+    public static readonly string UserAgent = $"Mozilla/5.0 (Windows NT 10.0; Win64; x64) {Brand.Name}/0.1";
 
     private readonly MadhyamCore _core = new();
     private readonly HttpClient _http;

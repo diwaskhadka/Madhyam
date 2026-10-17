@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Brand colours, from branding/README.md (Nepal flag crimson and blue). -->
+<resources>
+    <color name="brand_crimson">#DC143C</color>
+    <color name="brand_crimson_shade">#A50F2D</color>
+    <color name="brand_blue">#003893</color>
+    <color name="brand_blue_shade">#00225A</color>
+    <color name="brand_white">#FFFFFF</color>
+</resources>

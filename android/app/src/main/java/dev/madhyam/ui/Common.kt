@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -43,6 +44,7 @@ import java.util.Date
 import java.util.Locale
 
 val ErrorRed = Color(0xFFFF7A7A)
+private val LogoPlate = Color(0xFF2A2F45)
 
 /** Channel logo or poster; the first letters of the name when there is none (or it fails to load). */
 @Composable
@@ -60,7 +62,8 @@ fun Logo(item: Item, width: Dp = 64.dp, height: Dp = 40.dp, stripPrefix: Boolean
             model = item.logo,
             contentDescription = null,
             contentScale = ContentScale.Fit,
-            modifier = shape,
+            // Channel logos are drawn for dark screens (often white); give them a dark plate in the light theme.
+            modifier = if (item.kind == "live" && !LocalPalette.current.dark) shape.background(LogoPlate) else shape,
             error = { initials() },
         )
     }
@@ -99,6 +102,8 @@ fun <T> PickerDialog(title: String, options: List<Pair<T, String>>, selected: T?
     // The OK that opened the dialog lifts its key inside it, which would "click" the first row:
     // only accept clicks after a key went down in here.
     var armed by remember { mutableStateOf(false) }
+    // Start scrolled to the current value: an item that is not composed cannot take focus.
+    val list = rememberLazyListState(initialFirstVisibleItemIndex = (options.indexOfFirst { it.first == selected } - 3).coerceAtLeast(0))
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
         Column(
             Modifier.width(460.dp).background(Panel, RoundedCornerShape(16.dp)).padding(20.dp)
@@ -108,7 +113,7 @@ fun <T> PickerDialog(title: String, options: List<Pair<T, String>>, selected: T?
             if (options.isEmpty()) {
                 Text("Nothing to choose from in this stream.", color = Muted, fontSize = 14.sp)
             }
-            LazyColumn(Modifier.heightIn(max = 420.dp)) {
+            LazyColumn(Modifier.heightIn(max = 420.dp), state = list) {
                 items(options) { (value, label) ->
                     val isSel = value == selected
                     androidx.tv.material3.ListItem(

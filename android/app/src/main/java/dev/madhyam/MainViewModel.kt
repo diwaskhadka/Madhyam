@@ -122,6 +122,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val engineVersion: String get() = repo.version
 
+    /** Settings › Appearance (read through [settingsVersion] so the theme follows changes at once). */
+    val themeName: String get() = settingsVersion.let { settings.theme }
+
     private var itemsJob: Job? = null
     private var searchJob: Job? = null
     private var focusJob: Job? = null
@@ -172,6 +175,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 refreshNowNext()
             } catch (e: Exception) {
                 android.util.Log.w(Repository.TAG, "background guide refresh failed for ${s.name}", e)
+            }
+        }
+        // Settings › Guide › Extra guide URLs, on the same schedule (Windows does the same).
+        val urls = settings.extraEpgUrls.toList()
+        val age = repo.extraEpgAgeMs()
+        if (urls.isNotEmpty() && (age == null || age > settings.epgRefreshHours * 3600_000L)) {
+            try {
+                repo.refreshExtraEpg(urls)
+                refreshNowNext()
+            } catch (e: Exception) {
+                android.util.Log.w(Repository.TAG, "extra guide refresh failed", e)
             }
         }
     }
@@ -343,6 +357,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 s.kind != null && src != null -> {
                     val hidden = settings.hidden(src.id, kindKey!!)
                     val groups = repo.groups(src.id, s.kind, groupField).filter { it.name !in hidden }
+                        .let { sortCategories(it, s.kind) }
                     // Not the sum of the groups: a channel can be in several countries.
                     val allCount = repo.query(src.id, s.kind, null, hidden, "provider", 0, 1, groupField).total
                     val all = Category(
@@ -692,6 +707,63 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         saveProgress()
         playback.player.pause()
         viewModelScope.launch { repo.persist() }
+    }
+
+    // -------------------------------------------- 0.9.0: Windows parity settings
+
+    /** Settings › Categories › Order (per kind); countries default to A–Z, "Undefined" last. */
+    private fun sortCategories(groups: List<Group>, kind: String): List<Group> {
+        val byCountry = groupField != null
+        val order = settings.categorySort[kind] ?: if (byCountry) "name_asc" else "provider"
+        val sorted = when (order) {
+            "name_asc" -> groups.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.name })
+            "name_desc" -> groups.sortedWith(compareByDescending(String.CASE_INSENSITIVE_ORDER) { it.name })
+            else -> groups
+        }
+        return if (byCountry) sorted.sortedBy { if (it.name == "Undefined") 1 else 0 } else sorted
+    }
+
+    fun setCategoryOrder(kind: String, order: String) {
+        changeSettings { categorySort[kind.substringBefore(':')] = order }
+        reloadSection()
+    }
+
+    suspend fun testConnection(s: Source): String = try {
+        repo.testConnection(s)
+    } catch (e: Exception) {
+        explain(e)
+    }
+
+    fun setSourceUserAgent(s: Source, ua: String) = changeSettings {
+        if (ua.isBlank()) sourceUserAgent.remove(s.id) else sourceUserAgent[s.id] = ua.trim()
+    }
+
+    fun addExtraEpg(url: String) {
+        val u = url.trim()
+        if (u.isEmpty() || u in settings.extraEpgUrls) return
+        changeSettings { extraEpgUrls += u }
+        refreshExtraGuides()
+    }
+
+    fun removeExtraEpg(url: String) {
+        changeSettings { extraEpgUrls -= url }
+        refreshExtraGuides()
+    }
+
+    fun refreshExtraGuides() = task("Downloading extra guides…") {
+        val n = repo.refreshExtraEpg(settings.extraEpgUrls.toList())
+        refreshNowNext()
+        message = if (settings.extraEpgUrls.isEmpty()) "Extra guides removed." else "$n of ${settings.extraEpgUrls.size} extra guides loaded."
+    }
+
+    /** Settings › Guide › Time offset: guide times move at once. */
+    fun setEpgOffset(minutes: Int) {
+        changeSettings { epgOffsetMinutes = minutes }
+        nowNext.clear()
+        viewModelScope.launch {
+            refreshNowNext()
+            if (guideOpen) moveGuideTo(guideFrom)
+        }
     }
 
     // ------------------------------------------------------- home, filters

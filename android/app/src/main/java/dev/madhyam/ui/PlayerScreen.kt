@@ -27,6 +27,8 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -55,7 +57,7 @@ import dev.madhyam.PictureSize
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
-private enum class Picker { Audio, Subtitles, Speed, Picture }
+private enum class Picker { Audio, Subtitles, Speed, Picture, AudioDelay, SubtitleDelay }
 
 /** One button of the options row. */
 private class Control(val icon: ImageVector, val label: String, val action: () -> Unit)
@@ -95,6 +97,8 @@ fun PlayerScreen(vm: MainViewModel) {
         }
         add(Control(Icons.Filled.Audiotrack, "Audio") { picker = Picker.Audio })
         add(Control(Icons.Filled.ClosedCaption, "Subtitles") { picker = Picker.Subtitles })
+        add(Control(Icons.Filled.Tune, "Audio delay ${delayLabel(pb.audioDelayMs)}") { picker = Picker.AudioDelay })
+        add(Control(Icons.Filled.Timer, "Subtitle delay ${delayLabel(pb.subtitleDelayMs)}") { picker = Picker.SubtitleDelay })
         if (seekable && !item.isCatchup && vm.subtitleSearchAvailable) {
             add(Control(Icons.Filled.Search, "Find subtitles") { vm.openSubtitleSearch() })
         }
@@ -245,7 +249,13 @@ fun PlayerScreen(vm: MainViewModel) {
                 }
             },
     ) {
-        VideoSurface(pb.player, Modifier.fillMaxSize(), pb.pictureSize.resizeMode)
+        // Keep subtitles above the title and options row while they show.
+        val lift = when {
+            controls -> 0.24f
+            overlayVisible -> 0.14f
+            else -> 0f
+        }
+        VideoSurface(pb.player, Modifier.fillMaxSize(), pb.pictureSize.resizeMode, subtitleLift = lift)
 
         if (overlayVisible || controls || pb.error != null) {
             val strip = vm.settings.stripPrefixes
@@ -332,12 +342,23 @@ fun PlayerScreen(vm: MainViewModel) {
         }
         Picker.Speed -> PickerDialog("Speed", SPEEDS.map { it to speedLabel(it) }, pb.speed, { pb.changeSpeed(it) }) { pickerClosed() }
         Picker.Picture -> PickerDialog("Picture size", PictureSize.entries.map { it to it.label }, pb.pictureSize, { pb.pictureSize = it }) { pickerClosed() }
+        Picker.AudioDelay -> PickerDialog("Audio delay (+ = sound later)", DELAYS.map { it to delayLabel(it) }, pb.audioDelayMs, { pb.changeAudioDelay(it) }) { pickerClosed() }
+        Picker.SubtitleDelay -> PickerDialog("Subtitle delay (+ = subtitles later)", DELAYS.map { it to delayLabel(it) }, pb.subtitleDelayMs, { pb.changeSubtitleDelay(it) }) { pickerClosed() }
         null -> {}
     }
     if (searching) SubtitleSearchDialog(vm)
 }
 
 private val SPEEDS = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
+
+private val DELAYS = (-12..12).map { it * 250 } // −3 s … +3 s
+
+/** 250 → "+0.25 s", -1500 → "−1.5 s". */
+private fun delayLabel(ms: Int): String {
+    if (ms == 0) return "0 s"
+    val s = java.math.BigDecimal(kotlin.math.abs(ms)).movePointLeft(3).stripTrailingZeros().toPlainString()
+    return (if (ms > 0) "+" else "−") + s + " s"
+}
 
 private fun speedLabel(s: Float) = if (s == s.toInt().toFloat()) "${s.toInt()}×" else "${s}×"
 

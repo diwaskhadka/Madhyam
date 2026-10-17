@@ -110,7 +110,7 @@ fun MainShell(vm: MainViewModel) {
                     .background(Panel.copy(alpha = 0.95f), RoundedCornerShape(10.dp))
                     .padding(horizontal = 18.dp, vertical = 12.dp),
             ) {
-                Text(status, color = if (vm.busy != null) Accent else Color.White, fontSize = 15.sp)
+                Text(status, color = if (vm.busy != null) Accent else TextColor, fontSize = 15.sp)
             }
         }
     }

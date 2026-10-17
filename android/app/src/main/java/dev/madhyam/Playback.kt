@@ -1,6 +1,7 @@
 package dev.madhyam
 
 import android.content.Context
+import android.os.Looper
 import androidx.annotation.OptIn
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -18,7 +19,14 @@ import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.ForwardingRenderer
+import androidx.media3.exoplayer.Renderer
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.ForwardingAudioSink
+import androidx.media3.exoplayer.text.TextOutput
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import java.util.Locale
@@ -40,7 +48,61 @@ enum class PictureSize(val label: String, val resizeMode: Int) {
  */
 @OptIn(UnstableApi::class)
 class Playback(private val context: Context, private val settings: AppSettings) {
-    val player: ExoPlayer = ExoPlayer.Builder(context).build()
+    // Audio / subtitle delay (Windows: VLC audio-delay and spu-delay). Media3 has no such
+    // setting, so the audio clock and the text renderer see shifted positions instead.
+    @Volatile private var audioDelayUs = 0L
+    @Volatile private var subtitleDelayUs = 0L
+
+    private val renderers = object : DefaultRenderersFactory(context) {
+        override fun buildAudioSink(context: Context, enableFloatOutput: Boolean, enableAudioTrackPlaybackParams: Boolean): AudioSink =
+            object : ForwardingAudioSink(super.buildAudioSink(context, enableFloatOutput, enableAudioTrackPlaybackParams)!!) {
+                // The video is timed to the audio clock: a clock ahead by d shows pictures d early,
+                // which is the same as hearing the sound d late (positive delay = sound later).
+                override fun getCurrentPositionUs(sourceEnded: Boolean): Long {
+                    val pos = super.getCurrentPositionUs(sourceEnded)
+                    return if (pos == AudioSink.CURRENT_POSITION_NOT_SET) pos else pos + audioDelayUs
+                }
+            }
+
+        override fun buildTextRenderers(context: Context, output: TextOutput, outputLooper: Looper, extensionRendererMode: Int, out: ArrayList<Renderer>) {
+            val start = out.size
+            super.buildTextRenderers(context, output, outputLooper, extensionRendererMode, out)
+            for (i in start until out.size) {
+                out[i] = object : ForwardingRenderer(out[i]) {
+                    // Positive delay = subtitles later: look up cues for an earlier time.
+                    override fun render(positionUs: Long, elapsedRealtimeUs: Long) =
+                        super.render(positionUs - subtitleDelayUs, elapsedRealtimeUs)
+                }
+            }
+        }
+    }
+
+    /** Settings › Playback › Buffer: playback starts once this much is buffered (applies at start-up). */
+    private val loadControl = DefaultLoadControl.Builder()
+        .setBufferDurationsMs(
+            maxOf(15_000, settings.bufferMs * 4),
+            maxOf(50_000, settings.bufferMs * 8),
+            settings.bufferMs,
+            settings.bufferMs * 2,
+        )
+        .build()
+
+    val player: ExoPlayer = ExoPlayer.Builder(context, renderers).setLoadControl(loadControl).build()
+
+    var audioDelayMs by mutableIntStateOf(0)
+        private set
+    var subtitleDelayMs by mutableIntStateOf(0)
+        private set
+
+    fun changeAudioDelay(ms: Int) {
+        audioDelayMs = ms
+        audioDelayUs = ms * 1000L
+    }
+
+    fun changeSubtitleDelay(ms: Int) {
+        subtitleDelayMs = ms
+        subtitleDelayUs = ms * 1000L
+    }
 
     /** What is loaded in the player, or null when stopped. */
     var current by mutableStateOf<Item?>(null)
@@ -107,6 +169,8 @@ class Playback(private val context: Context, private val settings: AppSettings) 
         error = null
         current = item
         externalSubtitles = emptyList()
+        changeAudioDelay(0)
+        changeSubtitleDelay(0)
         // Per-stream choices start over; the Settings preferences apply again.
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().clearOverrides().build()
         applyTrackPreferences()
@@ -115,14 +179,15 @@ class Playback(private val context: Context, private val settings: AppSettings) 
     }
 
     private fun prepare(item: Item, positionMs: Long) {
+        val ua = item.userAgent ?: settings.sourceUserAgent[item.sourceId]?.takeIf { it.isNotBlank() } ?: Repository.USER_AGENT
         val http = DefaultHttpDataSource.Factory()
-            .setUserAgent(item.userAgent ?: Repository.USER_AGENT)
+            .setUserAgent(ua)
             .setAllowCrossProtocolRedirects(true)
             .setConnectTimeoutMs(15_000)
             .setReadTimeoutMs(30_000)
         item.referrer?.let { http.setDefaultRequestProperties(mapOf("Referer" to it)) }
         val media = MediaItem.Builder()
-            .setUri(item.url)
+            .setUri(streamUrl(item))
             .setSubtitleConfigurations(
                 externalSubtitles.map { s ->
                     MediaItem.SubtitleConfiguration.Builder(android.net.Uri.fromFile(s.file))
@@ -158,6 +223,17 @@ class Playback(private val context: Context, private val settings: AppSettings) 
             .setPreferredTextLanguage(sub.language.ifBlank { null })
             .build()
         prepare(item, pos)
+    }
+
+    /**
+     * Settings › Playback › Live stream format: Xtream live URLs end in .ts or .m3u8 and the
+     * server offers both; switch the extension unless it is Auto (as the Windows app does).
+     */
+    private fun streamUrl(item: Item): String {
+        val url = item.url
+        if (!item.isLive || settings.liveFormat == "Auto" || !url.contains("/live/")) return url
+        val (from, to) = if (settings.liveFormat == "HLS") ".ts" to ".m3u8" else ".m3u8" to ".ts"
+        return if (url.endsWith(from, ignoreCase = true)) url.dropLast(from.length) + to else url
     }
 
     private fun subtitleMime(name: String): String = when (name.substringAfterLast('.').lowercase()) {

@@ -1,0 +1,45 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Ribbon Variations</title>
+<style>
+body{margin:0;background:#14161c;color:#eceef6;font:15px/1.45 "Segoe UI",sans-serif;padding:24px 16px}
+h1{font-size:22px;margin:0 0 4px}.lead{color:#9aa0b8;margin:0 0 18px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.card{background:#1d2030;border:1px solid #2a2e44;border-radius:14px;padding:16px}.card.rec{outline:3px solid #DC143C}
+h2{font-size:17px;margin:0}.sub{color:#9aa0b8;font-size:13px;margin:2px 0 12px}
+.row{display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap}.cap{font-size:11px;color:#9aa0b8;text-align:center;margin-top:4px}
+.badge{background:#DC143C;color:#fff;font-size:11px;padding:1px 7px;border-radius:9px;margin-left:6px;vertical-align:2px}
+.circ svg{clip-path:circle(50%)}
+</style></head><body>
+<h1>Madhyam — ribbon play variations</h1>
+<p class="lead">All four use your pick (#2, the folded ribbon play) in Nepal-flag crimson #DC143C and blue #003893. Each is shown at 48 px (square and circle crop), 128 px, and as the TV banner (320×180, and 160×90 as on the Google TV row).</p>
+<div class="grid" id="g"></div>
+<script>
+const C='#DC143C',CD='#A50F2D',B='#003893',BD='#00225A',N='#0B1636',W='#fff';
+let uid=0;
+function glyph(v){
+ const id=uid++;
+ if(v.grad){
+  return `<defs><linearGradient id="u${id}" gradientUnits="userSpaceOnUse" x1="141" y1="70" x2="141" y2="442"><stop offset="0" stop-color="${v.up}"/><stop offset=".75" stop-color="${v.up}"/><stop offset="1" stop-color="${C}"/></linearGradient>
+  <linearGradient id="t${id}" gradientUnits="userSpaceOnUse" x1="97" y1="114" x2="415" y2="300"><stop offset="0" stop-color="${CD}"/><stop offset=".35" stop-color="${C}"/></linearGradient></defs>
+  <g fill="none" stroke-width="88" stroke-linecap="round"><path d="M141 398 L371 256" stroke="${C}"/>
+  <path d="M141 114 L141 398" stroke="url(#u${id})"/><path d="M141 114 L371 256" stroke="url(#t${id})"/></g>`;
+ }
+ return `<g fill="none" stroke-width="88" stroke-linecap="round"><path d="M141 398 L371 256" stroke="${C}"/>
+ <path d="M141 114 L141 398" stroke="${v.up}"/><path d="M141 114 L371 256" stroke="${C}"/></g>
+ <path d="M97 138.5 L185 192.8 L185 236 Z" fill="${v.fold1}"/><path d="M185 319.2 L227 293 L185 422.5 Z" fill="${CD}"/>`;
+}
+const tile=(v,s)=>`<svg width="${s}" height="${s}" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="${v.bg}"/>${v.bg==W?'<rect x="1" y="1" width="510" height="510" rx="112" fill="none" stroke="#d6d9e2" stroke-width="2"/>':''}${glyph(v)}</svg>`;
+const banner=(v,w)=>`<svg width="${w}" height="${w*180/320}" viewBox="0 0 320 180"><rect width="320" height="180" fill="${v.bg}"/>
+ <g transform="translate(6 34) scale(.219)">${glyph(v)}</g>
+ <text x="112" y="76" font-family="Segoe UI,sans-serif" font-weight="700" font-size="26" fill="${v.txt}">Madhyam</text>
+ <text x="112" y="114" font-family="Nirmala UI,sans-serif" font-weight="700" font-size="28" fill="${v.txt}">माध्यम</text>
+ <rect x="112" y="131" width="22" height="2" fill="${C}"/><text x="140" y="137" font-family="Segoe UI,sans-serif" font-weight="600" font-size="12" letter-spacing="4" fill="${v.txt}">IPTV</text><rect x="182" y="131" width="22" height="2" fill="${C}"/></svg>`;
+const V=[
+ {t:'A · Flat folds on white',s:'Closest to your sketch. Flat colours with darker fold triangles; works on every Android version and at 16 px on Windows. This is what is built and committed now.',bg:W,up:B,fold1:BD,txt:B,rec:1},
+ {t:'B · Gradient fold on white',s:'The upright blends from blue into crimson at the bottom, like the sketch\'s soft fold. Richer at large sizes; the gradient is lost below Android 7 (flat fallback there).',bg:W,up:B,grad:1,txt:B},
+ {t:'C · Flat on dark navy',s:'Same mark on navy. The flag blue is too dark to read on navy, so the upright turns white. Matches the apps\' dark theme; less distinct on dark TV home screens.',bg:N,up:W,fold1:'#B8C2D9',txt:W},
+ {t:'D · Gradient on dark navy',s:'White upright fading into crimson on navy. The most dramatic, but the smallest sizes lose the fade.',bg:N,up:W,grad:1,txt:W},
+];
+document.getElementById('g').innerHTML=V.map(v=>`<div class="card${v.rec?' rec':''}"><h2>${v.t}${v.rec?'<span class="badge">Recommended</span>':''}</h2><div class="sub">${v.s}</div>
+<div class="row"><div>${tile(v,48)}<div class="cap">48 px</div></div><div class="circ">${tile(v,48)}<div class="cap">circle</div></div><div>${tile(v,128)}<div class="cap">128 px</div></div></div>
+<div class="row" style="margin-top:12px"><div>${banner(v,320)}<div class="cap">TV banner 320×180</div></div><div>${banner(v,160)}<div class="cap">160×90</div></div></div></div>`).join('');
+</script></body></html>

@@ -1,5 +1,5 @@
 Madhyam for Windows
-======================
+========================
 
 Run:  Madhyam.exe   (double-click it; no installer, no .NET install needed)
 

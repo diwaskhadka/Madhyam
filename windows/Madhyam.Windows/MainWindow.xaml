@@ -2,7 +2,8 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vlc="clr-namespace:LibVLCSharp.WPF;assembly=LibVLCSharp.WPF"
-        Title="Madhyam" Icon="pack://application:,,,/Assets/Madhyam.ico" Width="1480" Height="900" MinWidth="1040" MinHeight="620"
+        xmlns:local="clr-namespace:Madhyam.Windows"
+        Title="{x:Static local:Brand.Name}" Icon="pack://application:,,,/Assets/app.ico" Width="1480" Height="900" MinWidth="1040" MinHeight="620"
         WindowStartupLocation="CenterScreen" Background="{StaticResource Bg}"
         FontFamily="{StaticResource UiFont}" Foreground="{StaticResource Fg}"
         Loaded="Window_Loaded" Closing="Window_Closing" PreviewKeyDown="Window_PreviewKeyDown">
@@ -19,8 +20,8 @@
         <!-- ================================================= navigation rail -->
         <DockPanel Background="{StaticResource Rail}">
             <StackPanel DockPanel.Dock="Top" Margin="0,14,0,0" HorizontalAlignment="Center">
-                <Image Source="pack://application:,,,/Assets/Madhyam-64.png" Width="40" Height="40" Margin="0,0,0,14"
-                       RenderOptions.BitmapScalingMode="HighQuality" ToolTip="Madhyam" />
+                <Image Source="pack://application:,,,/Assets/app-64.png" Width="40" Height="40" Margin="0,0,0,14"
+                       RenderOptions.BitmapScalingMode="HighQuality" ToolTip="{x:Static local:Brand.FullName}" />
                 <RadioButton x:Name="NavDashboard" Style="{StaticResource RailButton}" Content="&#xE80F;" ToolTip="Dashboard" Tag="Dashboard" Checked="Nav_Checked" />
                 <RadioButton x:Name="NavSearch" Style="{StaticResource RailButton}" Content="&#xE721;" ToolTip="Advanced search (Ctrl+K)" Tag="Search" Checked="Nav_Checked" />
                 <RadioButton x:Name="NavFavorites" Style="{StaticResource RailButton}" Content="&#xEB51;" ToolTip="Favorites" Tag="Favorites" Checked="Nav_Checked" />

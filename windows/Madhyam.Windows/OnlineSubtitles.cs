@@ -26,7 +26,7 @@ public sealed class OpenSubtitlesClient : IDisposable
 
     public OpenSubtitlesClient()
     {
-        _http.DefaultRequestHeaders.UserAgent.ParseAdd($"Madhyam v{typeof(App).Assembly.GetName().Version?.ToString(3) ?? "0"}");
+        _http.DefaultRequestHeaders.UserAgent.ParseAdd($"{Brand.Name} v{typeof(App).Assembly.GetName().Version?.ToString(3) ?? "0"}");
         _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
     }
 

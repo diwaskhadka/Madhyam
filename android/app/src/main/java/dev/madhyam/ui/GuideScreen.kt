@@ -246,9 +246,9 @@ private fun Cell(
                 past -> Panel.copy(alpha = 0.6f)
                 else -> Panel
             },
-            contentColor = if (past && !recorded) Muted else Color.White,
-            focusedContainerColor = Color.White,
-            focusedContentColor = Color.Black,
+            contentColor = if (past && !recorded) Muted else TextColor,
+            focusedContainerColor = TextColor,
+            focusedContentColor = Background,
         ),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
     ) {

@@ -391,10 +391,10 @@ class Repository(context: Context) {
                 (0 until a.length()).map { a.getJSONObject(it) }.first { it.getInt("id") == id }
             }
             when (src.optString("kind")) {
-                "xtream" -> core.syncXtream(id, http)
+                "xtream" -> core.syncXtream(id, clientFor(id))
                 else -> {
                     val location = src.getString("location")
-                    val file = download(location, "playlist")
+                    val file = download(location, "playlist", id)
                     try {
                         core.call("import_m3u_file", args("source" to id, "path" to file.path))
                     } finally {
@@ -437,7 +437,7 @@ class Repository(context: Context) {
         var index = 0
         for (i in 0 until urls.length()) {
             val file = try {
-                download(urls.getString(i), "guide")
+                download(urls.getString(i), "guide", id)
             } catch (e: IOException) {
                 Log.w(TAG, "guide download failed", e)
                 continue
@@ -456,10 +456,72 @@ class Repository(context: Context) {
         save()
     }
 
+    /** The HTTP client for a playlist: its own user agent (Settings › playlist › Edit) when one is set. */
+    private fun clientFor(source: Int?): OkHttpClient {
+        val ua = source?.let { settings.sourceUserAgent[it] }?.takeIf { it.isNotBlank() } ?: return http
+        // Runs after the default interceptor, so this header wins.
+        return http.newBuilder().addInterceptor { chain ->
+            chain.proceed(chain.request().newBuilder().header("User-Agent", ua).build())
+        }.build()
+    }
+
+    // ------------------------------------------------- extra guide URLs (Windows "custom EPG")
+
+    private fun extraEpgFile(index: Int) = File(epgDir, "custom-$index.xml")
+    private fun extraEpgFiles(): List<File> =
+        epgDir.listFiles { f -> f.name.startsWith("custom-") && f.name.endsWith(".xml") }?.toList() ?: emptyList()
+
+    /** Age of the downloaded extra guides in ms, or null if there are none. */
+    fun extraEpgAgeMs(): Long? = extraEpgFiles().minOfOrNull { it.lastModified() }?.let { System.currentTimeMillis() - it }
+
+    /** Download Settings › Guide › Extra guide URLs (XMLTV, .gz is fine) and keep them for the next start. */
+    suspend fun refreshExtraEpg(urls: List<String>) = io {
+        epgDir.mkdirs()
+        var index = 0
+        for (url in urls.map { it.trim() }.filter { it.isNotEmpty() }) {
+            val file = try {
+                download(url, "guide")
+            } catch (e: Exception) {
+                Log.w(TAG, "extra guide $url failed", e)
+                continue
+            }
+            try {
+                core.call("import_xmltv_file", args("path" to file.path))
+                val dest = extraEpgFile(index++)
+                if (!file.renameTo(dest)) file.copyTo(dest, overwrite = true)
+            } finally {
+                if (file.exists()) file.delete()
+            }
+        }
+        val keep = (0 until index).map { extraEpgFile(it).name }.toSet()
+        extraEpgFiles().filter { it.name !in keep }.forEach { it.delete() }
+        index
+    }
+
+    /** Quick reachability check: the Xtream login, or the first bytes of an M3U (Windows "Test connection"). */
+    suspend fun testConnection(source: Source): String {
+        val started = System.currentTimeMillis()
+        if (source.isXtream) {
+            val acc = account(source.id)
+            val ms = System.currentTimeMillis() - started
+            return "Connected in $ms ms · account ${acc.status.ifBlank { "active" }}"
+        }
+        return io {
+            if (source.location.startsWith("/") || source.location.startsWith("file://")) {
+                return@io if (File(source.location.removePrefix("file://")).exists()) "Local playlist file found." else "Local playlist file not found."
+            }
+            val req = Request.Builder().url(source.location).header("Range", "bytes=0-1023").build()
+            clientFor(source.id).newCall(req).execute().use { r ->
+                val ms = System.currentTimeMillis() - started
+                if (r.isSuccessful) "Reachable in $ms ms (HTTP ${r.code})." else "The server answered HTTP ${r.code}."
+            }
+        }
+    }
+
     /** Xtream account status (expiry, connections). */
     suspend fun account(source: Int): Account = io {
         val url = core.call("account_url", args("source" to source)) as String
-        val body = get(url)
+        val body = get(url, source)
         val root = JSONObject(String(body))
         val u = root.optJSONObject("user_info") ?: throw IptvException("api", "The server did not return account information.")
         val auth = u.opt("auth")?.toString().let { it == "1" || it == "true" }
@@ -473,8 +535,8 @@ class Repository(context: Context) {
         )
     }
 
-    private fun get(url: String): ByteArray =
-        http.newCall(Request.Builder().url(url).build()).execute().use { r ->
+    private fun get(url: String, source: Int? = null): ByteArray =
+        clientFor(source).newCall(Request.Builder().url(url).build()).execute().use { r ->
             if (!r.isSuccessful) throw IOException("HTTP ${r.code}")
             r.body?.bytes() ?: ByteArray(0)
         }
@@ -483,14 +545,14 @@ class Repository(context: Context) {
      * Stream a URL (or local path) to a cache file, transparently gunzipping
      * `.gz` guides. Streaming keeps a 200 MB guide from ever sitting in RAM.
      */
-    private fun download(location: String, name: String): File {
+    private fun download(location: String, name: String, source: Int? = null): File {
         val out = File.createTempFile(name, ".tmp", cache)
         try {
             if (location.startsWith("/") || location.startsWith("file://")) {
                 File(location.removePrefix("file://")).inputStream().use { copyMaybeGzip(it, out) }
                 return out
             }
-            http.newCall(Request.Builder().url(location).build()).execute().use { resp ->
+            clientFor(source).newCall(Request.Builder().url(location).build()).execute().use { resp ->
                 if (!resp.isSuccessful) throw IOException("HTTP ${resp.code} for $name")
                 val body = resp.body ?: throw IOException("empty response for $name")
                 body.byteStream().use { copyMaybeGzip(it, out) }
@@ -633,21 +695,28 @@ class Repository(context: Context) {
 
     // ----------------------------------------------------------------- EPG
 
+    /** Settings › Guide › Time offset in seconds (positive = programmes shown later), as on Windows. */
+    private val offset: Long get() = settings.epgOffsetMinutes * 60L
+
+    /** A programme from the engine with the guide offset applied. */
+    private fun prog(o: JSONObject?): Programme? = parseProgramme(o)?.let { it.copy(start = it.start + offset, stop = it.stop + offset) }
+
     suspend fun nowNext(ids: List<String>): Map<String, NowNext> = io {
         if (ids.isEmpty()) return@io emptyMap()
-        val res = core.obj("now_next_many", args("ids" to JSONArray(ids)))
+        val now = System.currentTimeMillis() / 1000
+        val res = core.obj("now_next_many", args("ids" to JSONArray(ids), "now" to now - offset))
         ids.associateWith { id ->
             val o = res.optJSONObject(id)
-            NowNext(parseProgramme(o?.optJSONObject("now")), parseProgramme(o?.optJSONObject("next")))
+            NowNext(prog(o?.optJSONObject("now")), prog(o?.optJSONObject("next")))
         }
     }
 
     /** A channel's programmes from now until [hours] ahead (for the guide under the preview). */
     suspend fun upcoming(id: String, hours: Int = 24): List<Programme> = io {
         val now = System.currentTimeMillis() / 1000
-        val r = core.obj("guide", args("ids" to JSONArray(listOf(id)), "from" to now, "to" to now + hours * 3600L))
+        val r = core.obj("guide", args("ids" to JSONArray(listOf(id)), "from" to now - offset, "to" to now - offset + hours * 3600L))
         val a = r.optJSONArray(id) ?: JSONArray()
-        (0 until a.length()).mapNotNull { parseProgramme(a.optJSONObject(it)) }.filter { it.stop > now }
+        (0 until a.length()).mapNotNull { prog(a.optJSONObject(it)) }.filter { it.stop > now }
     }
 
     /** Programmes of many channels between [from] and [to] (Unix seconds), for the TV guide grid. */
@@ -655,10 +724,10 @@ class Repository(context: Context) {
         if (ids.isEmpty()) return@io emptyMap()
         val out = HashMap<String, List<Programme>>(ids.size)
         for (chunk in ids.chunked(200)) {
-            val r = core.obj("guide", args("ids" to JSONArray(chunk), "from" to from, "to" to to))
+            val r = core.obj("guide", args("ids" to JSONArray(chunk), "from" to from - offset, "to" to to - offset))
             for (id in chunk) {
                 val a = r.optJSONArray(id) ?: continue
-                out[id] = (0 until a.length()).mapNotNull { parseProgramme(a.optJSONObject(it)) }
+                out[id] = (0 until a.length()).mapNotNull { prog(a.optJSONObject(it)) }
             }
         }
         out
@@ -671,11 +740,12 @@ class Repository(context: Context) {
     suspend fun catchup(channel: Item, p: Programme): Item? = io {
         if (!canCatchup(channel, p)) return@io null
         val minutes = ((p.stop - p.start) / 60).coerceIn(1, 24 * 60)
-        val offset = serverOffset(channel, p.start)
+        val start = p.start - offset // the panel works in its own time, not the guide offset shown here
+        val tz = serverOffset(channel, start)
         val url = try {
             core.call(
                 "timeshift_url",
-                args("id" to channel.id, "start" to p.start, "duration_min" to minutes, "server_offset" to offset),
+                args("id" to channel.id, "start" to start, "duration_min" to minutes, "server_offset" to tz),
             ) as? String
         } catch (e: IptvException) {
             null // M3U sources have no catch-up URLs
@@ -765,6 +835,6 @@ class Repository(context: Context) {
     companion object {
         const val TAG = "Madhyam"
         private const val OS_SECRET = -1 // Secrets id of the OpenSubtitles password
-        const val USER_AGENT = "Mozilla/5.0 (Linux; Android TV) Madhyam/0.6"
+        const val USER_AGENT = "Mozilla/5.0 (Linux; Android TV) ${Brand.NAME}/0.6"
     }
 }

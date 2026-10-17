@@ -48,6 +48,7 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
+import dev.madhyam.Brand
 import dev.madhyam.Item
 import dev.madhyam.MainViewModel
 import dev.madhyam.Section
@@ -117,7 +118,7 @@ private fun Hero(vm: MainViewModel, item: Item?) {
                 Text(if (item != null) "CONTINUE WATCHING" else "WELCOME BACK", color = Accent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 Text(
                     when {
-                        item == null -> vm.source?.name ?: "Madhyam"
+                        item == null -> vm.source?.name ?: Brand.NAME
                         item.isEpisode -> "${item.seasonEpisode}  ${item.name}"
                         else -> item.name
                     },
@@ -197,7 +198,7 @@ private fun ChannelRow(vm: MainViewModel, title: String, list: List<Item>) {
                         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
                         // A tinted highlight: many logos are white and would vanish on a white card.
                         colors = ClickableSurfaceDefaults.colors(containerColor = Panel, focusedContainerColor = Color(0xFF3A4785)),
-                        border = ClickableSurfaceDefaults.border(focusedBorder = androidx.tv.material3.Border(androidx.compose.foundation.BorderStroke(2.dp, Color.White))),
+                        border = ClickableSurfaceDefaults.border(focusedBorder = androidx.tv.material3.Border(androidx.compose.foundation.BorderStroke(2.dp, TextColor))),
                     ) {
                         Box(Modifier.fillMaxSize().padding(14.dp), contentAlignment = Alignment.Center) {
                             Logo(ch, 120.dp, 64.dp, strip)

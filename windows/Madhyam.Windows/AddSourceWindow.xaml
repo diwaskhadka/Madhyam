@@ -6,7 +6,7 @@
         Foreground="{StaticResource Fg}" FontFamily="{StaticResource UiFont}">
     <StackPanel Margin="24">
         <TextBlock Text="Add a playlist" FontSize="22" FontWeight="SemiBold" Margin="0,0,0,8" />
-        <TextBlock Text="Madhyam plays your own Xtream Codes account or M3U playlist. It ships with no channels."
+        <TextBlock x:Name="Intro"
                    Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,0,0,12" />
 
         <StackPanel Orientation="Horizontal" Margin="0,0,0,12">

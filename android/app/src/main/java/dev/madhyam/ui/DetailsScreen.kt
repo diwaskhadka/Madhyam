@@ -265,7 +265,7 @@ private fun EpisodeCard(vm: MainViewModel, series: Item, ep: Item) {
             colors = ClickableSurfaceDefaults.colors(containerColor = Panel, focusedContainerColor = Panel),
             scale = ClickableSurfaceDefaults.scale(focusedScale = 1.08f),
             border = ClickableSurfaceDefaults.border(
-                focusedBorder = Border(androidx.compose.foundation.BorderStroke(3.dp, Color.White), shape = RoundedCornerShape(10.dp)),
+                focusedBorder = Border(androidx.compose.foundation.BorderStroke(3.dp, TextColor), shape = RoundedCornerShape(10.dp)),
             ),
         ) {
             Box(Modifier.fillMaxSize()) {
@@ -281,7 +281,7 @@ private fun EpisodeCard(vm: MainViewModel, series: Item, ep: Item) {
             fontSize = 14.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            color = if (focused) Color.White else Color(0xFFCCD0E0),
+            color = if (focused) TextColor else TextColor.copy(alpha = 0.8f),
             modifier = Modifier.padding(top = 8.dp),
         )
         val sub = when {
@@ -294,7 +294,7 @@ private fun EpisodeCard(vm: MainViewModel, series: Item, ep: Item) {
 }
 
 @Composable
-private fun Chip(text: String, color: Color = Color(0xFFCCD0E0)) {
+private fun Chip(text: String, color: Color = TextColor.copy(alpha = 0.85f)) {
     Text(
         text,
         fontSize = 13.sp,
@@ -308,7 +308,7 @@ private fun Credit(label: String, value: String?) {
     if (value.isNullOrBlank()) return
     Text(
         buildAnnotatedString {
-            withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = Color.White)) { append("$label:  ") }
+            withStyle(SpanStyle(fontWeight = FontWeight.SemiBold, color = TextColor)) { append("$label:  ") }
             append(value)
         },
         color = Muted,

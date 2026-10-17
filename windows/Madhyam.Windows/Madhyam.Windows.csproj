@@ -8,11 +8,18 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- LibraryImport (P/Invoke source generator) marshals byte[] through pointers. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Madhyam.exe. Fixed: shortcuts, the installer and the CI checks use this file name. -->
     <AssemblyName>Madhyam</AssemblyName>
     <RootNamespace>Madhyam.Windows</RootNamespace>
-    <Version>0.4.11</Version>
-    <Product>Madhyam</Product>
-    <ApplicationIcon>Assets\Madhyam.ico</ApplicationIcon>
+    <!-- One version for every platform: the repository VERSION file (docs/RELEASING.md). -->
+    <Version>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)../../VERSION').Trim())</Version>
+    <!-- Display name from branding/brand.ini, shared by every platform. Brand.cs reads it back. -->
+    <BrandIni>$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)../../branding/brand.ini'))</BrandIni>
+    <Product>$([System.Text.RegularExpressions.Regex]::Match('$(BrandIni)', '(?m)^name=(.+?)\s*$').Groups[1].Value)</Product>
+    <AssemblyTitle>$(Product)</AssemblyTitle>
+    <BrandNativeName>$([System.Text.RegularExpressions.Regex]::Match('$(BrandIni)', '(?m)^native_name=(.+?)\s*$').Groups[1].Value)</BrandNativeName>
+    <!-- Rendered from branding/icon.svg by branding/build.py. -->
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <!-- LibVLC for Windows ships x64/x86 only; x64 also runs on Windows on ARM (emulated). -->
     <PlatformTarget>x64</PlatformTarget>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
@@ -39,9 +46,13 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Resource Include="Assets\Madhyam.ico" />
-    <Resource Include="Assets\Madhyam-64.png" />
-    <Resource Include="Assets\Madhyam-256.png" />
+    <Resource Include="Assets\app.ico" />
+    <Resource Include="Assets\app-64.png" />
+    <Resource Include="Assets\app-256.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyMetadata Include="BrandNativeName" Value="$(BrandNativeName)" />
   </ItemGroup>
 
   <!-- One copy of the C# binding, shared with other .NET hosts. -->

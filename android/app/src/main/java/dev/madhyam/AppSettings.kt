@@ -61,6 +61,19 @@ class AppSettings private constructor(private val file: File) {
     var freeTvSourceId: Int? = null
     var freeTvGroupBy = "category"          // category | country
 
+    // ------------------------------------------- 0.9.0: Windows 0.4.11 parity
+    var theme = "Dark"                      // Dark | Light | System
+    var coverSize = "Medium"                // Small | Medium | Large
+    var titlesUnderCovers = true
+    var epgOffsetMinutes = 0                // positive = programmes shown later
+    val extraEpgUrls = mutableListOf<String>()
+    /** Playlist id → user agent sent for its downloads and streams ("" = the default). */
+    val sourceUserAgent = mutableMapOf<Int, String>()
+    var liveFormat = "Auto"                 // Auto | TS | HLS (Xtream live streams)
+    var bufferMs = 1500                     // playback starts after this much is buffered
+    /** Kind ("live", "movie", "series") → "provider" | "name_asc" | "name_desc". */
+    val categorySort = mutableMapOf<String, String>()
+
     fun hidden(source: Int, kind: String): MutableSet<String> =
         hiddenCategories.getOrPut(hiddenKey(source, kind)) { mutableSetOf() }
 
@@ -99,6 +112,15 @@ class AppSettings private constructor(private val file: File) {
             .put("hiddenCategories", JSONObject().apply {
                 for ((k, v) in hiddenCategories) if (v.isNotEmpty()) put(k, JSONArray(v.sorted()))
             })
+            .put("theme", theme)
+            .put("coverSize", coverSize)
+            .put("titlesUnderCovers", titlesUnderCovers)
+            .put("epgOffsetMinutes", epgOffsetMinutes)
+            .put("extraEpgUrls", JSONArray(extraEpgUrls))
+            .put("sourceUserAgent", JSONObject().apply { for ((k, v) in sourceUserAgent) if (v.isNotBlank()) put(k.toString(), v) })
+            .put("liveFormat", liveFormat)
+            .put("bufferMs", bufferMs)
+            .put("categorySort", JSONObject().apply { for ((k, v) in categorySort) put(k, v) })
         try {
             val tmp = File(file.path + ".tmp")
             tmp.writeText(o.toString(2))
@@ -151,6 +173,15 @@ class AppSettings private constructor(private val file: File) {
                     hiddenCategories[k] = (0 until a.length()).map { a.getString(it) }.toMutableSet()
                 }
             }
+            theme = o.optString("theme", theme)
+            coverSize = o.optString("coverSize", coverSize)
+            titlesUnderCovers = o.optBoolean("titlesUnderCovers", titlesUnderCovers)
+            epgOffsetMinutes = o.optInt("epgOffsetMinutes", epgOffsetMinutes)
+            o.optJSONArray("extraEpgUrls")?.let { a -> for (i in 0 until a.length()) extraEpgUrls += a.getString(i) }
+            o.optJSONObject("sourceUserAgent")?.let { m -> for (k in m.keys()) k.toIntOrNull()?.let { sourceUserAgent[it] = m.getString(k) } }
+            liveFormat = o.optString("liveFormat", liveFormat)
+            bufferMs = o.optInt("bufferMs", bufferMs)
+            o.optJSONObject("categorySort")?.let { m -> for (k in m.keys()) categorySort[k] = m.getString(k) }
         } catch (e: Exception) {
             Log.w(Repository.TAG, "settings unreadable, using defaults", e)
         }

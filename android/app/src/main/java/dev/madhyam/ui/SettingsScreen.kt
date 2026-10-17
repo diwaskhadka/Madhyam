@@ -22,6 +22,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -43,6 +45,7 @@ import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.Switch
 import androidx.tv.material3.Text
 import dev.madhyam.Account
+import dev.madhyam.Brand
 import dev.madhyam.FreeTv
 import dev.madhyam.Group
 import dev.madhyam.MainViewModel
@@ -51,6 +54,7 @@ import dev.madhyam.Source
 private enum class Page(val label: String) {
     Playlists("Playlists"),
     FreeTv("Free TV"),
+    Appearance("Appearance"),
     Home("Home"),
     Live("Live TV"),
     Categories("Categories"),
@@ -118,6 +122,7 @@ fun SettingsScreen(vm: MainViewModel) {
                     when (page) {
                         Page.Playlists -> playlists(vm, returnTo, lastOpened) { openSource = it }
                         Page.FreeTv -> freeTv(vm)
+                        Page.Appearance -> appearance(vm)
                         Page.Home -> home(vm)
                         Page.Live -> live(vm)
                         Page.Categories -> item { CategoriesPage(vm) }
@@ -194,6 +199,8 @@ private fun SourceDetails(vm: MainViewModel, s: Source, onEdit: () -> Unit, onRe
     var account by remember(s.id) { mutableStateOf<Account?>(null) }
     var accountError by remember(s.id) { mutableStateOf<String?>(null) }
     var confirmRemove by remember(s.id) { mutableStateOf(false) }
+    var testResult by remember(s.id) { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
     // The row that opened this page is gone: put the focus on the first action, not back on the rail.
     val first = remember { FocusRequester() }
     LaunchedEffect(s.id) {
@@ -233,6 +240,12 @@ private fun SourceDetails(vm: MainViewModel, s: Source, onEdit: () -> Unit, onRe
         }
         item { ActionRow("Refresh playlist", "Download channels, films and series again", modifier = Modifier.focusRequester(first)) { vm.refreshSource(s) } }
         item { ActionRow("Update guide", "Download the programme guide (EPG) again") { vm.refreshGuide(s) } }
+        item {
+            ActionRow("Test connection", testResult ?: "Check that the playlist answers, and how fast") {
+                testResult = "Testing…"
+                scope.launch { testResult = vm.testConnection(s) }
+            }
+        }
         if (!s.isFreeTv) item { ActionRow("Edit", "Name, address and login") { onEdit() } }
         item {
             ActionRow(
@@ -257,6 +270,7 @@ private fun EditSource(vm: MainViewModel, s: Source, onDone: () -> Unit) {
     var server by remember(s.id) { mutableStateOf(s.location) }
     var user by remember(s.id) { mutableStateOf(s.username) }
     var pass by remember(s.id) { mutableStateOf("") }
+    var ua by remember(s.id) { mutableStateOf(vm.settings.sourceUserAgent[s.id].orEmpty()) }
     // Focus the Save button rather than a field (a focused field would open the keyboard at once).
     val save = remember { FocusRequester() }
     LaunchedEffect(s.id) {
@@ -273,8 +287,11 @@ private fun EditSource(vm: MainViewModel, s: Source, onDone: () -> Unit) {
         } else {
             Field("Playlist URL", location, KeyboardType.Uri) { location = it }
         }
+        // Some providers only answer a particular player (Windows: per-playlist user agent).
+        Field("User agent (optional)", ua) { ua = it }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Button(modifier = Modifier.focusRequester(save), onClick = {
+                vm.setSourceUserAgent(s, ua)
                 if (s.isXtream) vm.updateSource(s, name, null, server, user, pass) else vm.updateSource(s, name, location, null, null, null)
                 onDone()
             }) { Text("Save and refresh") }
@@ -386,7 +403,7 @@ private fun LazyListScope.live(vm: MainViewModel) {
     item { SwitchRow("Hide name prefixes", "\"UK: BBC One\" becomes \"BBC One\"", st.stripPrefixes) { vm.changeSettings { stripPrefixes = it } } }
     item {
         ChoiceRow(
-            "Start in", "The page Madhyam opens with",
+            "Start in", "The page ${Brand.NAME} opens with",
             st.startupSection,
             listOf("Last" to "Last page", "Home" to "Home", "Live" to "Live TV", "Movies" to "Movies", "Series" to "Series", "Favorites" to "Favorites", "Recent" to "Recent"),
         ) { vm.changeSettings { startupSection = it } }
@@ -416,6 +433,12 @@ private fun CategoriesPage(vm: MainViewModel) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         SectionTitle("Categories of ${s.name}", "Hidden categories disappear from the list and from \"All\"")
         ChoiceRow("Show categories of", "OK to switch", kind, kinds) { kind = it }
+        val orderKey = kind.substringBefore(':')
+        val order = vm.settings.categorySort[orderKey] ?: if (kind == "live:country") "name_asc" else "provider"
+        ChoiceRow(
+            "Order", "How the category list is sorted (for every playlist)", order,
+            listOf("provider" to "Provider order", "name_asc" to "A to Z", "name_desc" to "Z to A"),
+        ) { vm.setCategoryOrder(orderKey, it) }
         if (groups.isEmpty()) Text("No categories.", color = Muted, modifier = Modifier.padding(12.dp))
         for (g in groups) {
             val shown = g.name !in hidden
@@ -430,6 +453,18 @@ private fun CategoriesPage(vm: MainViewModel) {
 private fun LazyListScope.playback(vm: MainViewModel) {
     val st = vm.settings
     item { SectionTitle("Playback") }
+    item {
+        ChoiceRow(
+            "Live stream format", "Xtream live channels: Auto uses what the panel lists; try the other one if channels stutter",
+            st.liveFormat, listOf("Auto" to "Auto", "TS" to "MPEG-TS", "HLS" to "HLS (m3u8)"),
+        ) { vm.changeSettings { liveFormat = it } }
+    }
+    item {
+        ChoiceRow(
+            "Buffer before playing", "Longer is steadier on slow networks but starts later. Applies after restarting ${Brand.NAME}",
+            st.bufferMs, listOf(800 to "0.8 s", 1500 to "1.5 s", 3000 to "3 s", 6000 to "6 s"),
+        ) { vm.changeSettings { bufferMs = it } }
+    }
     item { SwitchRow("Resume films and episodes", "Continue where you stopped", st.resumePlayback) { vm.changeSettings { resumePlayback = it } } }
     item {
         SwitchRow("Subtitles", "Show subtitles when the stream has them", st.showSubtitles) {
@@ -470,11 +505,38 @@ private fun LazyListScope.guide(vm: MainViewModel) {
     item { SectionTitle("Guide (EPG)") }
     item {
         ChoiceRow(
-            "Update guides every", "Checked when Madhyam starts",
+            "Update guides every", "Checked when ${Brand.NAME} starts",
             st.epgRefreshHours, listOf(6 to "6 hours", 12 to "12 hours", 24 to "24 hours", 48 to "2 days"),
         ) { vm.changeSettings { epgRefreshHours = it } }
     }
+    item {
+        PickRow(
+            "Time offset", "Moves every programme when the guide is early or late (positive = later)",
+            st.epgOffsetMinutes, OFFSETS.map { it to offsetLabel(it) },
+        ) { vm.setEpgOffset(it) }
+    }
     items(vm.sources, key = { it.id }) { s -> ActionRow("Update the guide of ${s.name}") { vm.refreshGuide(s) } }
+    item { SectionTitle("Extra guide URLs", "XMLTV guides added to every playlist (.xml or .xml.gz)") }
+    items(st.extraEpgUrls.toList(), key = { "epg:$it" }) { url -> ExtraEpgRow(vm, url) }
+    item { Field("Add a guide URL", "") { vm.addExtraEpg(it) } }
+    if (st.extraEpgUrls.isNotEmpty()) item { ActionRow("Update extra guides now") { vm.refreshExtraGuides() } }
+}
+
+/** One extra guide URL; OK twice removes it. */
+@Composable
+private fun ExtraEpgRow(vm: MainViewModel, url: String) {
+    var confirm by remember(url) { mutableStateOf(false) }
+    ActionRow(url, if (confirm) "Press OK again to remove it" else "OK to remove") {
+        if (confirm) vm.removeExtraEpg(url) else confirm = true
+    }
+}
+
+private val OFFSETS = (-24..24).map { it * 30 } // −12 h … +12 h in half hours
+
+private fun offsetLabel(min: Int): String = when {
+    min == 0 -> "None"
+    min % 60 == 0 -> "%+d h".format(min / 60)
+    else -> "%+.1f h".format(min / 60f)
 }
 
 private fun LazyListScope.about(vm: MainViewModel) {
@@ -492,12 +554,12 @@ private fun AboutRows(vm: MainViewModel) {
         }
     }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        SectionTitle("About Madhyam")
+        SectionTitle("About ${Brand.NAME} · ${Brand.NATIVE_NAME}")
         ActionRow("Version", value = version) {}
         ActionRow("Engine (madhyam-core)", value = vm.engineVersion) {}
         ActionRow("Clear watch history", "Empties the Recent list") { vm.clearHistory() }
         Text(
-            "Madhyam plays your own playlists and ships with no channels. Free TV channels come from iptv-org.",
+            "${Brand.NAME} plays your own playlists and ships with no channels. Free TV channels come from iptv-org.",
             color = Muted, fontSize = 12.sp, modifier = Modifier.padding(12.dp),
         )
     }
@@ -566,4 +628,22 @@ private fun LazyListScope.home(vm: MainViewModel) {
     item { SwitchRow("Recently watched channels", "The last live channels you watched", st.dashRecentLive) { vm.changeSettings { dashRecentLive = it } } }
     item { SwitchRow("Favorite movies and series", "Films and series you starred", st.dashFavoriteVod) { vm.changeSettings { dashFavoriteVod = it } } }
     item { SwitchRow("Recently added", "Newest films and series of the playlist (Xtream sends the dates)", st.dashRecentlyAdded) { vm.changeSettings { dashRecentlyAdded = it } } }
+}
+
+private fun LazyListScope.appearance(vm: MainViewModel) {
+    val st = vm.settings
+    item { SectionTitle("Appearance") }
+    item {
+        ChoiceRow("Theme", "Dark suits a dim room; Follow the TV uses the TV's own setting", st.theme,
+            listOf("Dark" to "Dark", "Light" to "Light", "System" to "Follow the TV")) { vm.changeSettings { theme = it } }
+    }
+    item {
+        ChoiceRow("Cover size", "Posters in Movies and Series", st.coverSize,
+            listOf("Small" to "Small", "Medium" to "Medium", "Large" to "Large")) { vm.changeSettings { coverSize = it } }
+    }
+    item {
+        SwitchRow("Titles under covers", "Off shows the title only on the focused poster", st.titlesUnderCovers) {
+            vm.changeSettings { titlesUnderCovers = it }
+        }
+    }
 }

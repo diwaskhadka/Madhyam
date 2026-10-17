@@ -4,20 +4,50 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// One version for every platform: the repository's VERSION file (see docs/RELEASING.md).
+// versionCode must always grow on Android: 0.9.0 → 900, 1.2.3 → 10203.
+val appVersion: String = rootProject.file("../VERSION").readText().trim()
+val appVersionCode: Int = appVersion.split(".").map { it.toInt() }.let { (a, b, c) -> a * 10000 + b * 100 + c }
+
+// The display name, shared by every platform: branding/brand.ini (see branding/README.md).
+val brand: Map<String, String> = rootProject.file("../branding/brand.ini").readLines(Charsets.UTF_8)
+    .map { it.trim() }.filter { "=" in it && !it.startsWith(";") }
+    .associate { it.substringBefore("=").trim() to it.substringAfter("=").trim() }
+
 android {
     namespace = "dev.madhyam"
     compileSdk = 35
 
     defaultConfig {
+        // Fixed after the first release: Android treats another id as another app. The Kotlin
+        // package (namespace) keeps the project's code name.
         applicationId = "dev.madhyam"
         // Android 5.0: the oldest Android TV release still found on cheap boxes.
         minSdk = 21
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.8.0"
+        versionCode = appVersionCode
+        versionName = appVersion
+        resValue("string", "app_name", brand.getValue("name"))
+        buildConfigField("String", "APP_NAME", "\"${brand.getValue("name")}\"")
+        buildConfigField("String", "APP_NATIVE_NAME", "\"${brand.getValue("native_name")}\"")
         ndk {
             // Must match the ABIs built by cargo-ndk (see .github/workflows/ci.yml).
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+        }
+    }
+
+    // Release key from the environment (the release workflow fills it from repository secrets,
+    // see docs/RELEASING.md). Without it the debug key signs, for test builds only: an APK signed
+    // with another key cannot update an installed release.
+    val keystore = System.getenv("ANDROID_KEYSTORE_PATH")?.takeIf { file(it).exists() }
+    signingConfigs {
+        if (keystore != null) {
+            create("release") {
+                storeFile = file(keystore)
+                storePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+            }
         }
     }
 
@@ -25,8 +55,7 @@ android {
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Signed with the debug key so CI release APKs install; use your own key for the Play Store.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
 
@@ -36,6 +65,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     sourceSets["main"].apply {

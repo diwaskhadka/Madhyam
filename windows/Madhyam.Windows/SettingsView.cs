@@ -215,7 +215,7 @@ public sealed class SettingsView : UserControl
 
     private void General()
     {
-        Header("General", "How Madhyam looks and starts.");
+        Header("General", $"How {Brand.Name} looks and starts.");
 
         var themeNote = Note("");
         themeNote.Visibility = Visibility.Collapsed;
@@ -228,7 +228,7 @@ public sealed class SettingsView : UserControl
         {
             S.Theme = v;
             Save();
-            themeNote.Text = "The new theme is used the next time Madhyam starts.";
+            themeNote.Text = $"The new theme is used the next time {Brand.Name} starts.";
             themeNote.Visibility = Visibility.Visible;
             restart.Visibility = Visibility.Visible;
         }));
@@ -252,7 +252,7 @@ public sealed class SettingsView : UserControl
                 AppSettings.ApplyLayout(Application.Current.Resources);
             }));
 
-        Row("Startup view", "The section Madhyam opens on.",
+        Row("Startup view", $"The section {Brand.Name} opens on.",
             Choice(new[] { ("Dashboard", "Dashboard"), ("Live", "Live TV"), ("Movies", "Movies"), ("Series", "Series"), ("Favorites", "Favorites"), ("Last", "Where I left off") },
                 S.StartupView, v => { S.StartupView = v; Save(); }), controlBelow: true);
 
@@ -703,7 +703,7 @@ public sealed class SettingsView : UserControl
             Buttons(
                 Btn("Export…", async () =>
                 {
-                    var dlg = new SaveFileDialog { FileName = $"Madhyam-backup-{DateTime.Now:yyyy-MM-dd}.json", Filter = "Madhyam backup (*.json)|*.json" };
+                    var dlg = new SaveFileDialog { FileName = $"{Brand.Name}-backup-{DateTime.Now:yyyy-MM-dd}.json", Filter = $"{Brand.Name} backup (*.json)|*.json" };
                     if (dlg.ShowDialog(Window.GetWindow(this)) != true) return;
                     await File.WriteAllTextAsync(dlg.FileName, await _repo.ExportUserState());
                     status.Visibility = Visibility.Visible;
@@ -711,7 +711,7 @@ public sealed class SettingsView : UserControl
                 }),
                 Btn("Import…", async () =>
                 {
-                    var dlg = new OpenFileDialog { Filter = "Madhyam backup (*.json)|*.json|All files|*.*" };
+                    var dlg = new OpenFileDialog { Filter = $"{Brand.Name} backup (*.json)|*.json|All files|*.*" };
                     if (dlg.ShowDialog(Window.GetWindow(this)) != true) return;
                     try
                     {
@@ -726,19 +726,19 @@ public sealed class SettingsView : UserControl
                     status.Visibility = Visibility.Visible;
                 })), controlBelow: true);
 
-        Row("Data folder", "Where Madhyam keeps its catalog, guides, settings and logs.",
+        Row("Data folder", $"Where {Brand.Name} keeps its catalog, guides, settings and logs.",
             Buttons(Btn("Open folder", () =>
             {
                 Process.Start(new ProcessStartInfo("explorer.exe", $"\"{App.DataDir}\"") { UseShellExecute = true });
                 return Task.CompletedTask;
             })), controlBelow: true);
 
-        Row("Reset Madhyam", "Remove all playlists, favorites, progress, guides and settings, and start fresh.",
+        Row($"Reset {Brand.Name}", "Remove all playlists, favorites, progress, guides and settings, and start fresh.",
             Buttons(Btn("Reset everything…", () =>
             {
                 if (MessageBox.Show(Window.GetWindow(this),
                         "This removes all playlists, favorites, watch progress, guides and settings from this PC.\n\nContinue?",
-                        "Reset Madhyam", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                        $"Reset {Brand.Name}", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
                     return Task.CompletedTask;
                 _host.ResetOnExit = true;
                 _host.RestartApp();
@@ -750,16 +750,16 @@ public sealed class SettingsView : UserControl
 
     private void About()
     {
-        Header("About", "Madhyam — a player for your own IPTV subscription.");
+        Header("About", $"{Brand.Name} ({Brand.NativeName}) — a player for your own IPTV subscription.");
         var v = typeof(App).Assembly.GetName().Version?.ToString(3) ?? "?";
-        Row("Version", $"Madhyam {v} · engine {_repo.CoreVersion} (Rust) · video by VLC", new TextBlock());
+        Row("Version", $"{Brand.Name} {v} · engine {_repo.CoreVersion} (Rust) · video by VLC", new TextBlock());
         Row("Source code and releases", "github.com/diwaskhadka/Madhyam",
             Buttons(Btn("Open on GitHub", () =>
             {
                 Process.Start(new ProcessStartInfo("https://github.com/diwaskhadka/Madhyam/releases") { UseShellExecute = true });
                 return Task.CompletedTask;
             })));
-        Row("Content", "Madhyam ships with no channels. It plays the Xtream Codes or M3U playlists you add from a provider you are entitled to use.", new TextBlock());
+        Row("Content", $"{Brand.Name} ships with no channels. It plays the Xtream Codes or M3U playlists you add from a provider you are entitled to use.", new TextBlock());
         Row("Keyboard", "Ctrl+K search · F11 full screen · Space pause · PgUp/PgDn change channel · ←/→ seek 10 s · ↑/↓ volume · J/K audio delay · G/H subtitle delay · Esc back", new TextBlock());
     }
 }
