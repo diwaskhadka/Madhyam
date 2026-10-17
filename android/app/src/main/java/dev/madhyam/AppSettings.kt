@@ -26,6 +26,10 @@ class AppSettings private constructor(private val file: File) {
     var resumePlayback = true
     var showSubtitles = true
 
+    // ---------------------------------------------------- movies, series
+    var vodSort = "provider"                 // a catalog Sort name (provider, added_desc, name_asc, rating_desc…)
+    var vodMinRating = 0                     // 0 = any rating
+
     // -------------------------------------------------------------- guide
     var epgRefreshHours = 12
 
@@ -51,6 +55,8 @@ class AppSettings private constructor(private val file: File) {
             .put("previewOnSelect", previewOnSelect)
             .put("resumePlayback", resumePlayback)
             .put("showSubtitles", showSubtitles)
+            .put("vodSort", vodSort)
+            .put("vodMinRating", vodMinRating)
             .put("epgRefreshHours", epgRefreshHours)
             .put("freeTvSourceId", freeTvSourceId ?: JSONObject.NULL)
             .put("freeTvGroupBy", freeTvGroupBy)
@@ -82,6 +88,8 @@ class AppSettings private constructor(private val file: File) {
             previewOnSelect = o.optBoolean("previewOnSelect", previewOnSelect)
             resumePlayback = o.optBoolean("resumePlayback", resumePlayback)
             showSubtitles = o.optBoolean("showSubtitles", showSubtitles)
+            vodSort = o.optString("vodSort", vodSort)
+            vodMinRating = o.optInt("vodMinRating", vodMinRating)
             epgRefreshHours = o.optInt("epgRefreshHours", epgRefreshHours)
             freeTvSourceId = o.optIntOrNull("freeTvSourceId")
             freeTvGroupBy = o.optString("freeTvGroupBy", freeTvGroupBy)

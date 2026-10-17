@@ -47,9 +47,29 @@ data class Item(
     val plot: String?,
     val year: String? = null,
     val rating: String? = null,
+    val genre: String? = null,
+    /** Episodes: season and episode numbers, and the id of the series item. */
+    val season: String? = null,
+    val episode: String? = null,
+    val seriesId: String? = null,
+    /** Episode length announced by the panel, in seconds (0 = unknown). */
+    val durationHint: Double = 0.0,
+    /** Saved resume position and length, in seconds (0 = never played). */
+    val positionSec: Double = 0.0,
+    val durationSec: Double = 0.0,
 ) {
     val isLive get() = kind == "live"
     val isSeries get() = kind == "series"
+    val isEpisode get() = kind == "episode"
+
+    val watchedRatio: Float get() = if (durationSec > 0) (positionSec / durationSec).toFloat().coerceIn(0f, 1f) else 0f
+    val isWatched get() = watchedRatio >= 0.95f
+    /** Started but not finished. */
+    val isStarted get() = positionSec > 0 && !isWatched
+
+    /** "S01E03". */
+    val seasonEpisode: String
+        get() = "S%02dE%02d".format(season?.toIntOrNull() ?: 1, episode?.toIntOrNull() ?: 0)
 
     /** Name as shown, optionally without a "UK: " / "|EN| " style prefix (live channels only). */
     fun displayName(stripPrefix: Boolean): String = if (stripPrefix && isLive) stripPrefix(name) else name
@@ -83,6 +103,7 @@ private fun JSONObject.str(k: String): String? = optString(k, "").takeIf { it.is
 
 private fun parseItem(o: JSONObject): Item {
     val extra = o.optJSONObject("extra") ?: JSONObject()
+    val progress = o.optJSONObject("progress")
     return Item(
         id = o.getString("id"),
         kind = o.optString("kind"),
@@ -95,8 +116,67 @@ private fun parseItem(o: JSONObject): Item {
         archiveDays = o.optInt("archive_days"),
         plot = extra.str("plot"),
         year = extra.str("year"),
-        rating = extra.str("rating")?.takeIf { it != "0" },
+        rating = extra.str("rating")?.takeIf { it != "0" && it != "0.0" },
+        genre = extra.str("genre"),
+        season = extra.str("season"),
+        episode = extra.str("episode"),
+        seriesId = o.str("series"),
+        durationHint = extra.str("duration_secs")?.toDoubleOrNull() ?: 0.0,
+        positionSec = progress?.optDouble("position", 0.0) ?: 0.0,
+        durationSec = progress?.optDouble("duration", 0.0) ?: 0.0,
     )
+}
+
+/** Film or series details from the Xtream panel (get_vod_info / get_series_info "info"). */
+data class DetailsInfo(
+    val plot: String? = null,
+    val cast: String? = null,
+    val director: String? = null,
+    val genre: String? = null,
+    val released: String? = null,
+    val duration: String? = null,
+    val rating: String? = null,
+    val country: String? = null,
+    val language: String? = null,
+    val poster: String? = null,
+    val backdrop: String? = null,
+) {
+    companion object {
+        /** Parse the "info" object; values may be strings or numbers, empty means absent. */
+        fun parse(info: JSONObject?): DetailsInfo {
+            if (info == null) return DetailsInfo()
+            fun one(k: String): String? =
+                info.opt(k)?.takeIf { it != JSONObject.NULL && it !is JSONObject && it !is JSONArray }?.toString()?.trim()?.takeIf { it.isNotEmpty() }
+            fun any(vararg keys: String): String? = keys.firstNotNullOfOrNull { one(it) }
+            val backdrop = when (val b = info.opt("backdrop_path")) {
+                is JSONArray -> (0 until b.length()).map { b.optString(it) }.firstOrNull { it.isNotBlank() }
+                is String -> b.takeIf { it.isNotBlank() }
+                else -> null
+            }
+            val secs = one("duration_secs")?.toDoubleOrNull() ?: 0.0
+            var duration = if (secs > 0) clock(secs) else any("duration", "episode_run_time")
+            duration?.toIntOrNull()?.let { if (it in 1..599) duration = "$it min" }
+            return DetailsInfo(
+                plot = any("plot", "description"),
+                cast = any("cast", "actors"),
+                director = any("director"),
+                genre = any("genre"),
+                released = any("releasedate", "releaseDate", "release_date"),
+                duration = duration,
+                rating = any("rating", "rating_5based")?.takeIf { it != "0" && it != "0.0" },
+                country = any("country"),
+                language = info.optJSONObject("audio")?.optString("language")?.takeIf { it.isNotBlank() } ?: any("language"),
+                poster = any("movie_image", "cover_big", "cover"),
+                backdrop = backdrop,
+            )
+        }
+
+        /** 5400 → "1:30:00". */
+        fun clock(seconds: Double): String {
+            val s = seconds.toLong()
+            return if (s >= 3600) "%d:%02d:%02d".format(s / 3600, s % 3600 / 60, s % 60) else "%d:%02d".format(s / 60, s % 60)
+        }
+    }
 }
 
 private fun parseProgramme(o: JSONObject?): Programme? = o?.let {
@@ -434,6 +514,7 @@ class Repository(context: Context) {
         offset: Int = 0,
         limit: Int = 200,
         groupField: String? = null,
+        minRating: Double = 0.0,
     ): Page = io {
         val r = core.obj(
             "query",
@@ -444,6 +525,7 @@ class Repository(context: Context) {
                 "group_field" to groupField,
                 "hidden_groups" to JSONArray(hidden.toList()),
                 "sort" to sort,
+                "min_rating" to minRating,
                 "offset" to offset,
                 "limit" to limit,
             ),
@@ -466,16 +548,62 @@ class Repository(context: Context) {
         save()
     }
 
+    /** One item with its saved progress, or null if it no longer exists. */
+    suspend fun item(id: String): Item? = io {
+        try {
+            parseItem(core.obj("item", args("id" to id)))
+        } catch (e: IptvException) {
+            null
+        }
+    }
+
+    /** Films and episodes started but not finished, most recent first. */
+    suspend fun continueWatching(limit: Int = 20): List<Item> =
+        io { core.arr("continue_watching", args("limit" to limit)).items() }
+
+    // A get_series_info answer carries both the details and the episodes: fetch it once per session.
+    private val seriesBodies = mutableMapOf<String, ByteArray>()
+    private val detailsCache = mutableMapOf<String, DetailsInfo>()
+
+    private fun seriesBody(series: Item): ByteArray = seriesBodies.getOrPut(series.id) {
+        get(core.call("series_info_url", args("id" to series.id)) as String)
+    }
+
     /** Episodes of a series; downloaded from the panel the first time. */
     suspend fun episodes(series: Item): List<Item> = io {
         var eps = core.arr("episodes", args("id" to series.id)).items()
         if (eps.isEmpty()) {
-            val url = core.call("series_info_url", args("id" to series.id)) as String
-            core.importBytes("series_info", get(url), args("id" to series.id))
+            core.importBytes("series_info", seriesBody(series), args("id" to series.id))
             eps = core.arr("episodes", args("id" to series.id)).items()
             save()
         }
         eps
+    }
+
+    /**
+     * Plot, cast, backdrop… of a film or series (cached for the session). Null for M3U items,
+     * which have no details endpoint, and when the panel does not answer.
+     */
+    suspend fun details(item: Item): DetailsInfo? = io {
+        detailsCache[item.id]?.let { return@io it }
+        try {
+            val body = if (item.isSeries) seriesBody(item) else get(core.call("vod_info_url", args("id" to item.id)) as String)
+            DetailsInfo.parse(JSONObject(String(body)).optJSONObject("info")).also { detailsCache[item.id] = it }
+        } catch (e: IptvException) {
+            null // not an Xtream item
+        } catch (e: Exception) {
+            Log.w(TAG, "details failed for ${item.name}", e)
+            null
+        }
+    }
+
+    /** Mark films or episodes as watched (or not), with one save for all of them. */
+    suspend fun setWatched(items: List<Item>, watched: Boolean) = io {
+        for (it in items) {
+            val dur = listOf(it.durationSec, it.durationHint).firstOrNull { d -> d > 0 } ?: 1.0
+            core.call("set_progress", args("id" to it.id, "position" to if (watched) dur else 0.0, "duration" to dur))
+        }
+        save()
     }
 
     // ----------------------------------------------------------------- EPG
@@ -523,6 +651,6 @@ class Repository(context: Context) {
 
     companion object {
         const val TAG = "Madhyam"
-        const val USER_AGENT = "Mozilla/5.0 (Linux; Android TV) Madhyam/0.5"
+        const val USER_AGENT = "Mozilla/5.0 (Linux; Android TV) Madhyam/0.6"
     }
 }

@@ -64,8 +64,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var liveGroupBy by mutableStateOf(settings.freeTvGroupBy)
         private set
 
-    /** Non-null while a series' episodes are shown in place of the item list. */
-    var openSeries by mutableStateOf<Item?>(null)
+    // Details page of a film or series (Movies, Series, Favorites…); null = the grid or list.
+    var details by mutableStateOf<Item?>(null)
+        private set
+    var detailsInfo by mutableStateOf<DetailsInfo?>(null)
+        private set
+    var detailsLoading by mutableStateOf(false)
+        private set
+    var episodes by mutableStateOf<List<Item>>(emptyList())
+        private set
+    /** Season tab shown on a series page. */
+    var season by mutableStateOf<String?>(null)
+        private set
+    /** The poster last opened, so the grid puts the focus back on it. */
+    var lastOpenedId by mutableStateOf<String?>(null)
+        private set
+    /** "Continue watching" row above the Movies and Series grids. */
+    var continueItems by mutableStateOf<List<Item>>(emptyList())
         private set
     var query by mutableStateOf("")
         private set
@@ -92,6 +107,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private var itemsJob: Job? = null
     private var searchJob: Job? = null
     private var focusJob: Job? = null
+    private var detailsJob: Job? = null
     private var loadingMore = false
 
     init {
@@ -299,7 +315,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun reloadSection() {
-        openSeries = null
+        closeDetailsSilently()
         itemsJob?.cancel()
         itemsJob = viewModelScope.launch {
             val src = source
@@ -320,6 +336,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         isAll = true,
                     )
                     categories = listOf(all) + groups.map { Category(it.name, it.count) }
+                    loadContinue()
                     // Keep the selected category if it still exists.
                     val keep = group?.takeIf { g -> groups.any { it.name == g } }
                     loadGroup(keep)
@@ -334,7 +351,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun selectCategory(c: Category) {
         val name = if (c.isAll) null else c.name
-        if (name == group && openSeries == null && items.isNotEmpty()) return
+        if (name == group && details == null && items.isNotEmpty()) return
         itemsJob?.cancel()
         itemsJob = viewModelScope.launch { loadGroup(name) }
     }
@@ -347,16 +364,52 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         reloadSection()
     }
 
+    private val isVod get() = section == Section.Movies || section == Section.Series
+
     private val sort: String
-        get() = if (section == Section.Live && settings.liveSortAz) "name_asc" else "provider"
+        get() = when {
+            isVod -> settings.vodSort
+            section == Section.Live && settings.liveSortAz -> "name_asc"
+            else -> "provider"
+        }
+
+    private val minRating: Double get() = if (isVod) settings.vodMinRating.toDouble() else 0.0
+
+    fun setVodSort(sort: String) {
+        if (sort == settings.vodSort) return
+        changeSettings { vodSort = sort }
+        reloadGrid()
+    }
+
+    fun setVodMinRating(rating: Int) {
+        if (rating == settings.vodMinRating) return
+        changeSettings { vodMinRating = rating }
+        reloadGrid()
+    }
+
+    private fun reloadGrid() {
+        lastOpenedId = null
+        itemsJob?.cancel()
+        itemsJob = viewModelScope.launch { loadGroup(group) }
+    }
+
+    /** Films (Movies) or episodes (Series) started but not finished. */
+    private suspend fun loadContinue() {
+        val want = when (section) {
+            Section.Movies -> "movie"
+            Section.Series -> "episode"
+            else -> null
+        }
+        continueItems = if (want == null) emptyList() else repo.continueWatching(40).filter { it.kind == want && it.durationSec > 0 }
+    }
 
     private suspend fun loadGroup(name: String?) {
         val src = source ?: return
         val kind = section.kind ?: return
         group = name
-        openSeries = null
+        closeDetailsSilently()
         val hidden = if (name == null) settings.hidden(src.id, kindKey!!) else emptySet()
-        val page = repo.query(src.id, kind, name, hidden, sort, 0, PAGE, groupField)
+        val page = repo.query(src.id, kind, name, hidden, sort, 0, PAGE, groupField, minRating)
         total = page.total
         setItems(page.items, page.total)
         // The info pane follows the list: drop a channel that is not in it (unless it is playing).
@@ -370,12 +423,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun loadMore() {
         val src = source ?: return
         val kind = section.kind ?: return
-        if (loadingMore || openSeries != null || items.size >= total) return
+        if (loadingMore || items.size >= total) return
         loadingMore = true
         viewModelScope.launch {
             try {
                 val hidden = if (group == null) settings.hidden(src.id, kindKey!!) else emptySet()
-                val page = repo.query(src.id, kind, group, hidden, sort, items.size, PAGE, groupField)
+                val page = repo.query(src.id, kind, group, hidden, sort, items.size, PAGE, groupField, minRating)
                 items = items + page.items
                 fetchNowNext(page.items)
             } finally {
@@ -423,33 +476,139 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /**
      * OK on an item. Live TV: the first press plays the channel in the preview window, a second
-     * press on the playing channel goes full screen. Everything else plays full screen.
+     * press on the playing channel goes full screen. Films and series open their details page;
+     * episodes play full screen.
      */
     fun open(item: Item) {
         when {
-            item.isSeries -> task("Loading episodes…") {
-                val eps = repo.episodes(item)
-                openSeries = item
-                items = eps
-                total = eps.size
-            }
+            item.isSeries || item.kind == "movie" -> showDetails(item)
+            item.isEpisode -> resume(item)
             item.isLive && section == Section.Live && settings.previewOnSelect && playback.current?.id != item.id -> {
                 playback.play(item, items.filter { it.isLive })
                 viewModelScope.launch { repo.recordPlay(item.id) }
             }
             item.isLive && playback.current?.id == item.id -> screen = Screen.Player
             else -> viewModelScope.launch {
-                val resume = if (!item.isLive && settings.resumePlayback) repo.resumePositionMs(item.id) else 0L
-                playback.play(item, if (item.isLive) items.filter { it.isLive } else listOf(item), resume)
+                playback.play(item, items.filter { it.isLive })
                 repo.recordPlay(item.id)
                 screen = Screen.Player
             }
         }
     }
 
-    fun closeSeries() {
-        openSeries = null
-        reloadSection()
+    // ------------------------------------------------------------ details
+
+    /** Open the details page of a film or series and load its details (and episodes). */
+    fun showDetails(item: Item, then: (suspend () -> Unit)? = null) {
+        lastOpenedId = item.id
+        detailsJob?.cancel()
+        details = item
+        detailsInfo = null
+        episodes = emptyList()
+        season = null
+        detailsLoading = true
+        detailsJob = viewModelScope.launch {
+            try {
+                val fresh = repo.item(item.id) ?: item
+                details = fresh
+                detailsInfo = repo.details(fresh)
+                if (fresh.isSeries) {
+                    episodes = try {
+                        repo.episodes(fresh)
+                    } catch (e: Exception) {
+                        message = "Episodes could not be loaded: ${explain(e)}"
+                        emptyList()
+                    }
+                    season = resumeEpisode()?.season ?: episodes.firstOrNull()?.season
+                }
+            } finally {
+                detailsLoading = false
+            }
+            then?.invoke()
+        }
+    }
+
+    /** Back on the details page. */
+    fun closeDetails() {
+        closeDetailsSilently()
+        viewModelScope.launch { loadContinue() }
+    }
+
+    private fun closeDetailsSilently() {
+        detailsJob?.cancel()
+        details = null
+        detailsInfo = null
+        episodes = emptyList()
+        season = null
+        detailsLoading = false
+    }
+
+    fun selectSeason(s: String) {
+        season = s
+    }
+
+    /** Episode to offer as "Resume": started but unfinished, else the first unwatched one after a watched one. */
+    fun resumeEpisode(): Item? =
+        episodes.firstOrNull { it.isStarted }
+            ?: if (episodes.any { it.isWatched }) episodes.firstOrNull { !it.isWatched } else null
+
+    fun playMovie(startOver: Boolean = false) {
+        val it = details?.takeIf { !it.isSeries } ?: return
+        viewModelScope.launch {
+            val resume = if (!startOver && settings.resumePlayback && it.isStarted) (it.positionSec * 1000).toLong() else 0L
+            playback.play(it, listOf(it), resume)
+            repo.recordPlay(it.id)
+            screen = Screen.Player
+        }
+    }
+
+    fun playEpisode(ep: Item, startOver: Boolean = false) {
+        season = ep.season
+        viewModelScope.launch {
+            val resume = if (!startOver && settings.resumePlayback && ep.isStarted) (ep.positionSec * 1000).toLong() else 0L
+            playback.play(ep, episodes.ifEmpty { listOf(ep) }, resume)
+            repo.recordPlay(ep.id)
+            screen = Screen.Player
+        }
+    }
+
+    /** Continue watching / Recent: resume a film or an episode, with its details page behind the player. */
+    fun resume(item: Item) {
+        when {
+            item.isEpisode -> viewModelScope.launch {
+                val series = item.seriesId?.let { repo.item(it) }
+                if (series == null) {
+                    // The series is gone from the catalog: just play the episode.
+                    val resume = if (settings.resumePlayback) repo.resumePositionMs(item.id) else 0L
+                    playback.play(item, listOf(item), resume)
+                    repo.recordPlay(item.id)
+                    screen = Screen.Player
+                } else {
+                    showDetails(series) { playEpisode(episodes.firstOrNull { it.id == item.id } ?: item) }
+                }
+            }
+            else -> showDetails(item) { playMovie() }
+        }
+    }
+
+    /** Watched mark on one film or episode. */
+    fun toggleWatched(item: Item) = setWatched(listOf(item), !item.isWatched)
+
+    fun setWatched(list: List<Item>, watched: Boolean) {
+        viewModelScope.launch {
+            repo.setWatched(list, watched)
+            reloadDetailsProgress()
+        }
+    }
+
+    /** Re-read progress after playing or marking (the page shows resume points and watched marks). */
+    private suspend fun reloadDetailsProgress() {
+        val d = details ?: return
+        val fresh = repo.item(d.id)
+        val eps = if (d.isSeries) repo.episodes(d) else episodes
+        if (details?.id != d.id) return
+        if (fresh != null) details = fresh
+        episodes = eps
     }
 
     fun toggleFavorite(item: Item) {
@@ -482,11 +641,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun closePlayer() {
         val cur = playback.current
         screen = Screen.Main
-        if (cur != null && !cur.isLive) {
-            saveProgress(cur)
-            playback.stop()
+        val pos = playback.positionMs
+        val dur = playback.durationMs
+        if (cur != null && !cur.isLive) playback.stop()
+        viewModelScope.launch {
+            if (cur != null && !cur.isLive && dur > 0) repo.setProgress(cur.id, pos, dur)
+            repo.persist()
+            reloadDetailsProgress()
+            if (isVod) loadContinue()
         }
-        viewModelScope.launch { repo.persist() }
     }
 
     fun saveProgress(item: Item? = playback.current) {

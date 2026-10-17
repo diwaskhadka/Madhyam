@@ -1,15 +1,12 @@
 package dev.madhyam.ui
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
@@ -34,13 +31,13 @@ import dev.madhyam.Item
 import dev.madhyam.MainViewModel
 import dev.madhyam.Section
 
-/** Movies and Series (categories + list), Favorites, Recent and Search. */
+/** Movies and Series (poster grid), Favorites, Recent and Search (lists); a film's or series' details page over them. */
 @Composable
 fun BrowseScreen(vm: MainViewModel) {
-    BackHandler(enabled = vm.openSeries != null) { vm.closeSeries() }
-    Row(Modifier.fillMaxSize()) {
-        if (vm.section.kind != null && vm.openSeries == null) CategoryPanel(vm, Modifier.width(230.dp))
-        Column(Modifier.weight(1f).fillMaxHeight().padding(horizontal = 24.dp, vertical = 16.dp)) {
+    when {
+        vm.details != null -> DetailsScreen(vm)
+        vm.section.kind != null -> VodScreen(vm)
+        else -> Column(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 16.dp)) {
             Header(vm)
             ItemList(vm)
         }
@@ -60,16 +57,7 @@ private fun Header(vm: MainViewModel) {
         )
         return
     }
-    val title = vm.openSeries?.name ?: when {
-        vm.section.kind != null -> vm.group ?: vm.categories.firstOrNull()?.name ?: vm.section.label
-        else -> vm.section.label
-    }
-    val sub = when {
-        vm.openSeries != null -> "${vm.items.size} episodes · Back to return"
-        vm.section.kind != null -> "${vm.total} titles · hold OK for favorite"
-        else -> "Hold OK to add or remove a favorite"
-    }
-    SectionTitle(title, sub)
+    SectionTitle(vm.section.label, "Hold OK to add or remove a favorite")
 }
 
 @OptIn(ExperimentalComposeUiApi::class)
@@ -91,13 +79,13 @@ private fun ItemList(vm: MainViewModel) {
     val now = System.currentTimeMillis() / 1000
     val strip = vm.settings.stripPrefixes
     LazyColumn(Modifier.focusRestorer(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        itemsIndexed(vm.items, key = { _, it -> it.id }) { i, item ->
+        itemsIndexed(vm.items, key = { _, it -> it.id }) { _, item ->
             ItemRow(
                 vm,
                 item,
                 now,
                 strip,
-                onFocused = { if (vm.section.kind != null && i > vm.items.size - 30) vm.loadMore() },
+                onFocused = {},
             )
         }
     }
@@ -120,7 +108,8 @@ private fun ItemRow(vm: MainViewModel, item: Item, now: Long, strip: Boolean, on
         },
         supportingContent = {
             val cur = nn?.now
-            val meta = listOfNotNull(item.year, item.rating?.let { "★ $it" }).joinToString("  ·  ")
+            val meta = listOfNotNull(if (item.isEpisode) item.seasonEpisode else null, item.year, item.rating?.let { "★ $it" })
+                .joinToString("  ·  ")
             when {
                 item.isLive && cur != null -> Column {
                     Text(cur.title, color = Muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)

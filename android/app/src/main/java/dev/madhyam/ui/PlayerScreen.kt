@@ -137,7 +137,7 @@ fun PlayerScreen(vm: MainViewModel) {
                         Text("  ", fontSize = 12.sp)
                     }
                     Column {
-                        Text(item.displayName(strip), fontSize = 26.sp, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(if (item.isEpisode) "${item.seasonEpisode}  ${item.name}" else item.displayName(strip), fontSize = 26.sp, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (item.isLive && pb.playlist.size > 1) {
                             Text("${pb.index + 1} / ${pb.playlist.size}   ▲▼ change channel", color = Muted, fontSize = 12.sp)
                         }
