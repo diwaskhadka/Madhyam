@@ -38,6 +38,18 @@ class AppSettings private constructor(private val file: File) {
     var vodSort = "provider"                 // a catalog Sort name (provider, added_desc, name_asc, rating_desc…)
     var vodMinRating = 0                     // 0 = any rating
 
+    // ---------------------------------------------------- home, search
+    var dashHero = true
+    var dashContinue = true
+    var dashLiveFavorites = true
+    var dashRecentLive = true
+    var dashFavoriteVod = true
+    var dashRecentlyAdded = true
+    var searchLive = true
+    var searchMovies = true
+    var searchSeries = true
+    var searchAllSources = true
+
     // -------------------------------------------------------------- guide
     var epgRefreshHours = 12
 
@@ -71,6 +83,16 @@ class AppSettings private constructor(private val file: File) {
             .put("osLanguages", osLanguages)
             .put("vodSort", vodSort)
             .put("vodMinRating", vodMinRating)
+            .put("dashHero", dashHero)
+            .put("dashContinue", dashContinue)
+            .put("dashLiveFavorites", dashLiveFavorites)
+            .put("dashRecentLive", dashRecentLive)
+            .put("dashFavoriteVod", dashFavoriteVod)
+            .put("dashRecentlyAdded", dashRecentlyAdded)
+            .put("searchLive", searchLive)
+            .put("searchMovies", searchMovies)
+            .put("searchSeries", searchSeries)
+            .put("searchAllSources", searchAllSources)
             .put("epgRefreshHours", epgRefreshHours)
             .put("freeTvSourceId", freeTvSourceId ?: JSONObject.NULL)
             .put("freeTvGroupBy", freeTvGroupBy)
@@ -110,6 +132,16 @@ class AppSettings private constructor(private val file: File) {
             osLanguages = o.optString("osLanguages", osLanguages)
             vodSort = o.optString("vodSort", vodSort)
             vodMinRating = o.optInt("vodMinRating", vodMinRating)
+            dashHero = o.optBoolean("dashHero", dashHero)
+            dashContinue = o.optBoolean("dashContinue", dashContinue)
+            dashLiveFavorites = o.optBoolean("dashLiveFavorites", dashLiveFavorites)
+            dashRecentLive = o.optBoolean("dashRecentLive", dashRecentLive)
+            dashFavoriteVod = o.optBoolean("dashFavoriteVod", dashFavoriteVod)
+            dashRecentlyAdded = o.optBoolean("dashRecentlyAdded", dashRecentlyAdded)
+            searchLive = o.optBoolean("searchLive", searchLive)
+            searchMovies = o.optBoolean("searchMovies", searchMovies)
+            searchSeries = o.optBoolean("searchSeries", searchSeries)
+            searchAllSources = o.optBoolean("searchAllSources", searchAllSources)
             epgRefreshHours = o.optInt("epgRefreshHours", epgRefreshHours)
             freeTvSourceId = o.optIntOrNull("freeTvSourceId")
             freeTvGroupBy = o.optString("freeTvGroupBy", freeTvGroupBy)

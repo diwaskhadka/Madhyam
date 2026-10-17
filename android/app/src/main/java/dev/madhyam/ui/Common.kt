@@ -150,3 +150,22 @@ fun dayLabel(unixSeconds: Long): String {
         else -> SimpleDateFormat("EEE d MMM", Locale.getDefault()).format(Date(unixSeconds * 1000))
     }
 }
+
+/**
+ * Text fields on a TV: the D-pad would otherwise stay inside the field (Left/Right move the
+ * cursor and Up/Down do nothing), trapping the remote. Up/Down always leave the field; Left
+ * leaves it when [atStart] (the cursor is at the beginning, e.g. the field is empty).
+ */
+@Composable
+fun Modifier.tvTextField(atStart: () -> Boolean = { true }): Modifier {
+    val fm = androidx.compose.ui.platform.LocalFocusManager.current
+    return onPreviewKeyEvent { ev ->
+        if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+        when (ev.nativeKeyEvent.keyCode) {
+            android.view.KeyEvent.KEYCODE_DPAD_DOWN -> fm.moveFocus(androidx.compose.ui.focus.FocusDirection.Down)
+            android.view.KeyEvent.KEYCODE_DPAD_UP -> fm.moveFocus(androidx.compose.ui.focus.FocusDirection.Up)
+            android.view.KeyEvent.KEYCODE_DPAD_LEFT -> atStart() && fm.moveFocus(androidx.compose.ui.focus.FocusDirection.Left)
+            else -> false
+        }
+    }
+}

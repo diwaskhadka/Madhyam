@@ -27,6 +27,7 @@ sealed interface Screen {
 
 /** Entries of the navigation rail. */
 enum class Section(val label: String, val kind: String?) {
+    Home("Home", null),
     Live("Live TV", "live"),
     Movies("Movies", "movie"),
     Series("Series", "series"),
@@ -35,6 +36,17 @@ enum class Section(val label: String, val kind: String?) {
     Search("Search", null),
     Settings("Settings", null),
 }
+
+/** What the Home page shows (each row can be switched off in Settings › Home). */
+data class HomeData(
+    val continueWatching: List<Item> = emptyList(),
+    val favoriteLive: List<Item> = emptyList(),
+    val recentLive: List<Item> = emptyList(),
+    val favoriteVod: List<Item> = emptyList(),
+    val addedMovies: List<Item> = emptyList(),
+    val addedSeries: List<Item> = emptyList(),
+    val loaded: Boolean = false,
+)
 
 /** A row of the category panel; [isAll] is the synthetic "All" entry (group = null). */
 data class Category(val name: String, val count: Int, val isAll: Boolean = false)
@@ -71,6 +83,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var details by mutableStateOf<Item?>(null)
         private set
     var detailsInfo by mutableStateOf<DetailsInfo?>(null)
+        private set
+    /** IMDb / Rotten Tomatoes ratings of the open details page (needs an OMDb key). */
+    var ratings by mutableStateOf<ExternalRatings?>(null)
         private set
     var detailsLoading by mutableStateOf(false)
         private set
@@ -169,7 +184,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         is java.net.UnknownHostException -> "Server not found. Check the address and your connection."
         is java.net.SocketTimeoutException -> "The server took too long to answer."
-        is java.io.IOException -> "Network error: ${e.message}"
+        is java.io.IOException -> if (e.message?.startsWith("OpenSubtitles") == true) e.message!! else "Network error: ${e.message}"
         else -> e.message ?: e.javaClass.simpleName
     }
 
@@ -345,9 +360,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     val keep = group?.takeIf { g -> groups.any { it.name == g } }
                     loadGroup(keep)
                 }
-                s == Section.Favorites -> setItems(repo.favorites())
-                s == Section.Recent -> setItems(repo.recent())
-                s == Section.Search -> setItems(repo.search(query))
+                s == Section.Home -> loadHome()
+                s == Section.Favorites -> setItems(byPageKind(repo.favorites()))
+                s == Section.Recent -> setItems(byPageKind(repo.recent()))
+                s == Section.Search -> setItems(searchHits(query))
                 else -> setItems(emptyList())
             }
         }
@@ -463,7 +479,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
             delay(300) // debounce: search after the user pauses typing
-            if (section == Section.Search) setItems(repo.search(q))
+            if (section == Section.Search) setItems(searchHits(q))
         }
     }
 
@@ -509,6 +525,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         detailsJob?.cancel()
         details = item
         detailsInfo = null
+        ratings = null
         episodes = emptyList()
         season = null
         detailsLoading = true
@@ -517,6 +534,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val fresh = repo.item(item.id) ?: item
                 details = fresh
                 detailsInfo = repo.details(fresh)
+                if (settings.omdbApiKey.isNotBlank()) {
+                    val info = detailsInfo
+                    viewModelScope.launch { ratings = repo.ratings(fresh, info).takeIf { details?.id == fresh.id } }
+                }
                 if (fresh.isSeries) {
                     episodes = try {
                         repo.episodes(fresh)
@@ -654,6 +675,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             repo.persist()
             reloadDetailsProgress()
             if (isVod) loadContinue()
+            if (section == Section.Home) loadHome()
         }
     }
 
@@ -671,6 +693,170 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         playback.player.pause()
         viewModelScope.launch { repo.persist() }
     }
+
+    // ------------------------------------------------------- home, filters
+
+    /** Rows of the Home page (Windows dashboard). */
+    var home by mutableStateOf(HomeData())
+        private set
+
+    private suspend fun loadHome() {
+        val src = source
+        val cont = repo.continueWatching(20).filter { !it.isLive && it.durationSec > 0 && !it.isWatched }
+        val favs = repo.favorites()
+        val recentLive = repo.recent("live", 30)
+        val addedMovies = if (src != null && settings.dashRecentlyAdded) {
+            repo.query(src.id, "movie", null, settings.hidden(src.id, "movie"), "added_desc", 0, 20).items
+        } else {
+            emptyList()
+        }
+        val addedSeries = if (src != null && settings.dashRecentlyAdded) {
+            repo.query(src.id, "series", null, settings.hidden(src.id, "series"), "added_desc", 0, 20).items
+        } else {
+            emptyList()
+        }
+        home = HomeData(
+            continueWatching = cont,
+            favoriteLive = favs.filter { it.isLive },
+            recentLive = recentLive,
+            favoriteVod = favs.filter { it.kind == "movie" || it.isSeries },
+            addedMovies = addedMovies,
+            addedSeries = addedSeries,
+            loaded = true,
+        )
+        fetchNowNext(home.favoriteLive + home.recentLive)
+    }
+
+    /** Favorites / Recent: "live", "vod" (films, series, episodes) or null for everything. */
+    var pageKind by mutableStateOf<String?>(null)
+        private set
+
+    fun changePageKind(kind: String?) {
+        pageKind = kind
+        reloadSection()
+    }
+
+    private fun byPageKind(list: List<Item>): List<Item> = when (pageKind) {
+        "live" -> list.filter { it.isLive }
+        "vod" -> list.filter { !it.isLive }
+        else -> list
+    }
+
+    /** Search across the kinds and playlists chosen with the filter chips, grouped by kind. */
+    private suspend fun searchHits(q: String): List<Item> {
+        if (q.isBlank()) return emptyList()
+        val kinds = buildList {
+            if (settings.searchLive) add("live")
+            if (settings.searchMovies) add("movie")
+            if (settings.searchSeries) add("series")
+        }
+        val src = source
+        return kinds.flatMap { repo.search(q, it) }
+            .filter { settings.searchAllSources || src == null || it.sourceId == src.id }
+    }
+
+    fun changeSearchFilter(block: AppSettings.() -> Unit) {
+        changeSettings(block)
+        search(query)
+    }
+
+    /** Watch a channel full screen; Up/Down zap through [list] (a Home row, for example). */
+    fun watchChannel(channel: Item, list: List<Item>) {
+        viewModelScope.launch {
+            focused = channel
+            playback.play(channel, list.filter { it.isLive })
+            repo.recordPlay(channel.id)
+            screen = Screen.Player
+        }
+    }
+
+    /** Details page of the series an episode belongs to. */
+    fun openSeriesOf(episode: Item) {
+        viewModelScope.launch {
+            val series = episode.seriesId?.let { repo.item(it) }
+            if (series != null) showDetails(series) else message = "The series of this episode is no longer in the playlist."
+        }
+    }
+
+    /** Recent: hold OK removes an entry from the history. */
+    fun removeFromHistory(item: Item) {
+        viewModelScope.launch {
+            repo.removeFromHistory(item.id)
+            if (section == Section.Recent) setItems(byPageKind(repo.recent()))
+            message = "Removed ${item.name} from Recent"
+        }
+    }
+
+    fun clearHistoryHere() = task("Clearing history…") {
+        repo.clearHistory()
+        if (section == Section.Recent) setItems(emptyList())
+        message = "Recent is empty. Favorites and resume positions are kept."
+    }
+
+    // ----------------------------------------------------- online subtitles
+
+    /** OpenSubtitles search needs an API key (Settings › Online services). */
+    val subtitleSearchAvailable: Boolean get() = settings.osApiKey.isNotBlank()
+
+    /** Results of the subtitle search; null while the search dialog is closed. */
+    var subtitleResults by mutableStateOf<List<SubtitleHit>?>(null)
+        private set
+    var subtitleSearching by mutableStateOf(false)
+        private set
+    var subtitleError by mutableStateOf<String?>(null)
+        private set
+    var subtitleQuery by mutableStateOf("")
+        private set
+
+    /** Open the search for the playing film or episode, with its title as the query. */
+    fun openSubtitleSearch() {
+        val item = playback.current ?: return
+        val title = if (item.isEpisode) details?.name ?: item.name else item.name
+        searchSubtitles(Ratings.cleanTitle(title))
+    }
+
+    fun searchSubtitles(query: String) {
+        val item = playback.current ?: return
+        subtitleQuery = query
+        subtitleResults = emptyList()
+        subtitleError = null
+        subtitleSearching = true
+        viewModelScope.launch {
+            try {
+                val season = if (item.isEpisode) item.season?.toIntOrNull() else null
+                val episode = if (item.isEpisode) item.episode?.toIntOrNull() else null
+                subtitleResults = repo.searchSubtitles(query, season, episode)
+                    .sortedByDescending { it.downloads }
+                    .take(60)
+            } catch (e: Exception) {
+                subtitleError = explain(e)
+            } finally {
+                subtitleSearching = false
+            }
+        }
+    }
+
+    fun closeSubtitleSearch() {
+        subtitleResults = null
+        subtitleError = null
+    }
+
+    fun useSubtitle(hit: SubtitleHit) {
+        closeSubtitleSearch()
+        task("Downloading the subtitle…") {
+            val (sub, remaining) = repo.downloadSubtitle(hit)
+            playback.addSubtitle(sub)
+            message = "Subtitle added · $remaining downloads left today"
+        }
+    }
+
+    /** The OpenSubtitles login password (kept encrypted, never in settings.json). */
+    var openSubtitlesPassword: String
+        get() = repo.openSubtitlesPassword
+        set(value) {
+            repo.openSubtitlesPassword = value
+            settingsVersion++
+        }
 
     // ------------------------------------------------------------ TV guide
 

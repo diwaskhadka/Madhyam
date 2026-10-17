@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,6 +50,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.tv.material3.DenseListItem
 import androidx.tv.material3.Icon
 import androidx.tv.material3.ListItem
 import androidx.tv.material3.Text
@@ -59,6 +62,7 @@ private val RailCollapsed = 72.dp
 private val RailExpanded = 230.dp
 
 fun Section.icon(): ImageVector = when (this) {
+    Section.Home -> Icons.Filled.Home
     Section.Live -> Icons.Filled.LiveTv
     Section.Movies -> Icons.Filled.Movie
     Section.Series -> Icons.Filled.VideoLibrary
@@ -75,6 +79,7 @@ fun Section.icon(): ImageVector = when (this) {
 @Composable
 fun MainShell(vm: MainViewModel) {
     var railFocused by remember { mutableStateOf(false) }
+    val railFocus = remember { FocusRequester() }
     var pickPlaylist by remember { mutableStateOf(false) }
 
     LaunchedEffect(vm.message) {
@@ -86,13 +91,16 @@ fun MainShell(vm: MainViewModel) {
 
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().padding(start = RailCollapsed)) {
+            CompositionLocalProvider(LocalRailFocus provides railFocus) {
             when (vm.section) {
+                Section.Home -> if (vm.details != null) DetailsScreen(vm) else HomeScreen(vm)
                 Section.Live -> LiveScreen(vm)
                 Section.Settings -> SettingsScreen(vm)
                 else -> BrowseScreen(vm)
             }
+            }
         }
-        Rail(vm, onFocus = { railFocused = it }, expanded = railFocused, onPlaylists = { pickPlaylist = true })
+        Rail(vm, railFocus, onFocus = { railFocused = it }, expanded = railFocused, onPlaylists = { pickPlaylist = true })
 
         // Status line (busy / messages), bottom right, over everything.
         val status = vm.busy ?: vm.message
@@ -113,9 +121,8 @@ fun MainShell(vm: MainViewModel) {
 @Suppress("DEPRECATION") // FocusProperties.enter
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-private fun Rail(vm: MainViewModel, onFocus: (Boolean) -> Unit, expanded: Boolean, onPlaylists: () -> Unit) {
+private fun Rail(vm: MainViewModel, selected: FocusRequester, onFocus: (Boolean) -> Unit, expanded: Boolean, onPlaylists: () -> Unit) {
     val width by animateDpAsState(if (expanded) RailExpanded else RailCollapsed, label = "rail")
-    val selected = remember { FocusRequester() }
     Column(
         Modifier
             .width(width)
@@ -125,7 +132,7 @@ private fun Rail(vm: MainViewModel, onFocus: (Boolean) -> Unit, expanded: Boolea
             // Entering the rail always lands on the current page, not the nearest entry.
             .focusProperties { enter = { selected } }
             .focusGroup()
-            .padding(horizontal = 10.dp, vertical = 20.dp),
+            .padding(horizontal = 10.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         RailEntry(
@@ -136,7 +143,7 @@ private fun Rail(vm: MainViewModel, onFocus: (Boolean) -> Unit, expanded: Boolea
             selected = false,
             onClick = onPlaylists,
         )
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(10.dp))
         for (s in Section.entries) {
             if (s == Section.Settings) Spacer(Modifier.weight(1f))
             RailEntry(
@@ -161,7 +168,8 @@ private fun RailEntry(
     modifier: Modifier = Modifier,
     sub: String? = null,
 ) {
-    ListItem(
+    // Dense: nine entries have to fit a 540 dp tall TV screen.
+    DenseListItem(
         selected = selected,
         onClick = onClick,
         modifier = modifier,
@@ -246,3 +254,6 @@ fun EmptyNote(text: String) {
         Text(text, color = Muted)
     }
 }
+
+/** The rail's entry point, so a page can send Left from its first control straight to the rail. */
+val LocalRailFocus = androidx.compose.runtime.staticCompositionLocalOf { FocusRequester.Default }

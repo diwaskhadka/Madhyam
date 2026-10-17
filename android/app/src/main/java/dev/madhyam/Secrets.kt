@@ -48,7 +48,10 @@ class Secrets(private val file: File) {
     }
 
     /** Forget sources that no longer exist; returns true when the file changed. */
-    fun retain(ids: Set<Int>): Boolean = map.keys.retainAll(ids)
+    fun retain(ids: Set<Int>): Boolean = map.keys.retainAll { it < 0 || it in ids } // negative ids are app logins
+
+    /** Forget one stored password; returns true when the file changed. */
+    fun remove(id: Int): Boolean = map.remove(id) != null
 
     fun save() {
         val o = JSONObject()

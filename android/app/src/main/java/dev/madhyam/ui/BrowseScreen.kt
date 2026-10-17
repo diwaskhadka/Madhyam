@@ -53,11 +53,36 @@ private fun Header(vm: MainViewModel) {
             label = { androidx.compose.material3.Text("Search channels, movies, series") },
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp).tvTextField { vm.query.isEmpty() },
         )
+        // Which kinds to search, and whether to look in every playlist (Windows advanced search).
+        val st = vm.settings
+        @Suppress("UNUSED_EXPRESSION") vm.settingsVersion
+        Row(Modifier.padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ToggleChip("Live TV", st.searchLive) { vm.changeSearchFilter { searchLive = !searchLive } }
+            ToggleChip("Movies", st.searchMovies) { vm.changeSearchFilter { searchMovies = !searchMovies } }
+            ToggleChip("Series", st.searchSeries) { vm.changeSearchFilter { searchSeries = !searchSeries } }
+            if (vm.sources.size > 1) {
+                ToggleChip("All playlists", st.searchAllSources) { vm.changeSearchFilter { searchAllSources = !searchAllSources } }
+            }
+        }
         return
     }
-    SectionTitle(vm.section.label, "Hold OK to add or remove a favorite")
+    val recent = vm.section == Section.Recent
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            SectionTitle(
+                vm.section.label,
+                if (recent) "${vm.items.size} items · hold OK to remove one" else "${vm.items.size} items · hold OK to remove a favorite",
+            )
+        }
+        if (recent && vm.items.isNotEmpty()) ToggleChip("Clear history", false) { vm.clearHistoryHere() }
+    }
+    Row(Modifier.padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ToggleChip("All", vm.pageKind == null) { vm.changePageKind(null) }
+        ToggleChip("Live TV", vm.pageKind == "live") { vm.changePageKind("live") }
+        ToggleChip("Movies and series", vm.pageKind == "vod") { vm.changePageKind("vod") }
+    }
 }
 
 @OptIn(ExperimentalComposeUiApi::class)
@@ -78,15 +103,23 @@ private fun ItemList(vm: MainViewModel) {
     }
     val now = System.currentTimeMillis() / 1000
     val strip = vm.settings.stripPrefixes
+    // Search and the "All" filter group results by kind under a heading (Windows pages do the same).
+    val groups: List<Pair<String, List<Item>>> = listOf(
+        "Live TV" to vm.items.filter { it.isLive },
+        "Movies" to vm.items.filter { it.kind == "movie" },
+        "Series" to vm.items.filter { it.isSeries },
+        "Episodes" to vm.items.filter { it.isEpisode },
+    ).filter { it.second.isNotEmpty() }
     LazyColumn(Modifier.focusRestorer(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        itemsIndexed(vm.items, key = { _, it -> it.id }) { _, item ->
-            ItemRow(
-                vm,
-                item,
-                now,
-                strip,
-                onFocused = {},
-            )
+        for ((label, list) in groups) {
+            if (groups.size > 1) {
+                item(key = "header:$label") {
+                    Text("$label  ${list.size}", color = Accent, fontSize = 14.sp, modifier = Modifier.padding(top = 10.dp, bottom = 2.dp))
+                }
+            }
+            itemsIndexed(list, key = { _, it -> it.id }) { _, item ->
+                ItemRow(vm, item, now, strip, onFocused = {})
+            }
         }
     }
 }
@@ -97,7 +130,7 @@ private fun ItemRow(vm: MainViewModel, item: Item, now: Long, strip: Boolean, on
     ListItem(
         selected = false,
         onClick = { vm.open(item) },
-        onLongClick = { vm.toggleFavorite(item) },
+        onLongClick = { if (vm.section == Section.Recent) vm.removeFromHistory(item) else vm.toggleFavorite(item) },
         modifier = Modifier.onFocusChanged { if (it.isFocused) onFocused() },
         leadingContent = { if (item.isLive) Logo(item, 64.dp, 40.dp, strip) else Logo(item, 44.dp, 64.dp) },
         headlineContent = {

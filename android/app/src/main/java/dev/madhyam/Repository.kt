@@ -36,6 +36,8 @@ data class Group(val name: String, val count: Int)
 
 data class Item(
     val id: String,
+    /** Id of the playlist the item belongs to. */
+    val sourceId: Int = 0,
     val kind: String,
     val name: String,
     val group: String,
@@ -112,6 +114,7 @@ private fun parseItem(o: JSONObject): Item {
     val progress = o.optJSONObject("progress")
     return Item(
         id = o.getString("id"),
+        sourceId = o.optInt("source"),
         kind = o.optString("kind"),
         name = o.optString("name"),
         group = o.optString("group"),
@@ -146,6 +149,10 @@ data class DetailsInfo(
     val language: String? = null,
     val poster: String? = null,
     val backdrop: String? = null,
+    /** YouTube video id (not a URL). */
+    val trailer: String? = null,
+    /** IMDb id such as "tt1234567" when the panel provides one. */
+    val imdbId: String? = null,
 ) {
     companion object {
         /** Parse the "info" object; values may be strings or numbers, empty means absent. */
@@ -174,6 +181,11 @@ data class DetailsInfo(
                 language = info.optJSONObject("audio")?.optString("language")?.takeIf { it.isNotBlank() } ?: any("language"),
                 poster = any("movie_image", "cover_big", "cover"),
                 backdrop = backdrop,
+                trailer = any("youtube_trailer", "trailer")?.let { t ->
+                    // Accept bare ids and full YouTube URLs.
+                    Regex("""(?:v=|youtu\.be/|embed/)([\w-]{11})""").find(t)?.groupValues?.get(1) ?: t.takeIf { it.length == 11 }
+                },
+                imdbId = any("imdb_id", "imdb")?.let { Regex("""tt\d{5,10}""").find(it)?.value },
             )
         }
 
@@ -204,6 +216,8 @@ class Repository(context: Context) {
     private val cache = context.cacheDir
     private val secrets = Secrets(File(context.filesDir, "secrets.json"))
     val settings: AppSettings = AppSettings.load(context)
+    private val appVersion: String =
+        runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "0"
 
     /** Downloaded guides, re-imported at start-up (the snapshot deliberately excludes EPG). */
     private val epgDir = File(context.filesDir, "epg")
@@ -545,7 +559,12 @@ class Repository(context: Context) {
 
     suspend fun favorites(kind: String? = null): List<Item> = io { core.arr("favorites", args("kind" to kind)).items() }
 
-    suspend fun recent(kind: String? = null): List<Item> = io { core.arr("recent", args("kind" to kind, "limit" to 60)).items() }
+    suspend fun recent(kind: String? = null, limit: Int = 200): List<Item> = io { core.arr("recent", args("kind" to kind, "limit" to limit)).items() }
+
+    suspend fun removeFromHistory(id: String) = io {
+        core.call("remove_history", args("id" to id))
+        save()
+    }
 
     suspend fun favoriteIds(): Set<String> = io { core.arr("favorites").items().map { it.id }.toSet() }
 
@@ -713,8 +732,39 @@ class Repository(context: Context) {
 
     suspend fun persist() = io { save() }
 
+    // ------------------------------------------------------ online services
+
+    private val ratingsClient = Ratings(http)
+    private val subtitlesClient = OpenSubtitles(http, appVersion)
+    private val subtitleDir = File(context.cacheDir, "subtitles")
+
+    /** IMDb / Rotten Tomatoes ratings from OMDb, or null without a key or a match. */
+    suspend fun ratings(item: Item, info: DetailsInfo?): ExternalRatings? = io {
+        val year = info?.released?.take(4)?.takeIf { it.length == 4 } ?: item.year
+        ratingsClient.fetch(settings.omdbApiKey, item.name, year, info?.imdbId, item.isSeries)
+    }
+
+    /** The OpenSubtitles password, encrypted like the playlist passwords (empty when none). */
+    var openSubtitlesPassword: String
+        get() = secrets.get(OS_SECRET).orEmpty()
+        set(value) {
+            val changed = if (value.isEmpty()) secrets.remove(OS_SECRET) else secrets.put(OS_SECRET, value)
+            if (changed) secrets.save()
+        }
+
+    suspend fun searchSubtitles(query: String, season: Int?, episode: Int?): List<SubtitleHit> = io {
+        subtitlesClient.search(settings.osApiKey, settings.osUsername, openSubtitlesPassword, query, settings.osLanguages, season, episode)
+    }
+
+    /** Download a subtitle; returns it (with a label for the track list) and the remaining daily quota. */
+    suspend fun downloadSubtitle(hit: SubtitleHit): Pair<ExternalSubtitle, String> = io {
+        val (file, remaining) = subtitlesClient.download(settings.osApiKey, settings.osUsername, openSubtitlesPassword, hit, subtitleDir)
+        ExternalSubtitle(file, hit.language, "${hit.language.uppercase()} · ${hit.release.ifBlank { hit.fileName }}") to remaining
+    }
+
     companion object {
         const val TAG = "Madhyam"
+        private const val OS_SECRET = -1 // Secrets id of the OpenSubtitles password
         const val USER_AGENT = "Mozilla/5.0 (Linux; Android TV) Madhyam/0.6"
     }
 }

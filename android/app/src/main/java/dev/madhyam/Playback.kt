@@ -10,11 +10,13 @@ import androidx.compose.runtime.setValue
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -104,23 +106,65 @@ class Playback(private val context: Context, private val settings: AppSettings) 
     private fun load(item: Item, resumeMs: Long) {
         error = null
         current = item
+        externalSubtitles = emptyList()
         // Per-stream choices start over; the Settings preferences apply again.
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon().clearOverrides().build()
         applyTrackPreferences()
         changeSpeed(1f)
+        prepare(item, resumeMs)
+    }
+
+    private fun prepare(item: Item, positionMs: Long) {
         val http = DefaultHttpDataSource.Factory()
             .setUserAgent(item.userAgent ?: Repository.USER_AGENT)
             .setAllowCrossProtocolRedirects(true)
             .setConnectTimeoutMs(15_000)
             .setReadTimeoutMs(30_000)
         item.referrer?.let { http.setDefaultRequestProperties(mapOf("Referer" to it)) }
+        val media = MediaItem.Builder()
+            .setUri(item.url)
+            .setSubtitleConfigurations(
+                externalSubtitles.map { s ->
+                    MediaItem.SubtitleConfiguration.Builder(android.net.Uri.fromFile(s.file))
+                        .setMimeType(subtitleMime(s.file.name))
+                        .setLanguage(s.language)
+                        .setLabel(s.label)
+                        .build()
+                },
+            )
+            .build()
+        // DefaultDataSource reads the stream over HTTP and downloaded subtitle files from disk.
         val source = DefaultMediaSourceFactory(context)
-            .setDataSourceFactory(http)
-            .createMediaSource(MediaItem.fromUri(item.url))
+            .setDataSourceFactory(DefaultDataSource.Factory(context, http))
+            .createMediaSource(media)
         player.setMediaSource(source)
         player.prepare()
-        if (resumeMs > 0) player.seekTo(resumeMs)
+        if (positionMs > 0) player.seekTo(positionMs)
         player.playWhenReady = true
+    }
+
+    /** Subtitle files downloaded for the playing film or episode (OpenSubtitles). */
+    var externalSubtitles by mutableStateOf<List<ExternalSubtitle>>(emptyList())
+        private set
+
+    /** Attach a downloaded subtitle to the playing stream and switch to it (restarts at the same position). */
+    fun addSubtitle(sub: ExternalSubtitle) {
+        val item = current ?: return
+        externalSubtitles = externalSubtitles.filter { it.file != sub.file } + sub
+        val pos = player.currentPosition
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+            .setPreferredTextLanguage(sub.language.ifBlank { null })
+            .build()
+        prepare(item, pos)
+    }
+
+    private fun subtitleMime(name: String): String = when (name.substringAfterLast('.').lowercase()) {
+        "vtt" -> MimeTypes.TEXT_VTT
+        "ass", "ssa" -> MimeTypes.TEXT_SSA
+        "ttml", "dfxp", "xml" -> MimeTypes.APPLICATION_TTML
+        else -> MimeTypes.APPLICATION_SUBRIP
     }
 
     /** Next/previous channel in [playlist]; returns the new item. */

@@ -5,6 +5,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -49,10 +51,12 @@ import dev.madhyam.Source
 private enum class Page(val label: String) {
     Playlists("Playlists"),
     FreeTv("Free TV"),
+    Home("Home"),
     Live("Live TV"),
     Categories("Categories"),
     Playback("Playback"),
     Guide("Guide"),
+    Online("Online services"),
     About("About"),
 }
 
@@ -114,10 +118,12 @@ fun SettingsScreen(vm: MainViewModel) {
                     when (page) {
                         Page.Playlists -> playlists(vm, returnTo, lastOpened) { openSource = it }
                         Page.FreeTv -> freeTv(vm)
+                        Page.Home -> home(vm)
                         Page.Live -> live(vm)
                         Page.Categories -> item { CategoriesPage(vm) }
                         Page.Playback -> playback(vm)
                         Page.Guide -> guide(vm)
+                        Page.Online -> item { OnlinePage(vm) }
                         Page.About -> about(vm)
                     }
                 }
@@ -277,17 +283,67 @@ private fun EditSource(vm: MainViewModel, s: Source, onDone: () -> Unit) {
     }
 }
 
+/**
+ * A text setting the TV way: a row that shows the value; OK opens an editor with the
+ * keyboard. (A bare text field opens the keyboard as soon as the focus passes over it, and
+ * the remote then types instead of moving.)
+ */
 @Composable
 fun Field(label: String, value: String, type: KeyboardType = KeyboardType.Text, secret: Boolean = false, onChange: (String) -> Unit) {
-    OutlinedTextField(
-        value = value,
-        onValueChange = onChange,
-        label = { androidx.compose.material3.Text(label) },
-        singleLine = true,
-        visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
-        keyboardOptions = KeyboardOptions(keyboardType = type, imeAction = ImeAction.Next),
+    var editing by remember { mutableStateOf(false) }
+    ListItem(
+        selected = false,
+        onClick = { editing = true },
         modifier = Modifier.width(560.dp),
+        headlineContent = { Text(label, fontSize = 13.sp, color = Muted) },
+        supportingContent = {
+            Text(
+                when {
+                    value.isEmpty() -> "Not set · OK to type"
+                    secret -> "•".repeat(value.length.coerceAtMost(12))
+                    else -> value
+                },
+                fontSize = 16.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+        },
     )
+    if (editing) TextEditDialog(label, value, type, secret, onDone = { onChange(it) }) { editing = false }
+}
+
+/** Edit one line of text: the field has the focus (and the keyboard) at once; OK or Save keeps it. */
+@Composable
+private fun TextEditDialog(label: String, initial: String, type: KeyboardType, secret: Boolean, onDone: (String) -> Unit, onDismiss: () -> Unit) {
+    var text by remember { mutableStateOf(initial) }
+    val field = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(100)
+        runCatching { field.requestFocus() }
+    }
+    fun save() {
+        onDone(text)
+        onDismiss()
+    }
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.width(620.dp).background(Panel, androidx.compose.foundation.shape.RoundedCornerShape(16.dp)).padding(22.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text(label, fontSize = 20.sp)
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                singleLine = true,
+                visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
+                keyboardOptions = KeyboardOptions(keyboardType = type, imeAction = ImeAction.Done),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { save() }),
+                modifier = Modifier.fillMaxWidth().focusRequester(field).tvTextField { text.isEmpty() },
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(onClick = { save() }) { Text("Save") }
+                OutlinedButton(onClick = onDismiss) { Text("Cancel") }
+            }
+        }
+    }
 }
 
 private fun LazyListScope.freeTv(vm: MainViewModel) {
@@ -332,7 +388,7 @@ private fun LazyListScope.live(vm: MainViewModel) {
         ChoiceRow(
             "Start in", "The page Madhyam opens with",
             st.startupSection,
-            listOf("Last" to "Last page", "Live" to "Live TV", "Movies" to "Movies", "Series" to "Series", "Favorites" to "Favorites", "Recent" to "Recent"),
+            listOf("Last" to "Last page", "Home" to "Home", "Live" to "Live TV", "Movies" to "Movies", "Series" to "Series", "Favorites" to "Favorites", "Recent" to "Recent"),
         ) { vm.changeSettings { startupSection = it } }
     }
 }
@@ -459,4 +515,55 @@ private fun <T> PickRow(title: String, desc: String, value: T, options: List<Pai
         trailingContent = { Text(options.firstOrNull { it.first == value }?.second ?: value.toString(), color = Accent) },
     )
     if (open) PickerDialog(title, options, value, onPick) { open = false }
+}
+
+/** API keys for IMDb / Rotten Tomatoes ratings (OMDb) and subtitle search (OpenSubtitles). */
+@Composable
+private fun OnlinePage(vm: MainViewModel) {
+    val st = vm.settings
+    var omdb by remember { mutableStateOf(st.omdbApiKey) }
+    var osKey by remember { mutableStateOf(st.osApiKey) }
+    var osUser by remember { mutableStateOf(st.osUsername) }
+    var osPass by remember { mutableStateOf("") }
+    var osLangs by remember { mutableStateOf(st.osLanguages) }
+    val hasPassword = remember(vm.settingsVersion) { vm.openSubtitlesPassword.isNotEmpty() }
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SectionTitle("Online services", "Optional. Free keys; nothing is sent anywhere without one")
+        Text("IMDb and Rotten Tomatoes ratings on film and series pages", fontSize = 15.sp)
+        Text("Get a free key at omdbapi.com/apikey.aspx", color = Muted, fontSize = 12.sp)
+        Field("OMDb API key", omdb) {
+            omdb = it
+            vm.changeSettings { omdbApiKey = it.trim() }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text("Subtitle search (Find subtitles in the player)", fontSize = 15.sp)
+        Text("API key from opensubtitles.com › Consumers. Logging in raises the daily download limit.", color = Muted, fontSize = 12.sp)
+        Field("OpenSubtitles API key", osKey) {
+            osKey = it
+            vm.changeSettings { osApiKey = it.trim() }
+        }
+        Field("Username (optional)", osUser) {
+            osUser = it
+            vm.changeSettings { osUsername = it.trim() }
+        }
+        Field(if (hasPassword) "Password (saved, type to replace)" else "Password (optional)", osPass, KeyboardType.Password, secret = true) {
+            osPass = it
+            vm.openSubtitlesPassword = it
+        }
+        Field("Languages, e.g. en,es,ne", osLangs) {
+            osLangs = it
+            vm.changeSettings { osLanguages = it.replace(" ", "") }
+        }
+    }
+}
+
+private fun LazyListScope.home(vm: MainViewModel) {
+    val st = vm.settings
+    item { SectionTitle("Home", "Choose the rows the Home page shows") }
+    item { SwitchRow("Continue watching banner", "The film or episode you watched last, large at the top", st.dashHero) { vm.changeSettings { dashHero = it } } }
+    item { SwitchRow("Continue watching", "Films and episodes you started", st.dashContinue) { vm.changeSettings { dashContinue = it } } }
+    item { SwitchRow("Favorite channels", "Live channels you starred", st.dashLiveFavorites) { vm.changeSettings { dashLiveFavorites = it } } }
+    item { SwitchRow("Recently watched channels", "The last live channels you watched", st.dashRecentLive) { vm.changeSettings { dashRecentLive = it } } }
+    item { SwitchRow("Favorite movies and series", "Films and series you starred", st.dashFavoriteVod) { vm.changeSettings { dashFavoriteVod = it } } }
+    item { SwitchRow("Recently added", "Newest films and series of the playlist (Xtream sends the dates)", st.dashRecentlyAdded) { vm.changeSettings { dashRecentlyAdded = it } } }
 }

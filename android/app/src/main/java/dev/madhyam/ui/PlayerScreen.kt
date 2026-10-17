@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay10
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -94,6 +95,9 @@ fun PlayerScreen(vm: MainViewModel) {
         }
         add(Control(Icons.Filled.Audiotrack, "Audio") { picker = Picker.Audio })
         add(Control(Icons.Filled.ClosedCaption, "Subtitles") { picker = Picker.Subtitles })
+        if (seekable && !item.isCatchup && vm.subtitleSearchAvailable) {
+            add(Control(Icons.Filled.Search, "Find subtitles") { vm.openSubtitleSearch() })
+        }
         if (seekable) add(Control(Icons.Filled.Speed, "Speed ${speedLabel(pb.speed)}") { picker = Picker.Speed })
         add(Control(Icons.Filled.AspectRatio, pb.pictureSize.label) { picker = Picker.Picture })
         if (item.isLive) {
@@ -146,6 +150,15 @@ fun PlayerScreen(vm: MainViewModel) {
         if (picker == null && controls) closeControls()
     }
 
+    // Back on the options row when the subtitle search closes.
+    val searching = vm.subtitleResults != null
+    LaunchedEffect(searching) {
+        if (!searching && controls) {
+            overlayToken++
+            delay(120)
+            runCatching { focus.requestFocus() }
+        }
+    }
     // Ask for focus once the page we replaced has let go of it (else the first key press is lost),
     // and again when a picker dialog closes.
     LaunchedEffect(picker) {
@@ -290,7 +303,9 @@ fun PlayerScreen(vm: MainViewModel) {
                 if (controls) {
                     Spacer(Modifier.height(14.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        row.forEachIndexed { i, c -> ControlChip(c, i == selected) }
+                        // Films have up to eight options: then only the highlighted one shows its label.
+                        val labels = row.size <= 5
+                        row.forEachIndexed { i, c -> ControlChip(c, i == selected, showLabel = labels) }
                     }
                 }
             }
@@ -319,6 +334,7 @@ fun PlayerScreen(vm: MainViewModel) {
         Picker.Picture -> PickerDialog("Picture size", PictureSize.entries.map { it to it.label }, pb.pictureSize, { pb.pictureSize = it }) { pickerClosed() }
         null -> {}
     }
+    if (searching) SubtitleSearchDialog(vm)
 }
 
 private val SPEEDS = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
@@ -326,7 +342,7 @@ private val SPEEDS = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
 private fun speedLabel(s: Float) = if (s == s.toInt().toFloat()) "${s.toInt()}×" else "${s}×"
 
 @Composable
-private fun ControlChip(c: Control, highlighted: Boolean) {
+private fun ControlChip(c: Control, highlighted: Boolean, showLabel: Boolean = true) {
     Row(
         Modifier
             .background(if (highlighted) Color.White else Color.White.copy(alpha = 0.12f), RoundedCornerShape(50))
@@ -335,7 +351,9 @@ private fun ControlChip(c: Control, highlighted: Boolean) {
     ) {
         val fg = if (highlighted) Color.Black else Color.White
         Icon(c.icon, contentDescription = null, tint = fg, modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(6.dp))
-        Text(c.label, fontSize = 13.sp, color = fg)
+        if (showLabel || highlighted) {
+            Spacer(Modifier.width(6.dp))
+            Text(c.label, fontSize = 13.sp, color = fg, maxLines = 1, softWrap = false)
+        }
     }
 }

@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.OndemandVideo
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay
 import androidx.compose.material.icons.filled.Star
@@ -40,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
@@ -125,6 +127,8 @@ private fun Hero(vm: MainViewModel, item: Item, info: DetailsInfo?, poster: Stri
             Text(item.name, fontSize = 30.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
             FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 (info?.rating ?: item.rating)?.let { Chip("★ $it", Accent) }
+                vm.ratings?.imdb?.let { Chip("IMDb $it", Color(0xFFF5C518)) }
+                vm.ratings?.rotten?.let { Chip("Rotten Tomatoes $it", Color(0xFFFA6240)) }
                 for (c in chips(item, info)) Chip(c)
             }
             val plot = info?.plot ?: item.plot
@@ -188,6 +192,10 @@ private fun Buttons(vm: MainViewModel, item: Item) {
         ) { vm.toggleFavorite(item) }
         if (!item.isSeries) {
             ActionButton(if (item.isWatched) "Watched" else "Mark as watched", Icons.Filled.Check) { vm.toggleWatched(item) }
+        }
+        vm.detailsInfo?.trailer?.let { id ->
+            val context = LocalContext.current
+            ActionButton("Trailer", Icons.Filled.OndemandVideo) { openTrailer(context, id) }
         }
     }
 }
@@ -324,4 +332,19 @@ private fun chips(item: Item, info: DetailsInfo?): List<String> = buildList {
 private fun timeLeft(item: Item): String {
     val s = (item.durationSec - item.positionSec).toLong().coerceAtLeast(0)
     return if (s >= 3600) "${s / 3600}h ${s % 3600 / 60}m left" else "${(s / 60).coerceAtLeast(1)}m left"
+}
+
+/** Play a YouTube trailer in the TV's YouTube app (or the browser when there is none). */
+private fun openTrailer(context: android.content.Context, id: String) {
+    val app = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("vnd.youtube:$id"))
+    val web = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://www.youtube.com/watch?v=$id"))
+    try {
+        context.startActivity(app)
+    } catch (_: android.content.ActivityNotFoundException) {
+        try {
+            context.startActivity(web)
+        } catch (_: android.content.ActivityNotFoundException) {
+            android.widget.Toast.makeText(context, "No app can play YouTube trailers on this device.", android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
 }
