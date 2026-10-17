@@ -76,6 +76,8 @@ public sealed class AppSettings
     /// <summary>Free TV (iptv-org): the playlist it created, and whether Live TV lists it by "category" or "country".</summary>
     public int? FreeTvSourceId { get; set; }
     public string FreeTvGroupBy { get; set; } = "category";
+    /// <summary>Free TV comes preinstalled: added once on the first start, never again after the user removes it.</summary>
+    public bool FreeTvPreinstalled { get; set; }
 
     public static string HiddenKey(int source, string kind) => $"{source}:{kind}";
 

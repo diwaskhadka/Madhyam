@@ -6,6 +6,23 @@ says so. The engine (`crates/madhyam-core`) keeps its own version, given in each
 
 How to cut a release and how to add a platform: [docs/RELEASING.md](docs/RELEASING.md).
 
+## 0.9.1
+
+Free TV comes preinstalled, and a new README.
+
+### Windows
+- **Free TV preinstalled:** on the first start, the Free TV playlist (12,000+ free iptv-org channels) is added automatically. Upgrades with playlists already set up are left as they are, and once you turn Free TV off it stays off.
+
+### Android TV
+- **Free TV preinstalled:** a fresh install opens straight into 12,000+ free channels, by category or by country, with no setup step. Same rules as Windows for upgrades and turning it off.
+
+### Engine
+- madhyam-core 0.2.0, unchanged.
+
+### Project
+- README rewritten as a product page: features, screenshots, remote and keyboard keys, the platforms in the pipeline, and a Buy Me a Coffee link (also the repository's Sponsor button). Engine details moved to [docs/ENGINE.md](docs/ENGINE.md).
+- Release notes now use full links, so links from the changelog work on the release page.
+
 ## 0.9.0
 
 First release with one version for every platform: the Windows installer and the Android TV

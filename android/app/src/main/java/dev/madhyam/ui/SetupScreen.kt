@@ -44,8 +44,8 @@ fun SetupScreen(vm: MainViewModel) {
     ) {
         Text("Add a playlist", fontSize = 32.sp)
         Text(
-            "${Brand.NAME} plays your own Xtream Codes account or M3U playlist. It ships with no channels, " +
-                "but you can add the free public channels collected by iptv-org.",
+            "${Brand.NAME} plays your own Xtream Codes account or M3U playlist. It comes with Free TV: " +
+                "thousands of free public channels collected by iptv-org.",
             color = Muted,
         )
 

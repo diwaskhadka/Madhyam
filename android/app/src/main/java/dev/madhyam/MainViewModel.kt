@@ -138,7 +138,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             favorites = repo.favoriteIds()
             if (sources.isEmpty()) {
                 screen = Screen.Setup
+                if (!settings.freeTvPreinstalled) preinstallFreeTv()
             } else {
+                // Upgrading with playlists already set up: their choice stands, nothing is added.
+                if (!settings.freeTvPreinstalled) changeSettings { freeTvPreinstalled = true }
                 screen = Screen.Main
                 val start = settings.lastSourceId?.let { id -> sources.firstOrNull { it.id == id } } ?: sources.first()
                 section = startSection()
@@ -252,6 +255,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun addFreeTv() = task("Downloading Free TV channels…") {
         val id = repo.addFreeTv()
         changeSettings { freeTvSourceId = id }
+        afterAdd(id)
+    }
+
+    /** First start: Free TV comes preinstalled, so there is something to watch at once. Tried again on the next start if it fails (offline). */
+    private fun preinstallFreeTv() = task("Setting up Free TV channels…") {
+        val id = repo.addFreeTv()
+        changeSettings {
+            freeTvSourceId = id
+            freeTvPreinstalled = true
+        }
         afterAdd(id)
     }
 

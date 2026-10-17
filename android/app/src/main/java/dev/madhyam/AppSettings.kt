@@ -60,6 +60,8 @@ class AppSettings private constructor(private val file: File) {
     // ------------------------------------------------------------ free tv
     var freeTvSourceId: Int? = null
     var freeTvGroupBy = "category"          // category | country
+    // Free TV comes preinstalled: added once on the first start, never again after the user removes it.
+    var freeTvPreinstalled = false
 
     // ------------------------------------------- 0.9.0: Windows 0.4.11 parity
     var theme = "Dark"                      // Dark | Light | System
@@ -109,6 +111,7 @@ class AppSettings private constructor(private val file: File) {
             .put("epgRefreshHours", epgRefreshHours)
             .put("freeTvSourceId", freeTvSourceId ?: JSONObject.NULL)
             .put("freeTvGroupBy", freeTvGroupBy)
+            .put("freeTvPreinstalled", freeTvPreinstalled)
             .put("hiddenCategories", JSONObject().apply {
                 for ((k, v) in hiddenCategories) if (v.isNotEmpty()) put(k, JSONArray(v.sorted()))
             })
@@ -167,6 +170,7 @@ class AppSettings private constructor(private val file: File) {
             epgRefreshHours = o.optInt("epgRefreshHours", epgRefreshHours)
             freeTvSourceId = o.optIntOrNull("freeTvSourceId")
             freeTvGroupBy = o.optString("freeTvGroupBy", freeTvGroupBy)
+            freeTvPreinstalled = o.optBoolean("freeTvPreinstalled", freeTvPreinstalled)
             o.optJSONObject("hiddenCategories")?.let { h ->
                 for (k in h.keys()) {
                     val a = h.optJSONArray(k) ?: continue

@@ -153,6 +153,7 @@ public partial class MainWindow : Window
             await ReloadSources();
             await NormalizeFreeTv();
         }, quiet: true);
+        await PreinstallFreeTv();
         if (_source != null && Arg("--screenshot") == null) _ = CheckSource(_source, announce: false);
         var wanted = Arg("--mode") ?? (S.StartupView == "Last" ? S.LastView : S.StartupView);
         // Search is only a start view when asked for on the command line (CI screenshots).
@@ -397,6 +398,23 @@ public partial class MainWindow : Window
     }
 
     private bool _freeTvBusy;
+
+    /// <summary>
+    /// First start: Free TV comes preinstalled, so there is something to watch at once. An upgrade
+    /// with playlists already set up keeps the user's choice. Tried again on the next start if the
+    /// download fails (offline).
+    /// </summary>
+    private async Task PreinstallFreeTv()
+    {
+        if (S.FreeTvPreinstalled || Arg("--screenshot") != null) return;
+        if (_sources.Count == 0)
+        {
+            await ApplyFreeTv(true);
+            if (FreeTvSources.Count == 0) return;
+        }
+        S.FreeTvPreinstalled = true;
+        AppSettings.Save();
+    }
 
     /// <summary>Settings → Sources → Free TV: add, re-download or remove the one iptv-org playlist.</summary>
     public async Task ApplyFreeTv(bool enabled)

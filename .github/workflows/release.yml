@@ -230,8 +230,10 @@ jobs:
             echo
             echo "**Android TV / Google TV:** download \`Madhyam-$TAG-androidtv.apk\` and install it (sideload, e.g. with *Send Files to TV* or \`adb install\`). Newer versions install over it and keep your playlists."
             echo
-            # The "## X.Y.Z" section of CHANGELOG.md, without its heading.
-            awk -v ver="$v" '$0 ~ "^## " ver "( |$)" {on=1; next} on && /^## / {exit} on {print}' CHANGELOG.md
+            # The "## X.Y.Z" section of CHANGELOG.md, without its heading. Relative links point at
+            # the repository files at this tag, since the release page has no file tree.
+            awk -v ver="$v" '$0 ~ "^## " ver "( |$)" {on=1; next} on && /^## / {exit} on {print}' CHANGELOG.md |
+              sed -E "s#\]\(([^)#:]+)\)#](https://github.com/$GITHUB_REPOSITORY/blob/$TAG/\1)#g"
           } > notes.md
           cat notes.md
       # Public release: what users install (Windows installer, Android TV APK).
