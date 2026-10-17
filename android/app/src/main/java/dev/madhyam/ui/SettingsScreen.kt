@@ -66,6 +66,16 @@ fun SettingsScreen(vm: MainViewModel) {
     var page by remember { mutableStateOf(Page.Playlists) }
     var openSource by remember { mutableStateOf<Source?>(null) }
     var editing by remember { mutableStateOf(false) }
+    // Back from a playlist's page: focus its row again (the page that had the focus is gone).
+    val returnTo = remember { FocusRequester() }
+    var lastOpened by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(openSource) {
+        if (openSource == null && lastOpened != null) {
+            kotlinx.coroutines.delay(60)
+            runCatching { returnTo.requestFocus() }
+        }
+        lastOpened = openSource?.id ?: lastOpened
+    }
     val currentPage = remember { FocusRequester() }
     @Suppress("UNUSED_EXPRESSION") vm.settingsVersion // recompose when settings change
 
@@ -102,7 +112,7 @@ fun SettingsScreen(vm: MainViewModel) {
                 page == Page.Playlists && src != null -> SourceDetails(vm, src, onEdit = { editing = true }, onRemoved = { openSource = null })
                 else -> LazyColumn(Modifier.focusRestorer(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     when (page) {
-                        Page.Playlists -> playlists(vm) { openSource = it }
+                        Page.Playlists -> playlists(vm, returnTo, lastOpened) { openSource = it }
                         Page.FreeTv -> freeTv(vm)
                         Page.Live -> live(vm)
                         Page.Categories -> item { CategoriesPage(vm) }
@@ -143,10 +153,11 @@ private fun <T> ChoiceRow(title: String, desc: String, value: T, options: List<P
 }
 
 @Composable
-private fun ActionRow(title: String, desc: String? = null, value: String? = null, onClick: () -> Unit) {
+private fun ActionRow(title: String, desc: String? = null, value: String? = null, modifier: Modifier = Modifier, onClick: () -> Unit) {
     ListItem(
         selected = false,
         onClick = onClick,
+        modifier = modifier,
         headlineContent = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         supportingContent = desc?.let { { Text(it, color = Muted, fontSize = 12.sp, maxLines = 2) } },
         trailingContent = value?.let { { Text(it, color = Muted, fontSize = 13.sp) } },
@@ -161,10 +172,13 @@ private fun Source.describe(): String = when {
 
 // ------------------------------------------------------------------ pages
 
-private fun LazyListScope.playlists(vm: MainViewModel, open: (Source) -> Unit) {
+private fun LazyListScope.playlists(vm: MainViewModel, returnTo: FocusRequester, lastOpened: Int?, open: (Source) -> Unit) {
     item { SectionTitle("Playlists", "OK on a playlist to refresh, edit or remove it") }
     items(vm.sources, key = { it.id }) { s ->
-        ActionRow(s.name, s.describe(), if (s.updatedAt > 0) "Updated ${date(s.updatedAt)}" else null) { open(s) }
+        ActionRow(
+            s.name, s.describe(), if (s.updatedAt > 0) "Updated ${date(s.updatedAt)}" else null,
+            modifier = if (s.id == lastOpened) Modifier.focusRequester(returnTo) else Modifier,
+        ) { open(s) }
     }
     item { ActionRow("Add playlist", "Xtream Codes login or M3U playlist URL") { vm.showSetup() } }
 }
@@ -174,6 +188,12 @@ private fun SourceDetails(vm: MainViewModel, s: Source, onEdit: () -> Unit, onRe
     var account by remember(s.id) { mutableStateOf<Account?>(null) }
     var accountError by remember(s.id) { mutableStateOf<String?>(null) }
     var confirmRemove by remember(s.id) { mutableStateOf(false) }
+    // The row that opened this page is gone: put the focus on the first action, not back on the rail.
+    val first = remember { FocusRequester() }
+    LaunchedEffect(s.id) {
+        kotlinx.coroutines.delay(60)
+        runCatching { first.requestFocus() }
+    }
     if (s.isXtream) {
         LaunchedEffect(s.id) {
             try {
@@ -205,7 +225,7 @@ private fun SourceDetails(vm: MainViewModel, s: Source, onEdit: () -> Unit, onRe
                 )
             }
         }
-        item { ActionRow("Refresh playlist", "Download channels, films and series again") { vm.refreshSource(s) } }
+        item { ActionRow("Refresh playlist", "Download channels, films and series again", modifier = Modifier.focusRequester(first)) { vm.refreshSource(s) } }
         item { ActionRow("Update guide", "Download the programme guide (EPG) again") { vm.refreshGuide(s) } }
         if (!s.isFreeTv) item { ActionRow("Edit", "Name, address and login") { onEdit() } }
         item {
@@ -231,6 +251,12 @@ private fun EditSource(vm: MainViewModel, s: Source, onDone: () -> Unit) {
     var server by remember(s.id) { mutableStateOf(s.location) }
     var user by remember(s.id) { mutableStateOf(s.username) }
     var pass by remember(s.id) { mutableStateOf("") }
+    // Focus the Save button rather than a field (a focused field would open the keyboard at once).
+    val save = remember { FocusRequester() }
+    LaunchedEffect(s.id) {
+        kotlinx.coroutines.delay(60)
+        runCatching { save.requestFocus() }
+    }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SectionTitle("Edit ${s.name}", "Leave the password empty to keep the current one")
         Field("Name", name) { name = it }
@@ -242,7 +268,7 @@ private fun EditSource(vm: MainViewModel, s: Source, onDone: () -> Unit) {
             Field("Playlist URL", location, KeyboardType.Uri) { location = it }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(onClick = {
+            Button(modifier = Modifier.focusRequester(save), onClick = {
                 if (s.isXtream) vm.updateSource(s, name, null, server, user, pass) else vm.updateSource(s, name, location, null, null, null)
                 onDone()
             }) { Text("Save and refresh") }
@@ -352,10 +378,36 @@ private fun LazyListScope.playback(vm: MainViewModel) {
     item {
         SwitchRow("Subtitles", "Show subtitles when the stream has them", st.showSubtitles) {
             vm.changeSettings { showSubtitles = it }
-            vm.playback.applySubtitlePreference()
+            vm.playback.applyTrackPreferences()
         }
     }
+    item {
+        PickRow("Preferred audio language", "Used when a stream has several audio tracks", st.audioLanguage, LANGUAGES) {
+            vm.changeSettings { audioLanguage = it }
+            vm.playback.applyTrackPreferences()
+        }
+    }
+    item {
+        PickRow("Preferred subtitle language", "Used when a stream has several subtitle tracks", st.subtitleLanguage, LANGUAGES) {
+            vm.changeSettings { subtitleLanguage = it }
+            vm.playback.applyTrackPreferences()
+        }
+    }
+    item {
+        Text(
+            "During playback press Menu (or OK on live TV, Down on films) for audio, subtitles, speed and picture size.",
+            color = Muted, fontSize = 12.sp, modifier = Modifier.padding(12.dp),
+        )
+    }
 }
+
+/** Language choices for the preferred-track settings: ISO 639-1 code → name. */
+private val LANGUAGES = listOf(
+    "" to "Stream default", "en" to "English", "es" to "Spanish", "fr" to "French", "de" to "German",
+    "it" to "Italian", "pt" to "Portuguese", "nl" to "Dutch", "pl" to "Polish", "tr" to "Turkish",
+    "ru" to "Russian", "uk" to "Ukrainian", "ar" to "Arabic", "hi" to "Hindi", "ne" to "Nepali",
+    "bn" to "Bengali", "ur" to "Urdu", "zh" to "Chinese", "ja" to "Japanese", "ko" to "Korean",
+)
 
 private fun LazyListScope.guide(vm: MainViewModel) {
     val st = vm.settings
@@ -393,4 +445,18 @@ private fun AboutRows(vm: MainViewModel) {
             color = Muted, fontSize = 12.sp, modifier = Modifier.padding(12.dp),
         )
     }
+}
+
+/** OK opens a list of [options] to pick from (for long lists such as languages). */
+@Composable
+private fun <T> PickRow(title: String, desc: String, value: T, options: List<Pair<T, String>>, onPick: (T) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    ListItem(
+        selected = false,
+        onClick = { open = true },
+        headlineContent = { Text(title) },
+        supportingContent = { Text(desc, color = Muted, fontSize = 12.sp) },
+        trailingContent = { Text(options.firstOrNull { it.first == value }?.second ?: value.toString(), color = Accent) },
+    )
+    if (open) PickerDialog(title, options, value, onPick) { open = false }
 }

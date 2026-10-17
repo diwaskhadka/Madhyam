@@ -57,8 +57,12 @@ data class Item(
     /** Saved resume position and length, in seconds (0 = never played). */
     val positionSec: Double = 0.0,
     val durationSec: Double = 0.0,
+    /** Catch-up recordings: start of the programme (Unix seconds); 0 for everything else. */
+    val catchupStart: Long = 0,
 ) {
     val isLive get() = kind == "live"
+    /** A past programme of a live channel, played from the provider's archive (seekable, no zapping). */
+    val isCatchup get() = kind == CATCHUP
     val isSeries get() = kind == "series"
     val isEpisode get() = kind == "episode"
 
@@ -75,6 +79,8 @@ data class Item(
     fun displayName(stripPrefix: Boolean): String = if (stripPrefix && isLive) stripPrefix(name) else name
 
     companion object {
+        const val CATCHUP = "catchup"
+
         private val PREFIX = Regex("""^\s*(\|[^|]{1,12}\||\[[^]]{1,12}]|[A-Za-z0-9]{1,6}\s*[:|\-]\s+)\s*""")
 
         fun stripPrefix(name: String): String = PREFIX.replace(name, "").ifBlank { name }
@@ -624,6 +630,64 @@ class Repository(context: Context) {
         val a = r.optJSONArray(id) ?: JSONArray()
         (0 until a.length()).mapNotNull { parseProgramme(a.optJSONObject(it)) }.filter { it.stop > now }
     }
+
+    /** Programmes of many channels between [from] and [to] (Unix seconds), for the TV guide grid. */
+    suspend fun guide(ids: List<String>, from: Long, to: Long): Map<String, List<Programme>> = io {
+        if (ids.isEmpty()) return@io emptyMap()
+        val out = HashMap<String, List<Programme>>(ids.size)
+        for (chunk in ids.chunked(200)) {
+            val r = core.obj("guide", args("ids" to JSONArray(chunk), "from" to from, "to" to to))
+            for (id in chunk) {
+                val a = r.optJSONArray(id) ?: continue
+                out[id] = (0 until a.length()).mapNotNull { parseProgramme(a.optJSONObject(it)) }
+            }
+        }
+        out
+    }
+
+    /**
+     * A past programme of an Xtream channel with an archive, as a playable item, or null when
+     * the provider keeps no recording of it.
+     */
+    suspend fun catchup(channel: Item, p: Programme): Item? = io {
+        if (!canCatchup(channel, p)) return@io null
+        val minutes = ((p.stop - p.start) / 60).coerceIn(1, 24 * 60)
+        val offset = serverOffset(channel, p.start)
+        val url = try {
+            core.call(
+                "timeshift_url",
+                args("id" to channel.id, "start" to p.start, "duration_min" to minutes, "server_offset" to offset),
+            ) as? String
+        } catch (e: IptvException) {
+            null // M3U sources have no catch-up URLs
+        } ?: return@io null
+        channel.copy(kind = Item.CATCHUP, url = url, name = "${channel.name} · ${p.title}", catchupStart = p.start)
+    }
+
+    /** Panel time zone per source (catch-up URLs carry the panel's local time, not UTC). */
+    private val serverZones = HashMap<Int, java.util.TimeZone>()
+
+    /** Seconds to add to a UTC time to get the panel's local time at [at]; 0 when unknown. */
+    private fun serverOffset(channel: Item, at: Long): Long {
+        val source = sourceOf(channel) ?: return 0
+        val zone = serverZones.getOrPut(source) {
+            try {
+                val body = get(core.call("account_url", args("source" to source)) as String)
+                val tz = JSONObject(String(body)).optJSONObject("server_info")?.optString("timezone").orEmpty()
+                if (tz.isBlank()) java.util.TimeZone.getTimeZone("UTC") else java.util.TimeZone.getTimeZone(tz)
+            } catch (e: Exception) {
+                Log.w(TAG, "panel time zone unknown, catch-up uses UTC", e)
+                java.util.TimeZone.getTimeZone("UTC")
+            }
+        }
+        return zone.getOffset(at * 1000) / 1000L
+    }
+
+    private fun sourceOf(item: Item): Int? = core.obj("item", args("id" to item.id)).optInt("source", -1).takeIf { it >= 0 }
+
+    /** Whether [p] (already over) is inside [channel]'s archive window. */
+    fun canCatchup(channel: Item, p: Programme, now: Long = System.currentTimeMillis() / 1000): Boolean =
+        channel.isLive && channel.archiveDays > 0 && p.stop <= now && p.start >= now - channel.archiveDays * 86_400L
 
     // ------------------------------------------------------- playback state
 

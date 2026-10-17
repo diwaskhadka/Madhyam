@@ -2,11 +2,14 @@ package dev.madhyam
 
 import android.app.Application
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import dev.madhyam.ui.dayLabel
+import dev.madhyam.ui.hhmm
 import dev.madhyam.core.IptvException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -310,6 +313,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun selectSection(s: Section) {
         section = s
+        if (s != Section.Live) guideOpen = false
         if (s != Section.Settings && s != Section.Search) changeSettings { lastSection = s.name }
         reloadSection()
     }
@@ -431,6 +435,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val page = repo.query(src.id, kind, group, hidden, sort, items.size, PAGE, groupField, minRating)
                 items = items + page.items
                 fetchNowNext(page.items)
+                if (guideOpen) guideData = guideData + repo.guide(page.items.filter { it.isLive }.map { it.id }, guideFrom, guideTo)
             } finally {
                 loadingMore = false
             }
@@ -645,7 +650,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val dur = playback.durationMs
         if (cur != null && !cur.isLive) playback.stop()
         viewModelScope.launch {
-            if (cur != null && !cur.isLive && dur > 0) repo.setProgress(cur.id, pos, dur)
+            if (cur != null && !cur.isLive && !cur.isCatchup && dur > 0) repo.setProgress(cur.id, pos, dur)
             repo.persist()
             reloadDetailsProgress()
             if (isVod) loadContinue()
@@ -653,7 +658,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun saveProgress(item: Item? = playback.current) {
-        if (item == null || item.isLive) return
+        if (item == null || item.isLive || item.isCatchup) return
         val pos = playback.positionMs
         val dur = playback.durationMs
         if (dur <= 0) return
@@ -667,11 +672,84 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { repo.persist() }
     }
 
+    // ------------------------------------------------------------ TV guide
+
+    /** The channels × time grid is showing in Live TV. */
+    var guideOpen by mutableStateOf(false)
+        private set
+    /** Start of the visible window (Unix seconds, on a half hour). */
+    var guideFrom by mutableLongStateOf(0L)
+        private set
+    val guideTo: Long get() = guideFrom + GUIDE_SPAN_MIN * 60L
+    var guideData by mutableStateOf<Map<String, List<Programme>>>(emptyMap())
+        private set
+    private var guideJob: Job? = null
+
+    fun openGuide() {
+        if (section != Section.Live) selectSection(Section.Live)
+        guideOpen = true
+        guideNow()
+    }
+
+    fun closeGuide() {
+        guideOpen = false
+        guideJob?.cancel()
+    }
+
+    /** Back to "now": the window starts half an hour before the current half hour. */
+    fun guideNow() {
+        val now = System.currentTimeMillis() / 1000
+        moveGuideTo(now - now % 1800 - 1800)
+    }
+
+    /** Move the window by [minutes]; never before the archive (or a day back) nor past two days ahead. */
+    fun shiftGuide(minutes: Int) {
+        val now = System.currentTimeMillis() / 1000
+        val archive = items.maxOfOrNull { it.archiveDays }?.coerceAtLeast(1) ?: 1
+        val earliest = now - now % 1800 - archive * 86_400L
+        val latest = now + 2 * 86_400L
+        moveGuideTo((guideFrom + minutes * 60L).coerceIn(earliest, latest))
+    }
+
+    private fun moveGuideTo(from: Long) {
+        guideFrom = from
+        guideJob?.cancel()
+        guideJob = viewModelScope.launch {
+            guideData = repo.guide(items.filter { it.isLive }.map { it.id }, guideFrom, guideTo)
+        }
+    }
+
+    /** Whether a past programme can be played from the provider's archive (Xtream catch-up). */
+    fun canCatchup(channel: Item, p: Programme): Boolean = source?.isXtream == true && repo.canCatchup(channel, p)
+
+    /** OK on a guide cell: live now plays the channel, a recorded past programme plays as catch-up. */
+    fun openFromGuide(channel: Item, p: Programme?) {
+        val now = System.currentTimeMillis() / 1000
+        when {
+            p == null || (p.start <= now && now < p.stop) -> viewModelScope.launch {
+                focused = channel
+                playback.play(channel, items.filter { it.isLive })
+                repo.recordPlay(channel.id)
+                screen = Screen.Player
+            }
+            p.stop <= now && canCatchup(channel, p) -> playCatchup(channel, p)
+            p.stop <= now -> message = "${channel.name} keeps no recording of “${p.title}”."
+            else -> message = "“${p.title}” starts ${dayLabel(p.start).lowercase()} at ${hhmm(p.start)}."
+        }
+    }
+
+    fun playCatchup(channel: Item, p: Programme) = task("Opening the recording…") {
+        val rec = repo.catchup(channel, p) ?: throw IllegalStateException("No recording of “${p.title}” is available.")
+        playback.play(rec, listOf(rec))
+        screen = Screen.Player
+    }
+
     fun enterFullScreen() {
         if (playback.current != null) screen = Screen.Player
     }
 
     private companion object {
         const val PAGE = 200
+        const val GUIDE_SPAN_MIN = 150
     }
 }

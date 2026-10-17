@@ -35,6 +35,9 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -71,7 +74,21 @@ fun LiveScreen(vm: MainViewModel) {
             now = System.currentTimeMillis() / 1000
         }
     }
-    Row(Modifier.fillMaxSize()) {
+    if (vm.guideOpen) {
+        GuideScreen(vm)
+        return
+    }
+    Row(
+        Modifier.fillMaxSize().onPreviewKeyEvent { ev ->
+            // Menu opens the TV guide from anywhere in Live TV.
+            if (ev.type == KeyEventType.KeyDown && ev.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_MENU) {
+                vm.openGuide()
+                true
+            } else {
+                false
+            }
+        },
+    ) {
         CategoryPanel(vm, Modifier.width(210.dp))
         ChannelList(vm, now, Modifier.weight(1f))
         InfoPane(vm, now, Modifier.width(380.dp))
@@ -128,7 +145,10 @@ private fun ChannelList(vm: MainViewModel, now: Long, modifier: Modifier) {
     val strip = vm.settings.stripPrefixes
     Column(modifier.fillMaxHeight().padding(horizontal = 12.dp, vertical = 16.dp)) {
         val title = vm.group ?: vm.categories.firstOrNull()?.name ?: "Live TV"
-        SectionTitle(title, "${vm.total} channels · hold OK for favorite")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) { SectionTitle(title, "${vm.total} channels · hold OK for favorite") }
+            ToggleChip("TV guide", false) { vm.openGuide() }
+        }
         if (vm.items.isEmpty()) {
             EmptyNote(if (vm.busy != null) "" else "No channels here.")
             return@Column
@@ -262,18 +282,19 @@ private fun Preview(vm: MainViewModel) {
 /** A Media3 PlayerView showing [player]; several can exist, the newest one gets the picture. */
 @OptIn(UnstableApi::class)
 @Composable
-fun VideoSurface(player: Player, modifier: Modifier = Modifier) {
+fun VideoSurface(player: Player, modifier: Modifier = Modifier, resizeMode: Int = AspectRatioFrameLayout.RESIZE_MODE_FIT) {
     AndroidView(
         factory = { ctx ->
             PlayerView(ctx).apply {
                 useController = false // our own TV-style overlay
                 keepScreenOn = true
-                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                this.resizeMode = resizeMode
                 isFocusable = false
                 setShutterBackgroundColor(android.graphics.Color.BLACK)
                 this.player = player
             }
         },
+        update = { it.resizeMode = resizeMode },
         onRelease = { it.player = null },
         modifier = modifier,
     )

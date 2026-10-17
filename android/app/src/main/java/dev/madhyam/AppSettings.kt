@@ -25,6 +25,14 @@ class AppSettings private constructor(private val file: File) {
     // ---------------------------------------------------------- playback
     var resumePlayback = true
     var showSubtitles = true
+    var audioLanguage = ""                   // ISO 639 code; "" = the stream's default
+    var subtitleLanguage = ""
+
+    // ------------------------------------------------- online services
+    var omdbApiKey = ""                      // omdbapi.com: IMDb and Rotten Tomatoes ratings
+    var osApiKey = ""                        // opensubtitles.com API key
+    var osUsername = ""                      // optional; the password is kept in Secrets
+    var osLanguages = "en"                   // comma-separated ISO 639-1 codes
 
     // ---------------------------------------------------- movies, series
     var vodSort = "provider"                 // a catalog Sort name (provider, added_desc, name_asc, rating_desc…)
@@ -55,6 +63,12 @@ class AppSettings private constructor(private val file: File) {
             .put("previewOnSelect", previewOnSelect)
             .put("resumePlayback", resumePlayback)
             .put("showSubtitles", showSubtitles)
+            .put("audioLanguage", audioLanguage)
+            .put("subtitleLanguage", subtitleLanguage)
+            .put("omdbApiKey", omdbApiKey)
+            .put("osApiKey", osApiKey)
+            .put("osUsername", osUsername)
+            .put("osLanguages", osLanguages)
             .put("vodSort", vodSort)
             .put("vodMinRating", vodMinRating)
             .put("epgRefreshHours", epgRefreshHours)
@@ -88,6 +102,12 @@ class AppSettings private constructor(private val file: File) {
             previewOnSelect = o.optBoolean("previewOnSelect", previewOnSelect)
             resumePlayback = o.optBoolean("resumePlayback", resumePlayback)
             showSubtitles = o.optBoolean("showSubtitles", showSubtitles)
+            audioLanguage = o.optString("audioLanguage", audioLanguage)
+            subtitleLanguage = o.optString("subtitleLanguage", subtitleLanguage)
+            omdbApiKey = o.optString("omdbApiKey", omdbApiKey)
+            osApiKey = o.optString("osApiKey", osApiKey)
+            osUsername = o.optString("osUsername", osUsername)
+            osLanguages = o.optString("osLanguages", osLanguages)
             vodSort = o.optString("vodSort", vodSort)
             vodMinRating = o.optInt("vodMinRating", vodMinRating)
             epgRefreshHours = o.optInt("epgRefreshHours", epgRefreshHours)

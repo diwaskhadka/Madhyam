@@ -39,6 +39,9 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
@@ -177,9 +180,17 @@ private fun RailEntry(
 /** Choose the playlist the pages show, or add another one. */
 @Composable
 private fun PlaylistDialog(vm: MainViewModel, onDismiss: () -> Unit) {
+    // Start on the current playlist, and ignore the key-up of the OK that opened the dialog.
+    val current = remember { FocusRequester() }
+    var armed by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(80)
+        runCatching { current.requestFocus() }
+    }
     Dialog(onDismissRequest = onDismiss) {
         Column(
-            Modifier.width(460.dp).background(Panel, RoundedCornerShape(16.dp)).padding(20.dp),
+            Modifier.width(460.dp).background(Panel, RoundedCornerShape(16.dp)).padding(20.dp)
+                .onPreviewKeyEvent { if (it.type == KeyEventType.KeyDown) armed = true; false },
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text("Playlists", fontSize = 22.sp, modifier = Modifier.padding(bottom = 8.dp))
@@ -188,9 +199,11 @@ private fun PlaylistDialog(vm: MainViewModel, onDismiss: () -> Unit) {
                     ListItem(
                         selected = s.id == vm.source?.id,
                         onClick = {
+                            if (!armed) return@ListItem
                             vm.selectSource(s)
                             onDismiss()
                         },
+                        modifier = if (s.id == vm.source?.id) Modifier.focusRequester(current) else Modifier,
                         headlineContent = { Text(s.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         supportingContent = {
                             Text(
