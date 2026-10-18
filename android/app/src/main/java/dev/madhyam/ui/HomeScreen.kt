@@ -116,13 +116,18 @@ private fun Hero(vm: MainViewModel, item: Item?) {
             }
             Column(Modifier.padding(start = 28.dp)) {
                 Text(if (item != null) "CONTINUE WATCHING" else "WELCOME BACK", color = Accent, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                // Episodes: the series on a small line, then "S01E01 · title" (not the provider's
+                // "Series (2006) - S01E01 - title" twice over).
+                item?.takeIf { it.isEpisode }?.episodeSeries?.let {
+                    Text(it, color = Muted, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+                }
                 Text(
                     when {
                         item == null -> vm.source?.name ?: Brand.NAME
-                        item.isEpisode -> "${item.seasonEpisode}  ${item.name}"
+                        item.isEpisode -> item.episodeLabel
                         else -> item.name
                     },
-                    fontSize = 28.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    fontSize = 28.sp, lineHeight = 34.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis,
                 )
                 if (item != null) {
                     Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {

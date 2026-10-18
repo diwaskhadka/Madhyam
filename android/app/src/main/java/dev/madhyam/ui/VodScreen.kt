@@ -59,7 +59,7 @@ import androidx.tv.material3.ListItem
 import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
-import coil.compose.SubcomposeAsyncImage
+import coil.compose.AsyncImage
 import dev.madhyam.Item
 import dev.madhyam.MainViewModel
 import dev.madhyam.Section
@@ -218,9 +218,14 @@ fun PosterCard(
             ),
         ) {
             Box(Modifier.fillMaxSize()) {
-                Poster(item.logo, item.name, Modifier.fillMaxSize())
-                item.rating?.let {
+                Poster(item.logo, item.name, Modifier.fillMaxSize(), small = true)
+                item.ratingLabel?.let {
                     Badge("★ $it", Modifier.align(Alignment.TopEnd).padding(6.dp))
+                }
+                // Providers list a film once per version ("4K-TOP - …", "TOP - …", "EN - …"):
+                // without titles under the covers, the tag tells the look-alike posters apart.
+                if (!item.isEpisode && !vm.settings.titlesUnderCovers) item.nameTag?.let {
+                    Badge(it, Modifier.align(Alignment.BottomStart).padding(start = 6.dp, bottom = 12.dp))
                 }
                 if (vm.isFavorite(item)) {
                     Icon(Icons.Filled.Star, null, tint = Color(0xFFFFC94D), modifier = Modifier.align(Alignment.TopStart).padding(6.dp).size(18.dp))
@@ -236,8 +241,9 @@ fun PosterCard(
         if (!vm.settings.titlesUnderCovers && !focused) return@Column
         val sub = if (item.isEpisode) item.seasonEpisode else item.year
         Text(
-            item.name,
+            if (item.isEpisode) item.episodeTitle.ifBlank { item.name } else item.name,
             fontSize = 13.sp,
+            lineHeight = 16.sp, // the theme's line height leaves a gap between two lines this small
             maxLines = if (focused) 2 else 1,
             overflow = TextOverflow.Ellipsis,
             color = if (focused) TextColor else TextColor.copy(alpha = 0.8f),
@@ -247,26 +253,35 @@ fun PosterCard(
     }
 }
 
-/** Remote image filling [modifier]; the title on a plain card when there is none (or it fails). */
+/**
+ * Remote image filling [modifier]; the title on a plain card when there is none (or it fails).
+ * [small]: a grid poster, for which a smaller TMDB picture is enough.
+ *
+ * A plain AsyncImage, not SubcomposeAsyncImage: subcomposing every poster made scrolling a big
+ * grid stutter on TVs.
+ */
 @Composable
-fun Poster(url: String?, title: String, modifier: Modifier, crop: Boolean = true) {
-    val fallback: @Composable () -> Unit = {
+fun Poster(url: String?, title: String, modifier: Modifier, crop: Boolean = true, small: Boolean = false) {
+    var failed by remember(url) { mutableStateOf(false) }
+    if (url.isNullOrBlank() || failed) {
         Box(modifier.background(Accent.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
             Text(title, fontSize = 14.sp, textAlign = TextAlign.Center, maxLines = 4, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(10.dp))
         }
-    }
-    if (url.isNullOrBlank()) {
-        fallback()
     } else {
-        SubcomposeAsyncImage(
-            model = url,
+        AsyncImage(
+            model = if (small) smallPoster(url) else url,
             contentDescription = null,
             contentScale = if (crop) ContentScale.Crop else ContentScale.Fit,
             modifier = modifier,
-            error = { fallback() },
+            onError = { failed = true },
         )
     }
 }
+
+private val TmdbSize = Regex("""(image\.tmdb\.org/t/p/)[^/]+/""")
+
+/** TMDB posters come as 600×900 or larger; a grid cover is under 350 pixels wide. */
+private fun smallPoster(url: String): String = if ("image.tmdb.org" in url) TmdbSize.replaceFirst(url, "$1w342/") else url
 
 @Composable
 fun Badge(text: String, modifier: Modifier = Modifier) {

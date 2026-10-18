@@ -196,7 +196,7 @@ private fun SwitchRow(title: String, desc: String, on: Boolean, onToggle: (Boole
         selected = false,
         onClick = { onToggle(!on) },
         headlineContent = { Text(title) },
-        supportingContent = { Text(desc, color = Muted, fontSize = 12.sp) },
+        supportingContent = { Text(desc, color = RowMuted, fontSize = 12.sp) },
         trailingContent = { Switch(checked = on, onCheckedChange = null) },
     )
 }
@@ -209,8 +209,8 @@ private fun <T> ChoiceRow(title: String, desc: String, value: T, options: List<P
         selected = false,
         onClick = { onPick(options[(i + 1) % options.size].first) },
         headlineContent = { Text(title) },
-        supportingContent = { Text(desc, color = Muted, fontSize = 12.sp) },
-        trailingContent = { Text(options[i].second, color = Accent) },
+        supportingContent = { Text(desc, color = RowMuted, fontSize = 12.sp) },
+        trailingContent = { Text(options[i].second, color = RowAccent) },
     )
 }
 
@@ -221,8 +221,8 @@ private fun ActionRow(title: String, desc: String? = null, value: String? = null
         onClick = onClick,
         modifier = modifier,
         headlineContent = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-        supportingContent = desc?.let { { Text(it, color = Muted, fontSize = 12.sp, maxLines = 2) } },
-        trailingContent = value?.let { { Text(it, color = Muted, fontSize = 13.sp) } },
+        supportingContent = desc?.let { { Text(it, color = RowMuted, fontSize = 12.sp, maxLines = 2) } },
+        trailingContent = value?.let { { Text(it, color = RowMuted, fontSize = 13.sp) } },
     )
 }
 
@@ -363,7 +363,7 @@ fun Field(label: String, value: String, type: KeyboardType = KeyboardType.Text, 
         selected = false,
         onClick = { editing = true },
         modifier = Modifier.width(560.dp),
-        headlineContent = { Text(label, fontSize = 13.sp, color = Muted) },
+        headlineContent = { Text(label, fontSize = 13.sp, color = RowMuted) },
         supportingContent = {
             Text(
                 when {
@@ -642,8 +642,8 @@ private fun <T> PickRow(title: String, desc: String, value: T, options: List<Pai
         selected = false,
         onClick = { open = true },
         headlineContent = { Text(title) },
-        supportingContent = { Text(desc, color = Muted, fontSize = 12.sp) },
-        trailingContent = { Text(options.firstOrNull { it.first == value }?.second ?: value.toString(), color = Accent) },
+        supportingContent = { Text(desc, color = RowMuted, fontSize = 12.sp) },
+        trailingContent = { Text(options.firstOrNull { it.first == value }?.second ?: value.toString(), color = RowAccent) },
     )
     if (open) PickerDialog(title, options, value, onPick) { open = false }
 }

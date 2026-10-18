@@ -65,7 +65,8 @@ private class Control(val icon: ImageVector, val label: String, val action: () -
 /**
  * Full-screen playback with remote-control keys:
  *  - Live:  Up/Down or Channel +/- zap through the channel list, OK opens the options row.
- *  - Video: OK or Play/Pause toggles, Left/Right seek 10 s, FF/Rewind seek 30 s, Down opens the options row.
+ *  - Video: OK or Down opens the options row (Play/Pause first), Play/Pause toggles, Left/Right seek 10 s,
+ *    FF/Rewind seek 30 s.
  *  - Menu (any): options row with audio, subtitles, speed and picture size (and the TV guide on live).
  *  - Back closes the options row, then returns to the page (live keeps playing in the preview).
  *
@@ -91,7 +92,7 @@ fun PlayerScreen(vm: MainViewModel) {
 
     val row: List<Control> = buildList {
         if (seekable) {
-            add(Control(if (pb.isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, if (pb.isPlaying) "Pause" else "Play") { pb.togglePause() })
+            add(Control(if (pb.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause, if (pb.paused) "Play" else "Pause") { pb.togglePause() })
             add(Control(Icons.Filled.Replay10, "−10 s") { pb.seekBy(-10_000) })
             add(Control(Icons.Filled.Forward10, "+10 s") { pb.seekBy(10_000) })
         }
@@ -141,11 +142,12 @@ fun PlayerScreen(vm: MainViewModel) {
         }
     }
 
-    // Overlay auto-hide (longer while the options row is open), with a live clock while visible.
-    LaunchedEffect(overlayToken, controls, picker) {
+    // Overlay auto-hide (longer while the options row is open; never while paused), with a live
+    // clock while visible.
+    LaunchedEffect(overlayToken, controls, picker, pb.paused) {
         overlayVisible = true
         val until = System.currentTimeMillis() + if (controls || picker != null) 10_000 else 4_000
-        while (isActive && System.currentTimeMillis() < until) {
+        while (isActive && (pb.paused || System.currentTimeMillis() < until)) {
             position = pb.positionMs
             duration = pb.durationMs
             delay(250)
@@ -188,8 +190,16 @@ fun PlayerScreen(vm: MainViewModel) {
                         if (controls) closeControls() else openControls()
                         return@onPreviewKeyEvent true
                     }
-                    AndroidKeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, AndroidKeyEvent.KEYCODE_MEDIA_PLAY, AndroidKeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                    AndroidKeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> {
                         pb.togglePause()
+                        return@onPreviewKeyEvent true
+                    }
+                    AndroidKeyEvent.KEYCODE_MEDIA_PLAY -> {
+                        pb.play()
+                        return@onPreviewKeyEvent true
+                    }
+                    AndroidKeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                        pb.pause()
                         return@onPreviewKeyEvent true
                     }
                     AndroidKeyEvent.KEYCODE_MEDIA_REWIND -> {
@@ -222,11 +232,9 @@ fun PlayerScreen(vm: MainViewModel) {
                 }
                 when (code) {
                     AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER -> {
-                        when {
-                            pb.error != null -> pb.retry()
-                            item.isLive -> openControls()
-                            else -> pb.togglePause()
-                        }
+                        // The first OK only shows the controls (as on most TV players); OK again
+                        // on the highlighted Play/Pause pauses.
+                        if (pb.error != null) pb.retry() else openControls()
                         true
                     }
                     AndroidKeyEvent.KEYCODE_DPAD_UP -> {
@@ -273,7 +281,7 @@ fun PlayerScreen(vm: MainViewModel) {
                     }
                     Column {
                         Text(
-                            if (item.isEpisode) "${item.seasonEpisode}  ${item.name}" else item.displayName(strip),
+                            if (item.isEpisode) item.episodeLabel else item.displayName(strip),
                             fontSize = 26.sp, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                         when {
@@ -293,23 +301,33 @@ fun PlayerScreen(vm: MainViewModel) {
                     nn?.next?.let { Text("Next  ${hhmm(it.start)}   ${it.title}", color = Muted, fontSize = 14.sp, maxLines = 1) }
                 } else if (duration > 0) {
                     ProgressBar(position.toFloat() / duration, Modifier.padding(top = 8.dp))
-                    Row {
-                        Text(
-                            "${if (pb.isPlaying) "▶" else "❚❚"}  ${fmt(position)} / ${fmt(duration)}",
-                            color = Color.White,
-                            fontSize = 14.sp,
-                            modifier = Modifier.width(260.dp),
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // The state, not the action: "Paused" with its icon while paused.
+                        Row(Modifier.width(260.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                if (pb.paused) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp),
+                            )
+                            Text(
+                                "  ${if (pb.paused) "Paused  " else ""}${fmt(position)} / ${fmt(duration)}",
+                                color = Color.White,
+                                fontSize = 14.sp,
+                            )
+                        }
                         Text(
                             buildString {
-                                append("◀ ▶ 10 s   ⏪ ⏩ 30 s   ▼ options")
+                                // Plain characters: the ⏪ ⏩ symbols turn into coloured emoji on Android.
+                                append("◀ ▶ 10 s   ◀◀ ▶▶ 30 s   OK options")
                                 if (pb.speed != 1f) append("   speed ${speedLabel(pb.speed)}")
                             },
                             color = Muted, fontSize = 14.sp,
                         )
                     }
                 }
-                pb.error?.let { Text(it, color = ErrorRed, fontSize = 16.sp) }
+                pb.error?.let {
+                    Text(it, color = ErrorRed, fontSize = 16.sp)
+                    Text("OK to try again" + (pb.errorDetail?.let { d -> "  ·  $d" } ?: ""), color = Muted, fontSize = 12.sp)
+                }
                 if (controls) {
                     Spacer(Modifier.height(14.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {

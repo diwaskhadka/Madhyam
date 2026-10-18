@@ -8,7 +8,7 @@ How to cut a release and how to add a platform: [docs/RELEASING.md](docs/RELEASI
 
 ## 1.1.1
 
-Android TV: streams stop when you leave them, and large playlists need half the memory.
+Android TV: streams stop when you leave them, large playlists need half the memory, and fixes from a test on a TV.
 
 ### Android TV
 - Leaving the player from Search, Favorites, Recent or Home, or leaving Live TV for another section, now stops the stream. Before, it kept playing hidden: the sound, the data and the provider's only connection stayed in use, so the next channel could fail with a network error.
@@ -23,6 +23,20 @@ Android TV: streams stop when you leave them, and large playlists need half the 
 - A setting shows its new value as soon as you press OK, and pressing OK again changes it again (before, the row kept the old value until you left the page, and "Start in" moved only once however often you pressed). Changing a setting no longer redraws the whole app, and settings are saved in the background.
 - The custom colour dialog fits on the screen.
 - Clear watch history asks you to press OK again, like Remove playlist.
+- OK during a film or episode shows the controls instead of pausing; OK again on Play / Pause pauses. While paused, the bar says "Paused" and stays on screen. The Play and Pause keys of the remote do what they say.
+- Trailers open the YouTube web link first, which every YouTube app and browser accepts; some apps (SmartTube) failed on the `vnd.youtube:` link Madhyam sent before.
+- Playback errors are a sentence ("Couldn't connect to this channel. The provider may be offline, or your account may be using all its connections.") with the player's code on a smaller line under it.
+- Smoother scrolling in big poster grids: posters and logos are drawn without a sub-composition each, and grid covers load TMDB's 342-pixel pictures instead of 600-pixel ones.
+- Search: the search box has the focus when you open Search, and OK on it opens the keyboard without typing a "q". The Live TV, Movies and Series chips (and the other filter chips) show when they are on: filled with a tick.
+- Ratings show one decimal ("8.2", not "8.227").
+- Episode titles leave out the series name and episode code providers repeat in them: "S01E01 · Dom Chthona" in the player and on Home, "1. Dom Chthona" on the details page.
+- Providers list a film once per version ("4K-TOP - …", "TOP - …"): with titles under covers off, each poster shows its tag, so the look-alikes are told apart.
+- The details page keeps a place for the Play button while the episodes load, so the page no longer jumps and the focus stays put; the focused episode shows its title, and two-line titles no longer overlap.
+- Live TV: the focused channel's name scrolls to show all of it, its number is readable on the highlight, rows fade out at the top and bottom of the list, the channel count is no longer cut off, and the info under the preview follows the playing channel when the focus moves onto the preview.
+- The TV guide opens at the channel that was playing (or the focused one), not at the first row.
+- The open navigation rail dims the page behind it, so cut-off category names no longer show beside it.
+- Secondary text and values in focused rows (Settings, search results, the playlist list) are readable on the light highlight.
+- The focused poster's two-line title has normal line spacing, and the player's hint bar uses plain arrows instead of coloured emoji.
 
 ### Windows
 - No functional changes. Uses engine 0.3.0: large playlists take less memory and load and save faster.

@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -100,16 +101,21 @@ fun GuideScreen(vm: MainViewModel) {
             val perSec = timeline / (to - from).toFloat()
             Column {
                 TimeRuler(from, to, perSec)
+                // The guide opens at the channel that was playing (or focused), a couple of rows down.
                 val start = remember { FocusRequester() }
+                val startIndex = remember { channels.indexOfFirst { it.id == vm.guideStartId }.coerceAtLeast(0) }
                 LaunchedEffect(Unit) {
                     delay(150)
                     runCatching { start.requestFocus() }
                 }
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                LazyColumn(
+                    state = rememberLazyListState(initialFirstVisibleItemIndex = (startIndex - 2).coerceAtLeast(0)),
+                    verticalArrangement = Arrangement.spacedBy(3.dp),
+                ) {
                     itemsIndexed(channels, key = { _, c -> c.id }) { i, ch ->
                         GuideRow(
                             vm, ch, vm.guideData[ch.id].orEmpty(), from, to, now, perSec, strip,
-                            focusFirst = if (i == 0) start else null,
+                            focusFirst = if (i == startIndex) start else null,
                             onFocus = { p ->
                                 selected = ch to p
                                 if (i > channels.size - 20) vm.loadMore()

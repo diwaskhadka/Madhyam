@@ -30,6 +30,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
@@ -37,7 +39,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Text
-import coil.compose.SubcomposeAsyncImage
+import coil.compose.AsyncImage
 import dev.madhyam.Item
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -55,16 +57,18 @@ fun Logo(item: Item, width: Dp = 64.dp, height: Dp = 40.dp, stripPrefix: Boolean
             Text(item.displayName(stripPrefix).take(2).uppercase(), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
         }
     }
-    if (item.logo.isBlank()) {
+    var failed by remember(item.logo) { mutableStateOf(false) }
+    if (item.logo.isBlank() || failed) {
         initials()
     } else {
-        SubcomposeAsyncImage(
+        // AsyncImage, not SubcomposeAsyncImage: much less work per row in long channel lists.
+        AsyncImage(
             model = item.logo,
             contentDescription = null,
             contentScale = ContentScale.Fit,
             // Channel logos are drawn for dark screens (often white); give them a dark plate in the light theme.
             modifier = if (item.kind == "live" && !LocalPalette.current.dark) shape.background(LogoPlate) else shape,
-            error = { initials() },
+            onError = { failed = true },
         )
     }
 }
@@ -160,13 +164,25 @@ fun dayLabel(unixSeconds: Long): String {
  * Text fields on a TV: the D-pad would otherwise stay inside the field (Left/Right move the
  * cursor and Up/Down do nothing), trapping the remote. Up/Down always leave the field; Left
  * leaves it when [atStart] (the cursor is at the beginning, e.g. the field is empty).
+ *
+ * OK opens the keyboard when the key comes back up. The text field would open it on the key
+ * press, and the key's release then lands on the keyboard's first key and types a "q".
+ * Use with `KeyboardOptions(showKeyboardOnFocus = false)`.
  */
 @Composable
 fun Modifier.tvTextField(atStart: () -> Boolean = { true }): Modifier {
     val fm = androidx.compose.ui.platform.LocalFocusManager.current
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     return onPreviewKeyEvent { ev ->
+        val code = ev.nativeKeyEvent.keyCode
+        if (code == android.view.KeyEvent.KEYCODE_DPAD_CENTER || code == android.view.KeyEvent.KEYCODE_ENTER ||
+            code == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER
+        ) {
+            if (ev.type == KeyEventType.KeyUp) keyboard?.show()
+            return@onPreviewKeyEvent true
+        }
         if (ev.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
-        when (ev.nativeKeyEvent.keyCode) {
+        when (code) {
             android.view.KeyEvent.KEYCODE_DPAD_DOWN -> fm.moveFocus(androidx.compose.ui.focus.FocusDirection.Down)
             android.view.KeyEvent.KEYCODE_DPAD_UP -> fm.moveFocus(androidx.compose.ui.focus.FocusDirection.Up)
             android.view.KeyEvent.KEYCODE_DPAD_LEFT -> atStart() && fm.moveFocus(androidx.compose.ui.focus.FocusDirection.Left)
@@ -174,3 +190,17 @@ fun Modifier.tvTextField(atStart: () -> Boolean = { true }): Modifier {
         }
     }
 }
+
+/** Fades the top and bottom [height] of a scrolling list, so rows scrolling out don't end in a hard cut. */
+fun Modifier.fadeEdges(height: Dp): Modifier =
+    graphicsLayer { compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen }
+        .drawWithContent {
+            drawContent()
+            val fade = (height.toPx() / size.height.coerceAtLeast(1f)).coerceAtMost(0.5f)
+            drawRect(
+                androidx.compose.ui.graphics.Brush.verticalGradient(
+                    0f to Color.Transparent, fade to Color.Black, 1f - fade to Color.Black, 1f to Color.Transparent,
+                ),
+                blendMode = androidx.compose.ui.graphics.BlendMode.DstIn,
+            )
+        }

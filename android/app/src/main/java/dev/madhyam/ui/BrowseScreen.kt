@@ -14,9 +14,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
@@ -30,6 +34,7 @@ import androidx.tv.material3.Text
 import dev.madhyam.Item
 import dev.madhyam.MainViewModel
 import dev.madhyam.Section
+import kotlinx.coroutines.delay
 
 /** Movies and Series (poster grid), Favorites, Recent and Search (lists); a film's or series' details page over them. */
 @Composable
@@ -47,13 +52,22 @@ fun BrowseScreen(vm: MainViewModel) {
 @Composable
 private fun Header(vm: MainViewModel) {
     if (vm.section == Section.Search) {
+        // Opening Search puts the focus on the box (not on a filter chip); OK opens the keyboard.
+        // With results showing (back from one of them), the list keeps the focus.
+        val box = remember { FocusRequester() }
+        LaunchedEffect(Unit) {
+            if (vm.query.isBlank()) {
+                delay(100)
+                runCatching { box.requestFocus() }
+            }
+        }
         OutlinedTextField(
             value = vm.query,
             onValueChange = vm::search,
             label = { androidx.compose.material3.Text("Search channels, movies, series") },
             singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp).tvTextField { vm.query.isEmpty() },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search, showKeyboardOnFocus = false),
+            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp).focusRequester(box).tvTextField { vm.query.isEmpty() },
         )
         // Which kinds to search, and whether to look in every playlist (Windows advanced search).
         val st = vm.settings
@@ -141,19 +155,19 @@ private fun ItemRow(vm: MainViewModel, item: Item, now: Long, strip: Boolean, on
         },
         supportingContent = {
             val cur = nn?.now
-            val meta = listOfNotNull(if (item.isEpisode) item.seasonEpisode else null, item.year, item.rating?.let { "★ $it" })
+            val meta = listOfNotNull(if (item.isEpisode) item.seasonEpisode else null, item.year, item.ratingLabel?.let { "★ $it" })
                 .joinToString("  ·  ")
             when {
                 item.isLive && cur != null -> Column {
-                    Text(cur.title, color = Muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(cur.title, color = RowMuted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     ProgressBar(cur.progress(now), width = 220.dp)
                 }
                 !item.plot.isNullOrBlank() -> Column {
-                    if (meta.isNotEmpty()) Text(meta, color = Accent, fontSize = 12.sp)
-                    Text(item.plot, color = Muted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    if (meta.isNotEmpty()) Text(meta, color = RowAccent, fontSize = 12.sp)
+                    Text(item.plot, color = RowMuted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
-                meta.isNotEmpty() -> Text(meta, color = Muted, fontSize = 12.sp)
-                else -> Text(item.group, color = Muted, fontSize = 12.sp, maxLines = 1)
+                meta.isNotEmpty() -> Text(meta, color = RowMuted, fontSize = 12.sp)
+                else -> Text(item.group, color = RowMuted, fontSize = 12.sp, maxLines = 1)
             }
         },
     )
