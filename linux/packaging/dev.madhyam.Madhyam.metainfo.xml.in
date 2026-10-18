@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>dev.madhyam.Madhyam</id>
+  <name>@NAME@</name>
+  <summary>Free IPTV player for M3U playlists and Xtream Codes</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="dev.madhyam">
+    <name>Diwas Khadka</name>
+  </developer>
+  <description>
+    <p>
+      @NAME@ plays M3U / M3U8 playlists and Xtream Codes accounts, with a TV guide (EPG),
+      movies, series, favorites and continue-watching. Free TV comes preinstalled: thousands of
+      public channels from the iptv-org project, by category or by country.
+    </p>
+    <p>
+      @NAME@ is a player. It does not sell subscriptions, channels or playlists.
+    </p>
+  </description>
+  <launchable type="desktop-id">dev.madhyam.Madhyam.desktop</launchable>
+  <url type="homepage">https://github.com/diwaskhadka/Madhyam</url>
+  <url type="bugtracker">https://github.com/diwaskhadka/Madhyam/issues</url>
+  <categories>
+    <category>AudioVideo</category>
+    <category>Video</category>
+    <category>TV</category>
+  </categories>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="@VERSION@" />
+  </releases>
+</component>

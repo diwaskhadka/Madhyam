@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=@NAME@
+GenericName=IPTV Player
+Comment=Live TV with a programme guide, movies and series from your M3U playlists and Xtream Codes accounts
+Exec=madhyam
+Icon=dev.madhyam.Madhyam
+Terminal=false
+Categories=AudioVideo;Video;Player;TV;
+Keywords=IPTV;M3U;M3U8;Xtream;TV;EPG;XMLTV;Live;Movies;Series;
+StartupNotify=true
+StartupWMClass=dev.madhyam.Madhyam

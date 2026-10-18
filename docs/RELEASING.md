@@ -8,6 +8,8 @@ All platforms share one version and one GitHub release.
 - Every platform build reads it:
   - **Windows**: `windows/Madhyam.Windows/Madhyam.Windows.csproj` (`<Version>`), and the
     installer gets it from the release workflow (`/DAppVersion`).
+  - **Linux**: `linux/build.rs` passes it to the app (About, `madhyam --version`), and
+    `linux/packaging/package.sh` writes it into the `.deb`, the AppImage and the AppStream file.
   - **Android TV**: `android/app/build.gradle.kts` sets `versionName` to it and computes
     `versionCode = MAJOR*10000 + MINOR*100 + PATCH` (0.9.0 → 900). Android installs an update
     only when the version code grows, so never reuse or lower a version.
@@ -18,7 +20,7 @@ All platforms share one version and one GitHub release.
 ## Changelog
 
 `CHANGELOG.md` has one section per version, and one subsection per platform under it
-(`### Windows`, `### Android TV`, `### Engine`, …). A platform with no changes still gets a line
+(`### Linux`, `### Windows`, `### Android TV`, `### Engine`, …). A platform with no changes still gets a line
 ("No functional changes"), so every release states what happened on every platform. The
 release notes on GitHub are taken from this section.
 
@@ -34,13 +36,40 @@ release notes on GitHub are taken from this section.
 3. `.github/workflows/release.yml` then:
    - refuses to run if the tag and `VERSION` differ;
    - builds and tests every platform;
-   - publishes **one public release** with the Windows installer and the Android TV APK, and
-     the changelog section as its notes;
-   - uploads developer files (portable zip, engine DLLs, jniLibs) to a private draft
-     `dev-vX.Y.Z`;
+   - publishes **one public release** with the Windows installer, the Android TV APK and the
+     Linux `.deb` and AppImage, and the changelog section as its notes;
+   - uploads developer files (portable zip, engine DLLs, the Linux engine `.so`, jniLibs) to a
+     private draft `dev-vX.Y.Z`;
    - turns all older public releases into drafts, so only the latest stays public (they keep
      their files and can be published again by hand; "Hide old releases" does the same on
      demand).
+
+## Linux packages
+
+The `linux` job builds `linux/` (Rust, GTK 4, libmpv) on `ubuntu-latest` and runs
+`linux/packaging/package.sh`, which stages one file tree (`/usr/bin/madhyam`, desktop entry
+`dev.madhyam.Madhyam.desktop`, AppStream metadata, hicolor icons rendered from
+`branding/icon.svg`) and turns it into:
+
+- `Madhyam-vX.Y.Z-linux-amd64.deb`: dependencies are worked out by `dpkg-shlibdeps`, so the
+  package needs the GTK 4 and libmpv of the build system's release or newer (Ubuntu 24.04,
+  Debian 13);
+- `Madhyam-vX.Y.Z-linux-x86_64.AppImage`: built with linuxdeploy and its GTK plugin, which
+  bundle GTK, libmpv and their libraries (not the graphics drivers), so it runs on
+  distributions with glibc 2.39 or newer.
+
+The job plays mpv test patterns in a virtual X server and fails when no video frame is drawn,
+then installs the `.deb` and starts it. To build the packages by hand on Ubuntu 24.04+:
+
+```bash
+sudo apt install libgtk-4-dev libmpv-dev dpkg-dev librsvg2-bin
+(cd linux && cargo build --release)
+bash linux/packaging/package.sh linux/target/release/madhyam dist
+```
+
+Set `LINUXDEPLOY` to a linuxdeploy AppImage (with `linuxdeploy-plugin-gtk.sh` on `PATH`) to
+get the AppImage as well. The desktop ID `dev.madhyam.Madhyam` and the data folder
+`~/.local/share/Madhyam` are fixed.
 
 ## Android signing
 

@@ -204,8 +204,67 @@ jobs:
             Madhyam-*.apk
             madhyam-core-*-android-jniLibs.zip
 
+  linux:
+    name: linux (.deb + AppImage, engine .so)
+    needs: version
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends libgtk-4-dev libmpv-dev dpkg-dev librsvg2-bin \
+            xvfb xauth imagemagick libgl1-mesa-dri file fuse3 > /dev/null
+      - run: cargo test --workspace --release
+      - name: Build (engine .so, iptv CLI and the app)
+        run: |
+          cargo build --release --workspace
+          (cd linux && cargo build --release)
+      - name: Playback test - mpv draws video into the window
+        run: |
+          export XDG_DATA_HOME="$RUNNER_TEMP/play"
+          python3 linux/ci/make_test_playlist.py target/release/libmadhyam_core_ffi.so "$XDG_DATA_HOME/Madhyam"
+          xvfb-run -a -s "-screen 0 1600x1000x24" timeout 60 target/release/madhyam --mode Live --play-first --screenshot "$PWD/play.png"
+          log="$XDG_DATA_HOME/Madhyam/app.log"; cat "$log"
+          grep -q "first video frame" "$log" && grep -qE "time-pos=Some\([1-9]" "$log" || { echo "::error::video did not play"; exit 1; }
+      - name: Package
+        run: |
+          mkdir -p tools
+          curl -fsSL -o tools/linuxdeploy-x86_64.AppImage https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          curl -fsSL -o tools/linuxdeploy-plugin-gtk.sh https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh
+          chmod +x tools/*
+          export PATH="$PWD/tools:$PATH"
+          LINUXDEPLOY="$PWD/tools/linuxdeploy-x86_64.AppImage" bash linux/packaging/package.sh target/release/madhyam dist "${TAG#v}"
+          # Developer files: the engine for other Linux hosts (C ABI .so, header, bindings, CLI).
+          out="madhyam-core-$TAG-linux-x64"
+          mkdir -p "$out/include" "$out/bindings"
+          cp target/release/libmadhyam_core_ffi.so target/release/libmadhyam_core_ffi.a target/release/iptv "$out/"
+          cp include/madhyam_core.h "$out/include/"
+          cp -r bindings/csharp bindings/python "$out/bindings/"
+          cp README.md LICENSE docs/API.md "$out/"
+          tar -czf "dist/$out.tar.gz" "$out"
+          ls -la dist
+      - name: Install test - .deb installs and starts
+        run: |
+          sudo apt-get install -y -qq ./dist/*.deb > /dev/null
+          madhyam --version
+          export XDG_DATA_HOME="$RUNNER_TEMP/installed"
+          xvfb-run -a timeout 15 madhyam --mode Dashboard --screenshot "$PWD/installed.png"
+          test -s installed.png || { echo "::error::installed app did not render"; exit 1; }
+          "$(ls dist/*.AppImage)" --appimage-extract-and-run --version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: |
+            dist/Madhyam-*.deb
+            dist/Madhyam-*.AppImage
+            dist/madhyam-core-*-linux-x64.tar.gz
+
   publish:
-    needs: [windows, windows-app, android]
+    needs: [windows, windows-app, android, linux]
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
@@ -220,6 +279,7 @@ jobs:
           mkdir -p public dev
           mv dist/Madhyam-Setup-*.exe public/
           mv dist/Madhyam-*-androidtv.apk public/
+          mv dist/Madhyam-*-linux-amd64.deb dist/Madhyam-*-linux-x86_64.AppImage public/
           mv dist/* dev/
           ls -la public dev
       - name: Release notes (install steps + this version's CHANGELOG section)
@@ -229,6 +289,8 @@ jobs:
             echo "**Windows 10 / 11 (64-bit):** download \`Madhyam-Setup-$v.exe\` and run it. It installs for your user account (no admin needed) and upgrades in place, keeping your playlists and settings. \"Windows protected your PC\"? Madhyam is not code-signed yet: click **More info** > **Run anyway**."
             echo
             echo "**Android TV / Google TV:** download \`Madhyam-$TAG-androidtv.apk\` and install it (sideload, e.g. with *Send Files to TV* or \`adb install\`). Newer versions install over it and keep your playlists."
+            echo
+            echo "**Linux (64-bit, GTK 4.12+: Ubuntu 24.04, Debian 13, Fedora 39 and newer):** on Ubuntu / Debian / Mint download \`Madhyam-$TAG-linux-amd64.deb\` and install it with \`sudo apt install ./Madhyam-$TAG-linux-amd64.deb\`. On other distributions download \`Madhyam-$TAG-linux-x86_64.AppImage\`, make it executable (\`chmod +x\`) and run it. Your playlists and settings are kept in \`~/.local/share/Madhyam\`."
             echo
             # The "## X.Y.Z" section of CHANGELOG.md, without its heading. Relative links point at
             # the repository files at this tag, since the release page has no file tree.
@@ -252,7 +314,7 @@ jobs:
           gh release view "$DEV" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
             gh release create "$DEV" -R "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" \
               --title "Developer files $TAG (private draft)" \
-              --notes "Not public. Portable zip, madhyam-core engine (DLL, headers, bindings, iptv.exe) and Android jniLibs for $TAG."
+              --notes "Not public. Portable zip, madhyam-core engine (Windows DLL, Linux .so, headers, bindings, CLI) and Android jniLibs for $TAG."
           gh release upload "$DEV" -R "$GITHUB_REPOSITORY" dev/* --clobber
       # Only the newest release stays public: older ones become drafts (files kept, can be published again).
       - name: Hide older releases
