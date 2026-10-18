@@ -77,7 +77,11 @@ class Playback(private val context: Context, private val settings: AppSettings) 
         }
     }
 
-    /** Settings › Playback › Buffer: playback starts once this much is buffered (applies at start-up). */
+    /**
+     * Settings › Playback › Buffer: playback starts once this much is buffered (applies at start-up).
+     * The buffer also stops at a quarter of the app's Java heap: Media3's own limit for video is
+     * 128 MB, more than a 1–2 GB TV can spare beside the catalog.
+     */
     private val loadControl = DefaultLoadControl.Builder()
         .setBufferDurationsMs(
             maxOf(15_000, settings.bufferMs * 4),
@@ -85,6 +89,7 @@ class Playback(private val context: Context, private val settings: AppSettings) 
             settings.bufferMs,
             settings.bufferMs * 2,
         )
+        .setTargetBufferBytes((Runtime.getRuntime().maxMemory() / 4).coerceIn(16L shl 20, 64L shl 20).toInt())
         .build()
 
     val player: ExoPlayer = ExoPlayer.Builder(context, renderers).setLoadControl(loadControl).build()
@@ -336,6 +341,23 @@ class Playback(private val context: Context, private val settings: AppSettings) 
         player.clearMediaItems()
         current = null
         error = null
+    }
+
+    /**
+     * Stop decoding and close the stream (the audio track, the decoders and the provider's
+     * connection go with it), but keep [current] so [resume] can start it again.
+     */
+    fun suspend() {
+        player.stop()
+    }
+
+    /** Start the stream [suspend] stopped: live from the live edge, films from where they were. */
+    fun resume() {
+        val item = current ?: return
+        if (player.playbackState != Player.STATE_IDLE) return
+        if (item.isLive) player.seekToDefaultPosition()
+        player.prepare()
+        player.playWhenReady = true
     }
 
     fun release() = player.release()

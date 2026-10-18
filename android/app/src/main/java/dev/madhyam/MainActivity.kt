@@ -36,6 +36,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        vm.onAppShown()
+    }
+
     override fun onStop() {
         super.onStop()
         // Home button, another app or the screen saver: don't keep streaming in the background.

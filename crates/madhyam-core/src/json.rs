@@ -11,6 +11,7 @@
 //! * `\uXXXX` escapes, including UTF-16 surrogate pairs, are handled.
 
 use crate::error::{Error, Result};
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
@@ -209,7 +210,7 @@ fn fmt_number(n: f64) -> String {
     }
 }
 
-fn write_escaped(out: &mut String, s: &str) {
+pub(crate) fn write_escaped(out: &mut String, s: &str) {
     out.push('"');
     for c in s.chars() {
         match c {
@@ -292,12 +293,105 @@ pub fn parse_bytes(input: &[u8]) -> Result<Value> {
     Ok(v)
 }
 
+/// One value of an object read by [`for_each_field`]: scalars borrowed from the input where
+/// possible, nested objects and arrays as their raw text (read them with another call).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Field<'a> {
+    Str(Cow<'a, str>),
+    Num(f64),
+    Bool(bool),
+    Null,
+    Raw(&'a str),
+}
+
+impl Field<'_> {
+    /// Like [`Value::to_text`]: any scalar as text, `None` for null, blank or containers.
+    pub fn to_text(&self) -> Option<Cow<'_, str>> {
+        match self {
+            Field::Str(s) if !s.trim().is_empty() => Some(Cow::Borrowed(s.trim())),
+            Field::Num(n) => Some(Cow::Owned(fmt_number(*n))),
+            Field::Bool(b) => Some(Cow::Owned(b.to_string())),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            Field::Str(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    pub fn to_i64(&self) -> Option<i64> {
+        match self {
+            Field::Num(n) if n.is_finite() => Some(*n as i64),
+            Field::Str(s) => s.trim().parse().ok(),
+            _ => None,
+        }
+    }
+}
+
+/// Call `f` with each key and value of the JSON object `input`, without building a [`Value`]
+/// tree. This is the fast path for reading hundreds of thousands of small objects (a catalog
+/// snapshot): on a TV most of a tree's cost is the allocator, not the parsing.
+pub fn for_each_field<'a>(
+    input: &'a str,
+    mut f: impl FnMut(Cow<'a, str>, Field<'a>),
+) -> Result<()> {
+    let mut p = Parser {
+        b: input.as_bytes(),
+        i: 0,
+    };
+    p.ws();
+    if p.peek() != Some(b'{') {
+        return Err(p.err("expected an object"));
+    }
+    p.i += 1;
+    p.ws();
+    if p.peek() == Some(b'}') {
+        return Ok(());
+    }
+    loop {
+        p.ws();
+        if p.peek() != Some(b'"') {
+            return Err(p.err("expected object key"));
+        }
+        let k = p.str_cow()?;
+        p.ws();
+        if p.peek() != Some(b':') {
+            return Err(p.err("expected ':'"));
+        }
+        p.i += 1;
+        p.ws();
+        let v = match p.peek() {
+            Some(b'"') => Field::Str(p.str_cow()?),
+            Some(b'{' | b'[') => {
+                let start = p.i;
+                p.value(1)?;
+                Field::Raw(&input[start..p.i])
+            }
+            _ => match p.value(1)? {
+                Value::Number(n) => Field::Num(n),
+                Value::Bool(b) => Field::Bool(b),
+                _ => Field::Null,
+            },
+        };
+        f(k, v);
+        p.ws();
+        match p.peek() {
+            Some(b',') => p.i += 1,
+            Some(b'}') => return Ok(()),
+            _ => return Err(p.err("expected ',' or '}'")),
+        }
+    }
+}
+
 struct Parser<'a> {
     b: &'a [u8],
     i: usize,
 }
 
-impl Parser<'_> {
+impl<'a> Parser<'a> {
     fn err(&self, msg: &str) -> Error {
         Error::parse("JSON", 0, format!("{msg} at byte {}", self.i))
     }
@@ -421,6 +515,25 @@ impl Parser<'_> {
         Ok(n)
     }
 
+    /// A string, borrowed from the input when it has no escapes.
+    fn str_cow(&mut self) -> Result<Cow<'a, str>> {
+        let start = self.i + 1;
+        let mut j = start;
+        while let Some(&c) = self.b.get(j) {
+            if c == b'"' {
+                let s = std::str::from_utf8(&self.b[start..j])
+                    .map_err(|_| self.err("invalid UTF-8 in string"))?;
+                self.i = j + 1;
+                return Ok(Cow::Borrowed(s));
+            }
+            if c == b'\\' || c < 0x20 {
+                break;
+            }
+            j += 1;
+        }
+        self.string().map(Cow::Owned)
+    }
+
     fn string(&mut self) -> Result<String> {
         self.i += 1; // opening quote
         let mut out = String::new();
@@ -521,6 +634,25 @@ mod tests {
         }
         let deep = "[".repeat(1000);
         assert!(parse(&deep).is_err());
+    }
+
+    #[test]
+    fn fields_without_a_tree() {
+        let src =
+            r#"{"a":"x","b":" 7 ","c":{"d":[1,"}"]},"e":"q\"uote","f":2.5,"g":null,"h":true}"#;
+        let mut got = Vec::new();
+        for_each_field(src, |k, v| got.push((k.to_string(), v))).unwrap();
+        assert_eq!(got[0], ("a".into(), Field::Str(Cow::Borrowed("x"))));
+        assert_eq!(got[1].1.to_text().as_deref(), Some("7"));
+        assert_eq!(got[2].1, Field::Raw(r#"{"d":[1,"}"]}"#));
+        assert_eq!(got[3].1.as_str(), Some("q\"uote"));
+        assert_eq!(got[4].1.to_text().as_deref(), Some("2.5"));
+        assert_eq!(
+            (got[5].1.clone(), got[6].1.clone()),
+            (Field::Null, Field::Bool(true))
+        );
+        assert!(for_each_field("[1]", |_, _| {}).is_err());
+        assert!(for_each_field(r#"{"a":1"#, |_, _| {}).is_err());
     }
 
     #[test]

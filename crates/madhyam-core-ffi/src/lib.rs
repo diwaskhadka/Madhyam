@@ -248,7 +248,8 @@ pub fn dispatch(st: &mut State, method: &str, a: &Value) -> Result<Value> {
             .to_json(),
         "import_xmltv_file" => {
             let keep = a.int("keep_from").unwrap_or(now - 86_400);
-            c.import_xmltv(open_file(&arg_str(a, "path")?)?, keep)?
+            let until = a.int("keep_until").unwrap_or(i64::MAX);
+            c.import_xmltv_window(open_file(&arg_str(a, "path")?)?, keep, until)?
                 .to_json()
         }
 
@@ -296,7 +297,7 @@ pub fn dispatch(st: &mut State, method: &str, a: &Value) -> Result<Value> {
                 .item(arg_id(a, "id")?)
                 .ok_or_else(|| Error::NotFound("item".into()))?;
             let x = xtream_client(c, it.source)?;
-            x.api_url(Some("get_series_info"), &[("series_id", &it.remote_id)])
+            x.api_url(Some("get_series_info"), &[("series_id", it.remote_id())])
                 .into()
         }
         "vod_info_url" => {
@@ -304,7 +305,7 @@ pub fn dispatch(st: &mut State, method: &str, a: &Value) -> Result<Value> {
                 .item(arg_id(a, "id")?)
                 .ok_or_else(|| Error::NotFound("item".into()))?;
             let x = xtream_client(c, it.source)?;
-            x.api_url(Some("get_vod_info"), &[("vod_id", &it.remote_id)])
+            x.api_url(Some("get_vod_info"), &[("vod_id", it.remote_id())])
                 .into()
         }
         "short_epg_url" => {
@@ -315,7 +316,7 @@ pub fn dispatch(st: &mut State, method: &str, a: &Value) -> Result<Value> {
             let limit = usize_or(a, "limit", 10).to_string();
             x.api_url(
                 Some("get_short_epg"),
-                &[("stream_id", &it.remote_id), ("limit", &limit)],
+                &[("stream_id", it.remote_id()), ("limit", &limit)],
             )
             .into()
         }
@@ -329,7 +330,7 @@ pub fn dispatch(st: &mut State, method: &str, a: &Value) -> Result<Value> {
                 .ok_or_else(|| Error::Invalid("missing 'start'".into()))?;
             let dur = a.int("duration_min").unwrap_or(60).clamp(1, 24 * 60) as u32;
             x.timeshift_url(
-                &it.remote_id,
+                it.remote_id(),
                 start,
                 dur,
                 a.int("server_offset").unwrap_or(0),
@@ -410,10 +411,7 @@ pub fn dispatch(st: &mut State, method: &str, a: &Value) -> Result<Value> {
         // ------------------------------------------------------------- EPG
         "now_next" => {
             let (n, x) = c.now_next(arg_id(a, "id")?, now);
-            obj([
-                ("now", n.cloned().to_json()),
-                ("next", x.cloned().to_json()),
-            ])
+            obj([("now", n.to_json()), ("next", x.to_json())])
         }
         // Batch form for channel lists: {"ids": [...]} -> {"<id>": {now, next}}
         "now_next_many" => {
@@ -424,10 +422,7 @@ pub fn dispatch(st: &mut State, method: &str, a: &Value) -> Result<Value> {
                 let (n, x) = c.now_next(id, now);
                 m.insert(
                     id.to_string(),
-                    obj([
-                        ("now", n.cloned().to_json()),
-                        ("next", x.cloned().to_json()),
-                    ]),
+                    obj([("now", n.to_json()), ("next", x.to_json())]),
                 );
             }
             Value::Object(m)
@@ -439,7 +434,7 @@ pub fn dispatch(st: &mut State, method: &str, a: &Value) -> Result<Value> {
             let mut m = std::collections::BTreeMap::new();
             for v in ids {
                 let id = arg_id(&obj([("id", v.clone())]), "id")?;
-                m.insert(id.to_string(), c.guide(id, from, to).to_vec().to_json());
+                m.insert(id.to_string(), c.guide(id, from, to).to_json());
             }
             Value::Object(m)
         }
@@ -543,7 +538,11 @@ pub fn dispatch_import(st: &mut State, method: &str, data: &[u8], a: &Value) -> 
             .into(),
         "xmltv" => st
             .catalog
-            .import_xmltv(data, a.int("keep_from").unwrap_or(now - 86_400))?
+            .import_xmltv_window(
+                data,
+                a.int("keep_from").unwrap_or(now - 86_400),
+                a.int("keep_until").unwrap_or(i64::MAX),
+            )?
             .to_json(),
         "xtream_part" => {
             let s = arg_source(a)?;
@@ -588,12 +587,12 @@ pub fn dispatch_import(st: &mut State, method: &str, data: &[u8], a: &Value) -> 
                 .ok_or_else(|| Error::NotFound("item".into()))?
                 .clone();
             let mut progs =
-                xtream_client(&st.catalog, it.source)?.parse_short_epg(data, &it.epg_id)?;
+                xtream_client(&st.catalog, it.source)?.parse_short_epg(data, it.epg_id())?;
             // Short EPG may lack epg ids; key it by the item's so now_next finds it.
-            let key = if it.epg_id.is_empty() {
+            let key = if it.epg_id().is_empty() {
                 Catalog::item_epg_key(it.id)
             } else {
-                it.epg_id.clone()
+                it.epg_id().to_string()
             };
             for p in &mut progs {
                 p.channel = key.clone();

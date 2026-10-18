@@ -25,14 +25,14 @@ Some conventions apply everywhere:
 | `remove_source` | `source` | `null` |
 | `epg_fetch_urls` | `source` | `[url]`. **For Xtream sources this includes credentials**, so pass the URLs to your HTTP client only, never to logs or the UI. |
 | `import_m3u_file` | `source`, `path` | `{items, errors, epg_urls}` |
-| `import_xmltv_file` | `path`, `keep_from?` | `{channels, programmes, skipped}` |
+| `import_xmltv_file` | `path`, `keep_from?`, `keep_until?` | `{channels, programmes, skipped}`. Programmes ending before `keep_from` (default: now − 24 h) or starting after `keep_until` (default: none) are left out. |
 
 ### `iptv_import` methods
 
 | method | args | data |
 |---|---|---|
 | `m3u` | `source` | playlist bytes |
-| `xmltv` | `keep_from?` (default: now − 24 h) | **decompressed** XMLTV |
+| `xmltv` | `keep_from?` (default: now − 24 h), `keep_until?` | **decompressed** XMLTV |
 | `parse_m3u` | – | playlist bytes; stateless, returns `{epg_urls, entries}` |
 | `user_state` | – | JSON from `export_user_state` |
 
