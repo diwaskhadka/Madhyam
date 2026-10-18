@@ -137,3 +137,52 @@ mod tests {
         assert_eq!(maybe_base64_text("Not base64!"), "Not base64!");
     }
 }
+
+/// A fast, non-cryptographic hasher for the catalog's own maps (FxHash's mixing step). The
+/// standard SipHash resists crafted keys, but costs several times more on the 32-bit ARM CPUs
+/// of cheap TVs, where building the maps of a large catalog is a good part of the start-up.
+#[derive(Default, Clone, Copy)]
+pub struct FastHasher(u64);
+
+impl FastHasher {
+    #[inline]
+    fn add(&mut self, w: u64) {
+        self.0 = (self.0.rotate_left(5) ^ w).wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+}
+
+impl std::hash::Hasher for FastHasher {
+    fn write(&mut self, bytes: &[u8]) {
+        let mut chunks = bytes.chunks_exact(8);
+        for c in &mut chunks {
+            self.add(u64::from_le_bytes(c.try_into().unwrap_or_default()));
+        }
+        let rest = chunks.remainder();
+        if !rest.is_empty() {
+            let mut b = [0u8; 8];
+            b[..rest.len()].copy_from_slice(rest);
+            self.add(u64::from_le_bytes(b));
+        }
+    }
+    fn write_u8(&mut self, n: u8) {
+        self.add(u64::from(n));
+    }
+    fn write_u32(&mut self, n: u32) {
+        self.add(u64::from(n));
+    }
+    fn write_u64(&mut self, n: u64) {
+        self.add(n);
+    }
+    fn write_usize(&mut self, n: usize) {
+        self.add(n as u64);
+    }
+    fn finish(&self) -> u64 {
+        self.0
+    }
+}
+
+pub type FastBuild = std::hash::BuildHasherDefault<FastHasher>;
+/// `HashMap` with [`FastHasher`].
+pub type FastMap<K, V> = std::collections::HashMap<K, V, FastBuild>;
+/// `HashSet` with [`FastHasher`].
+pub type FastSet<K> = std::collections::HashSet<K, FastBuild>;

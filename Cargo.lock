@@ -4,18 +4,18 @@ version = 4
 
 [[package]]
 name = "madhyam-core"
-version = "0.2.0"
+version = "0.3.0"
 
 [[package]]
 name = "madhyam-core-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "madhyam-core",
 ]
 
 [[package]]
 name = "madhyam-core-ffi"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "madhyam-core",
 ]

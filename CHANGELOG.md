@@ -6,6 +6,32 @@ so. The engine (`crates/madhyam-core`) keeps its own version, given in each sect
 
 How to cut a release and how to add a platform: [docs/RELEASING.md](docs/RELEASING.md).
 
+## 1.1.1
+
+Android TV: streams stop when you leave them, and large playlists need half the memory.
+
+### Android TV
+- Leaving the player from Search, Favorites, Recent or Home, or leaving Live TV for another section, now stops the stream. Before, it kept playing hidden: the sound, the data and the provider's only connection stayed in use, so the next channel could fail with a network error.
+- Home button, another app or the screen saver: the stream stops and frees the connection, then starts again when you come back (live at the live edge, films where they were). Resume points are saved as before.
+- About half the memory with a large playlist: on a TCL TV with 1.8 GB of RAM and a playlist of 53 000 channels, 161 000 films and 38 000 series, 194 MB instead of 426 MB after start. Android no longer closes Madhyam a few seconds after you press Home, so you come back to where you were.
+- The same playlist loads in about 12 s instead of 17 s.
+- The guide is kept from a day back to three days ahead (the TV guide shows two days ahead).
+- Posters and logos: a smaller memory cache, 16-bit pictures on TVs with less than 2 GB of RAM, and the cache is emptied in the background. The video buffer is capped at a quarter of the app's memory.
+
+### Windows
+- No functional changes. Uses engine 0.3.0: large playlists take less memory and load and save faster.
+
+### Linux
+- No functional changes. Uses engine 0.3.0: large playlists take less memory and load and save faster.
+
+### Engine
+- madhyam-core 0.3.0.
+- A catalog takes less than half the memory: each item keeps its text in one allocation and shares its group name and the directories of its logo and stream URLs with the other items; guide programmes are stored packed; the search index is three flat arrays. For a 265 000-item catalog on 32-bit ARM: 78 MB instead of 176 MB, plus 33 MB instead of 55 MB for its guide.
+- Snapshots are read and written without building a JSON tree for every item, so loading takes about a third less time on a TV and saving half. The file is the same.
+- `import_xmltv_file` and `xmltv` take `keep_until`: programmes starting later are left out.
+- Rust API: the `Item` fields `remote_id`, `name`, `logo`, `url`, `epg_id` and `extra` are now methods (`name()`, `extra(key)`, `extras()`) with `set_*` setters, and `group` is a shared `Arc<str>`. `Catalog::now_next` and `Catalog::guide` return owned programmes. The JSON of the FFI is unchanged, except that a programme's `channel` is now its (lowercase) guide key.
+- `cargo run --release --example memory -- catalog.jsonl [guide.xml]` measures how much memory a catalog takes.
+
 ## 1.1.0
 
 Madhyam for Linux.

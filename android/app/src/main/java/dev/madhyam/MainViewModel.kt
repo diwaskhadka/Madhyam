@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.madhyam.ui.dayLabel
@@ -150,6 +151,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 selectSource(start)
             }
             refreshStaleGuides()
+        }
+        // The shared player only runs while it is on screen (#25): leaving the player from Search,
+        // Favorites, Recent or Home, or Live TV for another section, stops the stream. Otherwise it
+        // decodes into no surface and holds the provider's only connection.
+        viewModelScope.launch {
+            snapshotFlow { playerShown }.collect { shown -> if (!shown) stopHiddenPlayer() }
         }
         // Keep "now playing" fresh while the app is open.
         viewModelScope.launch {
@@ -717,11 +724,36 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { repo.setProgress(item.id, pos, dur) }
     }
 
-    /** The app went to the background (Home button, screen saver): stop the stream. */
-    fun onAppHidden() {
+    /** False between onStop and onStart (the stream is suspended, not stopped, meanwhile). */
+    private var appVisible = true
+
+    /** Whether a page that shows the shared player is open: full screen, or Live TV's preview. */
+    private val playerShown: Boolean
+        get() = screen == Screen.Player || (screen == Screen.Main && section == Section.Live && !guideOpen)
+
+    /** Stop the stream nobody sees; films and episodes keep their resume position. */
+    private fun stopHiddenPlayer() {
+        if (playback.current == null) return
         saveProgress()
-        playback.player.pause()
+        playback.stop()
+    }
+
+    /**
+     * The app went to the background (Home button, another app, screen saver): stop the stream
+     * and let go of the connection, but keep what was playing so [onAppShown] can start it again.
+     */
+    fun onAppHidden() {
+        appVisible = false
+        saveProgress()
+        playback.suspend()
         viewModelScope.launch { repo.persist() }
+    }
+
+    /** Back in front: restart what was on screen (live at the live edge, films where they were). */
+    fun onAppShown() {
+        if (appVisible) return
+        appVisible = true
+        if (playerShown) playback.resume() else playback.stop()
     }
 
     // -------------------------------------------- 0.9.0: Windows parity settings

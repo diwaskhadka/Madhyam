@@ -3,11 +3,14 @@
 //! Data layout is chosen for TV hardware (slow CPU, little RAM):
 //!
 //! * Items live in one dense `Vec<Item>`; everything else refers to them by
-//!   `u32` index. A `HashMap<ItemId, u32>` gives O(1) lookup by stable id.
+//!   `u32` index. A `HashMap<ItemId, u32>` gives O(1) lookup by stable id. Each
+//!   item keeps its text in one allocation and shares group names and URL
+//!   directories (see [`Item`]).
 //! * Search is an inverted index of folded tokens, kept **sorted** so a prefix
 //!   query ("bb" → "bbc") is a binary search plus a short scan.
-//! * The guide is `HashMap<channel id, Vec<Programme>>` with each vector sorted
-//!   by start time, so "what's on now" is a binary search.
+//! * The guide is a map from channel id to programmes sorted by start time, so
+//!   "what's on now" is a binary search. Programmes are stored packed and
+//!   rebuilt as [`Programme`]s when read.
 //!
 //! The catalog is a cache of the providers' data. User state (favorites,
 //! progress, history) is the only thing that *must* be persisted; see
@@ -18,7 +21,7 @@ use crate::error::{Error, Result};
 use crate::json::{self, ToJson, Value, obj};
 use crate::m3u::M3uReader;
 use crate::model::*;
-use crate::textutil::{fnv1a64, tokens};
+use crate::textutil::{FastMap, FastSet, fnv1a64, tokens};
 use crate::xmltv::{XmltvItem, XmltvReader};
 use crate::xtream::{XtreamCredentials, XtreamSnapshot};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -141,43 +144,83 @@ impl ToJson for GroupInfo {
 
 // ================================================================ search index
 
+/// Sorted tokens and their postings, flattened into three arrays: a catalog has hundreds of
+/// thousands of distinct tokens, and two allocations each would double the index.
 #[derive(Default)]
 struct SearchIndex {
-    /// Sorted by token; postings sorted ascending and deduplicated.
-    tokens: Vec<(Box<str>, Vec<u32>)>,
+    /// Every token, in sorted order, back to back.
+    text: String,
+    /// Token `i` is `text[ends[i - 1]..ends[i]]` (`0` for the first).
+    ends: Vec<u32>,
+    /// Postings of token `i` are `postings[post_ends[i - 1]..post_ends[i]]`, ascending, unique.
+    postings: Vec<u32>,
+    post_ends: Vec<u32>,
 }
 
 impl SearchIndex {
     fn build(items: &[Item]) -> Self {
-        let mut map: HashMap<String, Vec<u32>> = HashMap::new();
+        let mut map: FastMap<String, Vec<u32>> = FastMap::default();
         for (i, it) in items.iter().enumerate() {
             if it.kind == ItemKind::Episode {
                 continue; // episodes are reached through their series
             }
-            for t in tokens(&it.name) {
+            for t in tokens(it.name()) {
                 let p = map.entry(t).or_default();
                 if p.last() != Some(&(i as u32)) {
                     p.push(i as u32);
                 }
             }
         }
-        let mut tokens: Vec<_> = map
-            .into_iter()
-            .map(|(k, v)| (k.into_boxed_str(), v))
-            .collect();
-        tokens.sort_unstable_by(|a, b| a.0.cmp(&b.0));
-        SearchIndex { tokens }
+        let mut sorted: Vec<_> = map.into_iter().collect();
+        sorted.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+        let mut ix = SearchIndex {
+            text: String::with_capacity(sorted.iter().map(|(t, _)| t.len()).sum()),
+            ends: Vec::with_capacity(sorted.len()),
+            postings: Vec::with_capacity(sorted.iter().map(|(_, p)| p.len()).sum()),
+            post_ends: Vec::with_capacity(sorted.len()),
+        };
+        for (t, p) in sorted {
+            ix.text.push_str(&t);
+            ix.ends.push(ix.text.len() as u32);
+            ix.postings.extend_from_slice(&p);
+            ix.post_ends.push(ix.postings.len() as u32);
+        }
+        ix
+    }
+
+    fn token(&self, i: usize) -> &str {
+        let start = if i == 0 { 0 } else { self.ends[i - 1] as usize };
+        &self.text[start..self.ends[i] as usize]
+    }
+
+    fn token_postings(&self, i: usize) -> &[u32] {
+        let start = if i == 0 {
+            0
+        } else {
+            self.post_ends[i - 1] as usize
+        };
+        &self.postings[start..self.post_ends[i] as usize]
     }
 
     /// All item indices having a token that starts with `prefix`.
     fn prefix(&self, prefix: &str) -> Vec<u32> {
-        let start = self.tokens.partition_point(|(t, _)| &**t < prefix);
+        let n = self.ends.len();
+        // Binary search over token numbers (partition_point needs a slice: use the indices).
+        let (mut lo, mut hi) = (0, n);
+        while lo < hi {
+            let mid = (lo + hi) / 2;
+            if self.token(mid) < prefix {
+                lo = mid + 1;
+            } else {
+                hi = mid;
+            }
+        }
         let mut out: Vec<u32> = Vec::new();
-        for (t, p) in &self.tokens[start..] {
-            if !t.starts_with(prefix) {
+        for i in lo..n {
+            if !self.token(i).starts_with(prefix) {
                 break;
             }
-            out.extend_from_slice(p);
+            out.extend_from_slice(self.token_postings(i));
         }
         out.sort_unstable();
         out.dedup();
@@ -283,14 +326,13 @@ impl ListQuery {
 /// `extra` field.
 fn item_groups<'a>(i: &'a Item, field: Option<&'a str>) -> Box<dyn Iterator<Item = &'a str> + 'a> {
     match field {
-        None => Box::new(std::iter::once(i.group.as_str())),
+        None => Box::new(std::iter::once(&*i.group)),
         // A stream listed under several categories is imported once per listing ("<hash>#2"…);
         // by country it should appear once, so only the first copy counts.
-        Some(_) if i.remote_id.contains('#') => Box::new(std::iter::empty()),
+        Some(_) if i.remote_id().contains('#') => Box::new(std::iter::empty()),
         Some(f) => Box::new(
-            i.extra
-                .iter()
-                .filter(move |(k, _)| k == f)
+            i.extras()
+                .filter(move |(k, _)| *k == f)
                 .flat_map(|(_, v)| v.split(';'))
                 .filter(|g| !g.is_empty()),
         ),
@@ -355,16 +397,16 @@ pub struct Catalog {
     sources: BTreeMap<SourceId, Source>,
     next_source: SourceId,
     items: Vec<Item>,
-    by_id: HashMap<ItemId, u32>,
+    by_id: FastMap<ItemId, u32>,
     index: SearchIndex,
 
-    epg: HashMap<String, Vec<Programme>>,
+    epg: FastMap<String, Vec<Slot>>,
     epg_channels: HashMap<String, EpgChannel>,
     /// display-name key → epg channel id, for playlists without tvg-id.
-    epg_by_name: HashMap<String, String>,
+    epg_by_name: FastMap<String, String>,
 
     favorites: BTreeMap<ItemId, i64>,
-    progress: HashMap<ItemId, Progress>,
+    progress: FastMap<ItemId, Progress>,
     /// Most recent first, unique, capped.
     history: Vec<(ItemId, i64)>,
 }
@@ -455,8 +497,15 @@ impl Catalog {
 
     fn reindex(&mut self) {
         // Dedupe by id (a provider listing the same stream twice); first wins.
-        let mut seen = HashSet::with_capacity(self.items.len());
+        let mut seen = FastSet::with_capacity_and_hasher(self.items.len(), Default::default());
         self.items.retain(|it| seen.insert(it.id));
+        drop(seen);
+        // One string per group name and URL directory, shared by the items (thousands each).
+        let mut shared: FastSet<Group> = FastSet::default();
+        for it in &mut self.items {
+            it.intern(&mut shared);
+        }
+        self.items.shrink_to_fit();
         self.by_id = self
             .items
             .iter()
@@ -473,7 +522,7 @@ impl Catalog {
         }
         let mut stats = ImportStats::default();
         let mut items = Vec::new();
-        let mut url_seen: HashMap<u64, u32> = HashMap::new();
+        let mut url_seen: FastMap<u64, u32> = FastMap::default();
         let mut parser = M3uReader::new(reader);
         for entry in parser.by_ref() {
             let e = match entry {
@@ -499,14 +548,12 @@ impl Catalog {
                 k => k,
             };
             let mut it = Item::new(source, kind, remote, e.name.clone());
-            it.group = if e.group.is_empty() {
-                "Uncategorized".into()
+            it.set_group(if e.group.is_empty() {
+                "Uncategorized"
             } else {
-                e.group.clone()
-            };
-            it.logo = e.logo.clone();
-            it.url = e.url.clone();
-            it.epg_id = e.tvg_id.clone();
+                &e.group
+            });
+            it.set_text(&e.logo, &e.url, &e.tvg_id);
             it.archive_days = e.catchup.as_ref().map_or(0, |c| c.days);
             it.order = items.len() as u32;
             let mut it = it
@@ -524,7 +571,7 @@ impl Catalog {
                     .with_extra("catchup_source", Some(c.source.clone()));
             }
             for (k, v) in &e.kodi_props {
-                it.extra.push((format!("kodi.{k}"), v.clone()));
+                it.push_extra(&format!("kodi.{k}"), v);
             }
             items.push(it);
         }
@@ -566,9 +613,9 @@ impl Catalog {
         }
         let mut n = 0;
         for it in self.items.iter_mut().filter(|i| i.source == source) {
-            it.extra.retain(|(k, _)| k != field);
-            if let Some(g) = by_url.get(&it.url) {
-                it.extra.push((field.to_string(), g.join(";")));
+            it.remove_extra(field);
+            if let Some(g) = by_url.get(it.url().as_ref()) {
+                it.push_extra(field, &g.join(";"));
                 n += 1;
             }
         }
@@ -596,10 +643,10 @@ impl Catalog {
         let s = self
             .item(series)
             .ok_or_else(|| Error::NotFound(format!("item {series}")))?;
-        let (source, rid) = (s.source, s.remote_id.clone());
+        let (source, rid) = (s.source, s.remote_id().to_string());
         self.replace_items(
             source,
-            |it| it.kind == ItemKind::Episode && it.extra("series_id") == Some(&rid),
+            |it| it.kind == ItemKind::Episode && it.extra("series_id") == Some(rid.as_str()),
             episodes,
         );
         Ok(())
@@ -668,7 +715,9 @@ impl Catalog {
         let mut v: Vec<&Item> = self
             .items
             .iter()
-            .filter(|i| i.source == source && i.kind == kind && group.is_none_or(|g| i.group == g))
+            .filter(|i| {
+                i.source == source && i.kind == kind && group.is_none_or(|g| &*i.group == g)
+            })
             .collect();
         v.sort_by_key(|i| i.order);
         v.into_iter().skip(offset).take(limit).collect()
@@ -688,7 +737,7 @@ impl Catalog {
                         .is_none_or(|g| item_groups(i, q.group_field.as_deref()).any(|x| x == g))
                     && !hidden_out(i, q)
                     // By a field, repeat listings of one stream ("<hash>#2") show once.
-                    && (q.group_field.is_none() || !i.remote_id.contains('#'))
+                    && (q.group_field.is_none() || !i.remote_id().contains('#'))
                     && (q.min_rating <= 0.0 || item_rating(i) >= q.min_rating)
             })
             .collect();
@@ -696,8 +745,8 @@ impl Catalog {
             Sort::Provider => v.sort_by_key(|i| (i.source, i.order)),
             Sort::AddedDesc => v.sort_by_key(|i| (std::cmp::Reverse(item_added(i)), i.order)),
             Sort::AddedAsc => v.sort_by_key(|i| (item_added(i), i.order)),
-            Sort::NameAsc => v.sort_by_cached_key(|i| i.name.to_lowercase()),
-            Sort::NameDesc => v.sort_by_cached_key(|i| std::cmp::Reverse(i.name.to_lowercase())),
+            Sort::NameAsc => v.sort_by_cached_key(|i| i.name().to_lowercase()),
+            Sort::NameDesc => v.sort_by_cached_key(|i| std::cmp::Reverse(i.name().to_lowercase())),
             Sort::RatingDesc => v.sort_by(|a, b| item_rating(b).total_cmp(&item_rating(a))),
             Sort::RatingAsc => v.sort_by(|a, b| item_rating(a).total_cmp(&item_rating(b))),
         }
@@ -716,7 +765,7 @@ impl Catalog {
             .filter(|i| {
                 i.kind == ItemKind::Episode
                     && i.source == s.source
-                    && i.extra("series_id") == Some(&s.remote_id)
+                    && i.extra("series_id") == Some(s.remote_id())
             })
             .collect();
         v.sort_by_key(|i| i.order);
@@ -749,7 +798,7 @@ impl Catalog {
                 {
                     return None;
                 }
-                let name_toks = tokens(&it.name);
+                let name_toks = tokens(it.name());
                 let mut score = 0;
                 for t in &q {
                     score += if name_toks.iter().any(|n| n == t) {
@@ -764,7 +813,7 @@ impl Catalog {
                 if self.favorites.contains_key(&it.id) {
                     score += 2;
                 }
-                Some((-score, it.name.len(), it.order, ix))
+                Some((-score, it.name().len(), it.order, ix))
             })
             .collect();
         scored.sort_unstable();
@@ -781,7 +830,18 @@ impl Catalog {
     /// was stored for them; other channels are untouched, so several guides
     /// can be layered. Programmes ending before `keep_from` are dropped.
     pub fn import_xmltv<R: BufRead>(&mut self, reader: R, keep_from: i64) -> Result<EpgStats> {
-        let mut fresh: HashMap<String, Vec<Programme>> = HashMap::new();
+        self.import_xmltv_window(reader, keep_from, i64::MAX)
+    }
+
+    /// Like [`Catalog::import_xmltv`], also dropping programmes that start after `keep_until`:
+    /// a TV that only shows two days ahead need not hold a two-week guide in RAM.
+    pub fn import_xmltv_window<R: BufRead>(
+        &mut self,
+        reader: R,
+        keep_from: i64,
+        keep_until: i64,
+    ) -> Result<EpgStats> {
+        let mut fresh: FastMap<String, Vec<Slot>> = FastMap::default();
         let mut stats = EpgStats::default();
         let mut parser = XmltvReader::new(reader);
         // Guides list each channel's programmes consecutively, so caching the
@@ -800,17 +860,18 @@ impl Catalog {
                     self.epg_channels.insert(key, c);
                 }
                 XmltvItem::Programme(p) => {
-                    if p.stop != 0 && p.stop < keep_from {
+                    if (p.stop != 0 && p.stop < keep_from) || p.start > keep_until {
                         continue;
                     }
                     if p.channel != last_raw {
                         last_key = epg_key(&p.channel);
                         last_raw.clone_from(&p.channel);
                     }
+                    let slot = Slot::pack(&p);
                     match fresh.get_mut(&last_key) {
-                        Some(v) => v.push(p),
+                        Some(v) => v.push(slot),
                         None => {
-                            fresh.insert(last_key.clone(), vec![p]);
+                            fresh.insert(last_key.clone(), vec![slot]);
                         }
                     }
                 }
@@ -820,6 +881,7 @@ impl Catalog {
         for (ch, mut list) in fresh {
             normalise_schedule(&mut list);
             list.retain(|p| p.stop >= keep_from);
+            list.shrink_to_fit();
             stats.programmes += list.len();
             self.epg.insert(ch, list);
         }
@@ -828,14 +890,18 @@ impl Catalog {
 
     /// Merge programmes from another source (e.g. Xtream short EPG).
     pub fn add_programmes(&mut self, programmes: Vec<Programme>) {
-        let mut by_ch: HashMap<String, Vec<Programme>> = HashMap::new();
-        for p in programmes {
-            by_ch.entry(epg_key(&p.channel)).or_default().push(p);
+        let mut by_ch: HashMap<String, Vec<Slot>> = HashMap::new();
+        for p in &programmes {
+            by_ch
+                .entry(epg_key(&p.channel))
+                .or_default()
+                .push(Slot::pack(p));
         }
         for (ch, new) in by_ch {
             let list = self.epg.entry(ch).or_default();
             list.extend(new);
             normalise_schedule(list);
+            list.shrink_to_fit();
         }
     }
 
@@ -851,7 +917,7 @@ impl Catalog {
 
     /// The guide key for an item: its `epg_id`, else a display-name match.
     pub fn epg_key_for(&self, item: &Item) -> Option<String> {
-        let k = epg_key(&item.epg_id);
+        let k = epg_key(item.epg_id());
         if !k.is_empty() && self.epg.contains_key(&k) {
             return Some(k);
         }
@@ -859,7 +925,7 @@ impl Catalog {
         let own = Self::item_epg_key(item.id);
         item.extra("tvg_name")
             .and_then(by_name)
-            .or_else(|| by_name(&item.name))
+            .or_else(|| by_name(item.name()))
             .or_else(|| self.epg.contains_key(&own).then_some(own))
             .or((!k.is_empty()).then_some(k))
     }
@@ -870,31 +936,32 @@ impl Catalog {
         format!("item:{id}")
     }
 
-    fn schedule(&self, item: ItemId) -> &[Programme] {
+    fn schedule(&self, item: ItemId) -> (String, &[Slot]) {
         self.item(item)
             .and_then(|it| self.epg_key_for(it))
-            .and_then(|k| self.epg.get(&k))
-            .map_or(&[], Vec::as_slice)
+            .and_then(|k| self.epg.get(&k).map(|s| (k, s.as_slice())))
+            .unwrap_or_default()
     }
 
     /// `(now, next)` for a channel at time `t`.
-    pub fn now_next(&self, item: ItemId, t: i64) -> (Option<&Programme>, Option<&Programme>) {
-        let s = self.schedule(item);
+    pub fn now_next(&self, item: ItemId, t: i64) -> (Option<Programme>, Option<Programme>) {
+        let (ch, s) = self.schedule(item);
         // First programme that has not ended yet.
         let i = s.partition_point(|p| p.stop <= t);
+        let get = |i: usize| s.get(i).map(|p| p.unpack(&ch));
         match s.get(i) {
-            Some(p) if p.start <= t => (Some(p), s.get(i + 1)),
-            Some(p) => (None, Some(p)), // gap in the schedule
+            Some(p) if p.start <= t => (get(i), get(i + 1)),
+            Some(_) => (None, get(i)), // gap in the schedule
             None => (None, None),
         }
     }
 
     /// Programmes overlapping `[from, to)`, for the guide grid.
-    pub fn guide(&self, item: ItemId, from: i64, to: i64) -> &[Programme] {
-        let s = self.schedule(item);
+    pub fn guide(&self, item: ItemId, from: i64, to: i64) -> Vec<Programme> {
+        let (ch, s) = self.schedule(item);
         let a = s.partition_point(|p| p.stop <= from);
         let b = s.partition_point(|p| p.start < to);
-        &s[a..b.max(a)]
+        s[a..b.max(a)].iter().map(|p| p.unpack(&ch)).collect()
     }
 
     // ---------------------------------------------------------- user state
@@ -1096,13 +1163,12 @@ impl Catalog {
             }
             emit(&mut w, v)?;
         }
+        let mut item_line = String::new();
         for it in &self.items {
-            let mut v = it.to_json();
-            if let Value::Object(m) = &mut v {
-                m.insert("t".into(), "item".into());
-                m.insert("order".into(), it.order.into());
-            }
-            emit(&mut w, v)?;
+            item_line.clear();
+            it.write_snapshot_line(&mut item_line);
+            item_line.push('\n');
+            w.write_all(item_line.as_bytes()).map_err(Error::Io)?;
         }
         let mut u = self.export_user_state();
         if let Value::Object(m) = &mut u {
@@ -1116,13 +1182,21 @@ impl Catalog {
     /// Restore a catalog written by [`Self::save_snapshot`].
     pub fn load_snapshot<R: BufRead>(r: R) -> Result<Catalog> {
         let mut c = Catalog::new();
+        // Share group names and URL directories while reading, not only at the end: a
+        // string per item first would make start-up need a third more memory.
+        let mut shared: FastSet<Group> = FastSet::default();
         for (n, line) in r.lines().enumerate() {
             let line = line?;
             if line.trim().is_empty() {
                 continue;
             }
-            let v =
-                json::parse(&line).map_err(|e| Error::parse("snapshot", n + 1, e.to_string()))?;
+            let bad = |e: Error| Error::parse("snapshot", n + 1, e.to_string());
+            // Item lines are nearly all of the file: read them without a JSON tree.
+            if let Some(it) = snapshot_item(&line, &mut shared).map_err(bad)? {
+                c.items.push(it);
+                continue;
+            }
+            let v = json::parse(&line).map_err(bad)?;
             match v.text("t").as_deref() {
                 Some("header") => c.next_source = v.int("next_source").unwrap_or(1) as SourceId,
                 Some("source") => {
@@ -1160,32 +1234,6 @@ impl Catalog {
                     );
                     c.next_source = c.next_source.max(id + 1);
                 }
-                Some("item") => {
-                    let kind = v
-                        .text("kind")
-                        .and_then(|k| ItemKind::parse(&k))
-                        .unwrap_or(ItemKind::Live);
-                    let source = v.int("source").unwrap_or(0) as SourceId;
-                    let mut it = Item::new(
-                        source,
-                        kind,
-                        v.text("remote_id").unwrap_or_default(),
-                        v.text("name").unwrap_or_default(),
-                    );
-                    it.group = v.text("group").unwrap_or_default();
-                    it.logo = v.text("logo").unwrap_or_default();
-                    it.url = v.text("url").unwrap_or_default();
-                    it.epg_id = v.text("epg_id").unwrap_or_default();
-                    it.archive_days = v.int("archive_days").unwrap_or(0) as u32;
-                    it.order = v.int("order").unwrap_or(0) as u32;
-                    if let Some(m) = v.get("extra").and_then(Value::as_object) {
-                        it.extra = m
-                            .iter()
-                            .filter_map(|(k, v)| Some((k.clone(), v.to_text()?)))
-                            .collect();
-                    }
-                    c.items.push(it);
-                }
                 Some("user") => c.import_user_state(&v)?,
                 _ => {}
             }
@@ -1195,9 +1243,144 @@ impl Catalog {
     }
 }
 
+/// An item line of a snapshot as an [`Item`] (`None` for the other lines), read with
+/// [`json::for_each_field`]: the text stays borrowed from the line until the item's one
+/// allocation, which keeps a 250 000-item start-up off the allocator.
+fn snapshot_item(line: &str, shared: &mut FastSet<Group>) -> Result<Option<Item>> {
+    use json::Field;
+    let mut is_item = false;
+    let (mut kind, mut source, mut archive_days, mut order) = (ItemKind::Live, 0, 0, 0);
+    let mut text: [Field; 6] = std::array::from_fn(|_| Field::Null);
+    let mut extra = "";
+    json::for_each_field(line, |k, v| match &*k {
+        "t" => is_item = v.as_str() == Some("item"),
+        "kind" => {
+            kind = v
+                .as_str()
+                .and_then(ItemKind::parse)
+                .unwrap_or(ItemKind::Live)
+        }
+        "source" => source = v.to_i64().unwrap_or(0) as SourceId,
+        "archive_days" => archive_days = v.to_i64().unwrap_or(0) as u32,
+        "order" => order = v.to_i64().unwrap_or(0) as u32,
+        "extra" => {
+            if let Field::Raw(r) = v {
+                extra = r;
+            }
+        }
+        k => {
+            let i = ["remote_id", "name", "group", "logo", "url", "epg_id"]
+                .iter()
+                .position(|f| *f == k);
+            if let Some(i) = i {
+                text[i] = v;
+            }
+        }
+    })?;
+    if !is_item {
+        return Ok(None);
+    }
+    let mut extras: Vec<(std::borrow::Cow<str>, Field)> = Vec::new();
+    if !extra.is_empty() {
+        json::for_each_field(extra, |k, v| extras.push((k, v)))?;
+    }
+    let extras: Vec<(&str, std::borrow::Cow<str>)> = extras
+        .iter()
+        .filter_map(|(k, v)| Some((&**k, v.to_text()?)))
+        .collect();
+    let extras: Vec<(&str, &str)> = extras.iter().map(|(k, v)| (*k, &**v)).collect();
+    // remote id and name trimmed, as `Value::text` read them; the rest as written.
+    let t = |i: usize| text[i].as_str().unwrap_or("");
+    let mut it = Item::from_parts(
+        source,
+        kind,
+        text[0].to_text().as_deref().unwrap_or(""),
+        text[1].to_text().as_deref().unwrap_or(""),
+        t(2),
+        t(3),
+        t(4),
+        t(5),
+        &extras,
+        shared,
+    );
+    it.archive_days = archive_days;
+    it.order = order;
+    Ok(Some(it))
+}
+
+/// A programme as the guide stores it: its times and one string with the rest. A guide has a
+/// hundred thousand programmes or more; as [`Programme`]s they would take twice the memory.
+#[derive(Debug, Clone)]
+struct Slot {
+    start: i64,
+    stop: i64,
+    /// title, sub-title, description, icon, episode, rating and the categories, joined by
+    /// `\0` (the categories by `\u{1f}`).
+    text: Box<str>,
+}
+
+impl Slot {
+    fn pack(p: &Programme) -> Slot {
+        let fields = [
+            &p.title,
+            &p.sub_title,
+            &p.desc,
+            &p.icon,
+            &p.episode,
+            &p.rating,
+        ];
+        let len = fields.iter().map(|f| f.len() + 1).sum::<usize>()
+            + p.categories.iter().map(|c| c.len() + 1).sum::<usize>();
+        let mut text = String::with_capacity(len);
+        // The separators cannot be part of a value.
+        let push = |out: &mut String, s: &str| {
+            out.extend(
+                s.chars()
+                    .map(|c| if c == '\0' || c == '\u{1f}' { ' ' } else { c }),
+            )
+        };
+        for f in fields {
+            push(&mut text, f);
+            text.push('\0');
+        }
+        for (i, c) in p.categories.iter().enumerate() {
+            if i > 0 {
+                text.push('\u{1f}');
+            }
+            push(&mut text, c);
+        }
+        Slot {
+            start: p.start,
+            stop: p.stop,
+            text: text.into_boxed_str(),
+        }
+    }
+
+    fn unpack(&self, channel: &str) -> Programme {
+        let mut f = self.text.split('\0').map(str::to_string);
+        let mut next = || f.next().unwrap_or_default();
+        Programme {
+            channel: channel.to_string(),
+            start: self.start,
+            stop: self.stop,
+            title: next(),
+            sub_title: next(),
+            desc: next(),
+            icon: next(),
+            episode: next(),
+            rating: next(),
+            categories: next()
+                .split('\u{1f}')
+                .filter(|c| !c.is_empty())
+                .map(str::to_string)
+                .collect(),
+        }
+    }
+}
+
 /// Sort, drop exact duplicates, fill missing stop times from the next
 /// programme, and trim overlaps (later programme wins its start time).
-fn normalise_schedule(list: &mut Vec<Programme>) {
+fn normalise_schedule(list: &mut Vec<Slot>) {
     list.sort_by(|a, b| a.start.cmp(&b.start).then(b.stop.cmp(&a.stop)));
     list.dedup_by(|b, a| a.start == b.start); // keep the first (longest) of same start
     for i in 0..list.len() {
@@ -1271,17 +1454,17 @@ mod tests {
         );
         assert_eq!(c.groups(s, ItemKind::Movie)[0].name, "Films");
         let uk = c.list(s, ItemKind::Live, Some("UK"), 1, 10);
-        assert_eq!(uk[0].name, "BBC Two");
+        assert_eq!(uk[0].name(), "BBC Two");
     }
 
     #[test]
     fn search_ranks_and_folds() {
         let (c, _) = sample();
         let r = c.search("tele", SearchFilter::default(), 10);
-        assert_eq!(r[0].name, "Télé Matin");
+        assert_eq!(r[0].name(), "Télé Matin");
         let r = c.search("bbc o", SearchFilter::default(), 10);
         assert_eq!(r.len(), 2);
-        assert!(r.iter().all(|i| i.name == "BBC One HD"));
+        assert!(r.iter().all(|i| i.name() == "BBC One HD"));
         let r = c.search(
             "bbc",
             SearchFilter {
@@ -1304,7 +1487,7 @@ mod tests {
         assert_eq!(next.unwrap().title, "News");
         // Missing stop filled from the next programme (12:00).
         let (now, _) = c.now_next(bbc, t(11, 45));
-        assert_eq!(now.unwrap().title, "Open end");
+        assert_eq!(now.as_ref().unwrap().title, "Open end");
         assert_eq!(now.unwrap().stop, t(12, 0));
         // Old programme dropped by keep_from.
         assert_eq!(c.guide(bbc, 0, i64::MAX).len(), 4);
@@ -1390,7 +1573,7 @@ mod tests {
             c.query(q)
                 .1
                 .iter()
-                .map(|i| i.name.clone())
+                .map(|i| i.name().to_string())
                 .collect::<Vec<_>>()
         };
         let mut q = ListQuery::new(ItemKind::Movie);
@@ -1461,7 +1644,7 @@ mod tests {
         q.group_field = Some("country".into());
         let (n, v) = c.query(&q);
         assert_eq!(n, 2);
-        assert_eq!(v[0].name, "A");
+        assert_eq!(v[0].name(), "A");
         q.group = None;
         q.hidden_groups = ["India".to_string()].into();
         let (n, _) = c.query(&q);

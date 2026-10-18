@@ -280,10 +280,12 @@ impl XtreamClient {
                     &id,
                     s.text("name").unwrap_or_default(),
                 );
-                it.group = Self::group_name(cats, s);
-                it.logo = s.text("stream_icon").unwrap_or_default();
-                it.url = self.live_url(&id);
-                it.epg_id = s.text("epg_channel_id").unwrap_or_default();
+                it.set_group(&Self::group_name(cats, s));
+                it.set_text(
+                    &s.text("stream_icon").unwrap_or_default(),
+                    &self.live_url(&id),
+                    &s.text("epg_channel_id").unwrap_or_default(),
+                );
                 it.archive_days = archive;
                 it.order = s.int("num").map_or(i as u32, |n| n as u32);
                 Some(
@@ -314,9 +316,12 @@ impl XtreamClient {
                     &id,
                     s.text("name").unwrap_or_default(),
                 );
-                it.group = Self::group_name(cats, s);
-                it.logo = s.text("stream_icon").unwrap_or_default();
-                it.url = self.movie_url(&id, &ext);
+                it.set_group(&Self::group_name(cats, s));
+                it.set_text(
+                    &s.text("stream_icon").unwrap_or_default(),
+                    &self.movie_url(&id, &ext),
+                    "",
+                );
                 it.order = s.int("num").map_or(i as u32, |n| n as u32);
                 Some(
                     it.with_extra("container", Some(ext))
@@ -343,8 +348,8 @@ impl XtreamClient {
                     &id,
                     s.text("name").unwrap_or_default(),
                 );
-                it.group = Self::group_name(cats, s);
-                it.logo = s.text("cover").unwrap_or_default();
+                it.set_group(&Self::group_name(cats, s));
+                it.set_logo(&s.text("cover").unwrap_or_default());
                 it.order = s.int("num").map_or(i as u32, |n| n as u32);
                 Some(
                     it.with_extra("plot", s.text("plot"))
@@ -386,14 +391,17 @@ impl XtreamClient {
                 let info = e.get("info").cloned().unwrap_or_default();
                 let title = e.text("title").unwrap_or_else(|| format!("Episode {num}"));
                 let mut it = Item::new(self.source, ItemKind::Episode, &id, title);
-                it.group = format!("Season {season}");
-                it.logo = info
-                    .text("movie_image")
-                    .unwrap_or_else(|| series.logo.clone());
-                it.url = self.episode_url(&id, &ext);
+                it.set_group(&format!("Season {season}"));
+                it.set_text(
+                    &info
+                        .text("movie_image")
+                        .unwrap_or_else(|| series.logo().to_string()),
+                    &self.episode_url(&id, &ext),
+                    "",
+                );
                 it.order = (season.clamp(0, 9999) * 10_000 + num.clamp(0, 9999)) as u32;
                 eps.push(
-                    it.with_extra("series_id", Some(series.remote_id.clone()))
+                    it.with_extra("series_id", Some(series.remote_id().to_string()))
                         .with_extra("season", Some(season.to_string()))
                         .with_extra("episode", Some(num.to_string()))
                         .with_extra("container", Some(ext))
@@ -587,17 +595,17 @@ pub(crate) mod tests {
         assert_eq!(snap.items.len(), 4);
         let cnn = &snap.items[0];
         assert_eq!(
-            (cnn.group.as_str(), cnn.epg_id.as_str(), cnn.archive_days),
+            (&*cnn.group, cnn.epg_id(), cnn.archive_days),
             ("News", "cnn.us", 3)
         );
-        assert_eq!(snap.items[1].group, "Uncategorized");
+        assert_eq!(&*snap.items[1].group, "Uncategorized");
         let heat = snap
             .items
             .iter()
             .find(|i| i.kind == ItemKind::Movie)
             .unwrap();
-        assert_eq!(heat.group, "Action");
-        assert!(heat.url.ends_with("/movie/u/p%26x/5001.mkv"));
+        assert_eq!(&*heat.group, "Action");
+        assert!(heat.url().ends_with("/movie/u/p%26x/5001.mkv"));
         assert_eq!(heat.extra("rating"), Some("8.3"));
     }
 
@@ -618,10 +626,10 @@ pub(crate) mod tests {
             .parse_series_info(&f("action=get_series_info", &[]).unwrap(), &series)
             .unwrap();
         assert_eq!(
-            eps.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(),
+            eps.iter().map(|e| e.name()).collect::<Vec<_>>(),
             ["Pilot", "S2E1"]
         );
-        assert!(eps[0].url.ends_with("/series/u/p%26x/9001.mkv"));
+        assert!(eps[0].url().ends_with("/series/u/p%26x/9001.mkv"));
         assert_eq!(eps[1].extra("season"), Some("2"));
 
         let epg = c

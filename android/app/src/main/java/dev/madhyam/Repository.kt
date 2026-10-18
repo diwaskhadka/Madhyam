@@ -242,6 +242,7 @@ class Repository(context: Context) {
 
     /** Restore the last catalog so the app starts instantly, even offline. */
     suspend fun init() = io {
+        val started = System.currentTimeMillis()
         if (snapshot.exists()) {
             try {
                 core.call("load_snapshot", args("path" to snapshot.path))
@@ -255,11 +256,21 @@ class Repository(context: Context) {
         }
         epgDir.listFiles { f -> f.name.endsWith(".xml") }?.forEach { f ->
             try {
-                core.call("import_xmltv_file", args("path" to f.path))
+                importGuide(f)
             } catch (e: IptvException) {
                 Log.w(TAG, "cached guide ${f.name} unreadable", e)
             }
         }
+        Log.i(TAG, "catalog and guides loaded in ${System.currentTimeMillis() - started} ms")
+    }
+
+    /**
+     * Load a guide from a day back (catch-up) to three days ahead: the guide grid goes two days
+     * forward, and a provider's week-long guide would otherwise sit in RAM (#26).
+     */
+    private fun importGuide(file: File) {
+        val now = System.currentTimeMillis() / 1000
+        core.call("import_xmltv_file", args("path" to file.path, "keep_from" to now - GUIDE_BACK_S, "keep_until" to now + GUIDE_AHEAD_S))
     }
 
     private fun snapshotHasPasswords(): Boolean = snapshot.useLines { lines ->
@@ -443,7 +454,7 @@ class Repository(context: Context) {
                 continue
             }
             try {
-                core.call("import_xmltv_file", args("path" to file.path))
+                importGuide(file)
                 // Keep it for the next start (already decompressed).
                 val dest = epgFile(id, index++)
                 if (!file.renameTo(dest)) file.copyTo(dest, overwrite = true)
@@ -486,7 +497,7 @@ class Repository(context: Context) {
                 continue
             }
             try {
-                core.call("import_xmltv_file", args("path" to file.path))
+                importGuide(file)
                 val dest = extraEpgFile(index++)
                 if (!file.renameTo(dest)) file.copyTo(dest, overwrite = true)
             } finally {
@@ -834,6 +845,8 @@ class Repository(context: Context) {
 
     companion object {
         const val TAG = "Madhyam"
+        private const val GUIDE_BACK_S = 86_400L
+        private const val GUIDE_AHEAD_S = 3 * 86_400L
         private const val OS_SECRET = -1 // Secrets id of the OpenSubtitles password
         const val USER_AGENT = "Mozilla/5.0 (Linux; Android TV) ${Brand.NAME}/0.6"
     }

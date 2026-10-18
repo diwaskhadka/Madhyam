@@ -108,7 +108,7 @@ fn search(m3u: &str, q: &str) -> Result<()> {
     let hits = c.search(q, SearchFilter::default(), 25);
     println!("{} hits in {}", hits.len(), ms(t));
     for h in hits {
-        println!("  [{}] {}  ({})", h.kind.as_str(), h.name, h.group);
+        println!("  [{}] {}  ({})", h.kind.as_str(), h.name(), h.group);
     }
     Ok(())
 }
@@ -137,9 +137,9 @@ fn now_playing(m3u: &str, xml: &str, q: &str) -> Result<()> {
         let (n, x) = c.now_next(it.id, now);
         println!(
             "{:<32} now: {:<30} next: {}",
-            it.name,
-            n.map_or("-", |p| p.title.as_str()),
-            x.map_or("-", |p| p.title.as_str())
+            it.name(),
+            n.as_ref().map_or("-", |p| p.title.as_str()),
+            x.as_ref().map_or("-", |p| p.title.as_str())
         );
     }
     Ok(())
