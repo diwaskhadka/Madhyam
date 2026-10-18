@@ -1,7 +1,7 @@
 # Branding
 
-The app is called **Madhyam** (माध्यम, Nepali for "medium"). The repository and the
-code keep the project's code name, Madhyam (`madhyam-core`, `dev.madhyam`, `Madhyam.Windows`).
+The app is called **Madhyam** (माध्यम, Nepali for "medium"). The engine is `madhyam-core`;
+the apps are `dev.madhyam` (Android TV) and `Madhyam.Windows`.
 
 ## Files
 
@@ -36,9 +36,8 @@ Android has them as `@color/brand_*` (`android/app/src/main/res/values/colors.xm
 - Display name and IDs are separate. Changing `brand.ini` renames what users see, but these
   stay fixed once released, or upgrades break:
   - Android `applicationId` `dev.madhyam` (`android/app/build.gradle.kts`)
-  - Windows installer `AppId` (`windows/installer/Madhyam.iss`; still Madhyam 0.4.x's id, so
-    0.9.0 upgrades those installs), `Madhyam.exe`, and the data folder
-    `%LOCALAPPDATA%\Madhyam` (`App.DataDir`; the app moves 0.4.x's `Madhyam` folder there)
+  - Windows installer `AppId` (`windows/installer/Madhyam.iss`), `Madhyam.exe`, and the
+    data folder `%LOCALAPPDATA%\Madhyam` (`App.DataDir`)
 
 ## Where each platform uses it
 

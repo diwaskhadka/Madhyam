@@ -510,7 +510,7 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>playlist menu: playlists with status dot and a ⋮ menu, then shortcuts.</summary>
+    /// <summary>Playlist menu: playlists with status dot and a ⋮ menu, then shortcuts.</summary>
     private void PlaylistButton_Click(object sender, MouseButtonEventArgs e)
     {
         Popup? popup = null;

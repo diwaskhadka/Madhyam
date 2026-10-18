@@ -447,7 +447,7 @@ public static class UiKit
     public sealed record MenuRow(string Glyph, string Label, bool Checked, Action Run, string? Sub = null, string? GlyphBrush = null, string? LabelBrush = null);
 
     /// <summary>
-    /// pop-up: optional caps header, rows with a leading icon and a
+    /// Pop-up menu: optional caps header, rows with a leading icon and a
     /// trailing check mark, plus optional extra controls (delay steppers, chips).
     /// It is a real window, so it also draws above the video surface.
     /// </summary>

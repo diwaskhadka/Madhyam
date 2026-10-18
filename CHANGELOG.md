@@ -1,66 +1,70 @@
 # Changelog
 
 From 0.9.0 on, every platform shares **one version number** (the `VERSION` file) and ships in
-the same GitHub release. Each version has one section per platform; a platform with nothing new
-says so. The engine (`crates/madhyam-core`) keeps its own version, given in each section.
+the same release. Each version has one section per platform; a platform with nothing new says
+so. The engine (`crates/madhyam-core`) keeps its own version, given in each section.
 
 How to cut a release and how to add a platform: [docs/RELEASING.md](docs/RELEASING.md).
+
+## 1.0.0
+
+First stable release.
+
+### Windows
+- Setup and the first start no longer carry the one-time upgrade steps of 0.9.0.
+
+### Android TV
+- No functional changes.
+
+### Engine
+- madhyam-core 0.2.0, unchanged.
 
 ## 0.10.0
 
 New dark theme and a custom colour theme.
 
 ### Windows
-- **Navy & Crimson:** the dark theme now uses deep navy surfaces with crimson highlights. Existing dark-theme users get it automatically.
-- **Custom theme:** Settings › General › Visual theme › Custom, then **Pick colour…** opens a colour picker. Choose a preset (Crimson, Royal blue, Vermilion, Saffron, Green, Teal, Sky blue, Violet, Purple, Rose, Slate, Brown), set Hue, Saturation and Lightness, or type a hex code, then choose a dark or light base. A preview shows the result, and the whole theme is built from that one colour so text stays readable. It applies on the next start, as before.
-- The About link points at the renamed repository, github.com/diwaskhadka/Madhyam.
+- **Navy & Crimson:** the dark theme uses deep navy surfaces with crimson highlights.
+- **Custom theme:** Settings › General › Visual theme › Custom, then **Pick colour…** opens a colour picker. Choose a preset (Crimson, Royal blue, Vermilion, Saffron, Green, Teal, Sky blue, Violet, Purple, Rose, Slate, Brown), set Hue, Saturation and Lightness, or type a hex code, then choose a dark or light base. A preview shows the result, and the whole theme is built from that one colour so text stays readable. It applies on the next start.
 
 ### Android TV
-- **Navy & Crimson:** the same new dark theme.
-- **Custom theme:** Settings › Appearance › Custom colour opens a colour picker made for the remote. It has the same named presets, ◀ ▶ on Hue, Saturation and Lightness, a hex code and a dark or light base, with a live preview. The theme changes at once.
+- **Navy & Crimson:** the same dark theme.
+- **Custom theme:** Settings › Appearance › Custom colour opens a colour picker made for the remote: the same named presets, ◀ ▶ on Hue, Saturation and Lightness, a hex code and a dark or light base, with a live preview. The theme changes at once.
 
 ### Engine
 - madhyam-core 0.2.0, unchanged.
-
-### Project
-- The repository is now **diwaskhadka/Madhyam**; old links redirect.
-- The old project name no longer appears in the README, the changelog or the release notes.
 
 ## 0.9.1
 
 Free TV comes preinstalled, and a new README.
 
 ### Windows
-- **Free TV preinstalled:** on the first start, the Free TV playlist (12,000+ free iptv-org channels) is added automatically. Upgrades with playlists already set up are left as they are, and once you turn Free TV off it stays off.
+- **Free TV preinstalled:** on the first start, the Free TV playlist (12,000+ free iptv-org channels) is added automatically. Installs that already have playlists are left as they are, and once you turn Free TV off it stays off.
 
 ### Android TV
-- **Free TV preinstalled:** a fresh install opens straight into 12,000+ free channels, by category or by country, with no setup step. Same rules as Windows for upgrades and turning it off.
+- **Free TV preinstalled:** a fresh install opens straight into 12,000+ free channels, by category or by country, with no setup step. Same rules as Windows for existing playlists and turning it off.
 
 ### Engine
 - madhyam-core 0.2.0, unchanged.
 
 ### Project
-- README rewritten as a product page: features, screenshots, remote and keyboard keys, the platforms in the pipeline, and a Buy Me a Coffee link (also the repository's Sponsor button). Engine details moved to [docs/ENGINE.md](docs/ENGINE.md).
-- Release notes now use full links, so links from the changelog work on the release page.
+- README as a product page: features, screenshots, remote and keyboard keys, the platforms in the pipeline, and a Buy Me a Coffee link. Engine details are in [docs/ENGINE.md](docs/ENGINE.md).
+- Release notes use full links, so links from the changelog work on the release page.
 
 ## 0.9.0
 
 First release with one version for every platform: the Windows installer and the Android TV
-app are published together.
-
-The app has a new name, **Madhyam** (माध्यम), and a new icon: a folded ribbon play
-mark in the crimson and blue of the Nepal flag. Name and icon come from one place for every
-platform, [branding/](branding/README.md). Release files are now `Madhyam-Setup-X.Y.Z.exe`
-and `Madhyam-vX.Y.Z-androidtv.apk`.
+app are published together, with the Madhyam (माध्यम) icon: a folded ribbon play mark
+in crimson and blue. Name and icon come from one place for every platform,
+[branding/](branding/README.md). Release files are `Madhyam-Setup-X.Y.Z.exe` and
+`Madhyam-vX.Y.Z-androidtv.apk`.
 
 ### Windows
 - Version number aligned with the other platforms: 0.4.11 → 0.9.0.
-- **Name:** window title, Start menu and desktop shortcuts, Settings > Apps, `Madhyam.exe`; About shows माध्यम too.
-- **New icon** for the exe, the window, the sidebar and the installer.
-- **Upgrades 0.4.x in place:** setup replaces the old exe and its Start menu and desktop shortcuts, leaving one app in Settings > Apps. On first start, playlists, settings, favorites and progress move from the old data folder to `%LOCALAPPDATA%\Madhyam`; saved passwords keep working.
+- **New icon** for the exe, the window, the sidebar and the installer; About shows माध्यम too.
 
 ### Android TV (first public release)
-Built in steps 0.5 to 0.9 (never published separately), to match Windows 0.4.11:
+Built in steps 0.5 to 0.8 (never published separately), to match Windows 0.4.11:
 - **Shell:** navigation rail (Home, Live TV, Movies, Series, Favorites, Recent, Search, Settings), playlist switcher, Xtream and M3U playlists, Free TV from iptv-org by category or country.
 - **Live TV:** categories, channels with now/next, a preview window that keeps playing in full screen, channel zapping, a channels × time **TV guide** and **catch-up** of past programmes on Xtream archive channels.
 - **Movies and Series:** poster grid with sort and minimum rating, details pages (backdrop, cast, IMDb and Rotten Tomatoes ratings, trailer), seasons and episodes with watched marks and resume, Continue watching.
@@ -68,9 +72,8 @@ Built in steps 0.5 to 0.9 (never published separately), to match Windows 0.4.11:
 - **Home:** continue-watching banner and rows of favorites, recent channels and recently added; each row can be turned off.
 - **Settings:** playlists (refresh, update guide, test connection, edit with user agent, remove, Xtream account status), appearance (dark, light or follow the TV, cover size, titles under covers), hidden categories and their order, live stream format, buffer, preferred languages, guide refresh interval, time offset and extra guide URLs, OMDb and OpenSubtitles keys.
 - **Security:** Xtream and OpenSubtitles passwords are encrypted with an Android Keystore key and left out of the catalog snapshot.
-- **Name and icon:** Madhyam on the launcher, माध्यम too on the Google TV banner and in About; adaptive launcher icon with a themed (monochrome) layer, and a 320×180 home-row banner.
-- Package ID `dev.madhyam`.
-- Android 5.0 (API 21) and later; built for ARM 32/64-bit and x86_64.
+- **Launcher:** Madhyam on the launcher, माध्यम too on the Google TV banner and in About; adaptive launcher icon with a themed (monochrome) layer, and a 320×180 home-row banner.
+- Package ID `dev.madhyam`; Android 5.0 (API 21) and later; built for ARM 32/64-bit and x86_64.
 
 ### Engine
 - madhyam-core 0.2.0, unchanged.
@@ -81,7 +84,7 @@ Built in steps 0.5 to 0.9 (never published separately), to match Windows 0.4.11:
 
 ## Before 0.9.0: Windows only
 
-Each Windows version had its own number; Android TV was not published.
+Each Windows version had its own number; Android TV was not published yet.
 
 - **0.4.11** Windows installer (Inno Setup); public releases carry only the installer, developer files go to a private draft.
 - **0.4.10** Show / hide countries in Free TV; the Free TV rail shortcut was removed (the playlist menu already does it).
@@ -94,7 +97,7 @@ Each Windows version had its own number; Android TV was not published.
 - **0.4.3** One-step full screen; inline trailers; IMDb and Rotten Tomatoes ratings; playlist actions menu.
 - **0.4.2** Raised player cards; playlist menu and episode watched toggle; live badge; app icon.
 - **0.4.1** Pop-up menu font and floating player controls fixed.
-- **0.4.0** dashboard, advanced search, movie and series pages, sources.
+- **0.4.0** Dashboard, advanced search, movie and series pages, sources.
 - **0.3.0** Settings page, timeline guide, light theme.
-- **0.2.0** UI; a single exe.
+- **0.2.0** New Windows UI: icon rail, playlist switcher and search, dense channel list; a single exe.
 - **0.1.x** First Windows player (WPF + LibVLC) on the madhyam-core engine.

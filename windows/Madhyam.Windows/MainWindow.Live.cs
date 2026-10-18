@@ -116,7 +116,7 @@ public partial class MainWindow
         _groupSilent = false;
         var target = select ?? _group;
         var pick = rows.FirstOrDefault(r => target == null ? r.IsAll : !r.IsAll && r.Name == target) ?? rows.FirstOrDefault();
-        // Live opens on the first real category (smaller list); grids open on All items.
+        // Live opens on the first real category (a smaller list); grids open on All items.
         if (select == null && _group == null && _mode == Mode.Live && rows.Count > 1) pick = rows[1];
         GroupList.SelectedItem = pick; // → GroupList_SelectionChanged loads items
         if (pick == null) _ = ShowGroup(null);
