@@ -1,7 +1,10 @@
 package dev.madhyam.ui
 
+import android.view.KeyEvent as AndroidKeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -20,6 +23,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -28,9 +32,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -67,6 +75,9 @@ private enum class Page(val label: String) {
 /**
  * Settings (same style as Windows): sections on the left, rows of
  * "title + description … value" on the right. OK on a row toggles or cycles its value.
+ *
+ * Moving the focus down the sections shows a section only once the focus rests on it (so walking
+ * past Categories doesn't build it); OK or Right opens it at once and puts the focus on its first row.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -85,7 +96,26 @@ fun SettingsScreen(vm: MainViewModel) {
         lastOpened = openSource?.id ?: lastOpened
     }
     val currentPage = remember { FocusRequester() }
-    @Suppress("UNUSED_EXPRESSION") vm.settingsVersion // recompose when settings change
+    // Entering the page from the left lands on its first row, not the row nearest the section.
+    val pageFirst = remember { FocusRequester() }
+    var enterPage by remember { mutableStateOf(0) }
+    LaunchedEffect(enterPage) {
+        if (enterPage == 0) return@LaunchedEffect
+        kotlinx.coroutines.delay(60)
+        runCatching { pageFirst.requestFocus() }
+    }
+    fun open(p: Page) {
+        if (page == p) return
+        page = p
+        openSource = null
+        editing = false
+    }
+    var resting by remember { mutableStateOf<Page?>(null) }
+    LaunchedEffect(resting) {
+        val p = resting ?: return@LaunchedEffect
+        kotlinx.coroutines.delay(400)
+        open(p)
+    }
 
     BackHandler(enabled = openSource != null) {
         if (editing) editing = false else openSource = null
@@ -101,35 +131,56 @@ fun SettingsScreen(vm: MainViewModel) {
             items(Page.entries) { p ->
                 ListItem(
                     selected = page == p,
-                    onClick = { page = p },
-                    modifier = (if (page == p) Modifier.focusRequester(currentPage) else Modifier).onFocusChanged {
-                        if (it.isFocused && page != p) {
-                            page = p
-                            openSource = null
-                            editing = false
-                        }
+                    onClick = {
+                        resting = null
+                        open(p)
+                        enterPage++
                     },
+                    modifier = (if (page == p) Modifier.focusRequester(currentPage) else Modifier)
+                        .onFocusChanged {
+                            if (it.isFocused) resting = if (page != p) p else null
+                            else if (resting == p) resting = null
+                        }
+                        .onPreviewKeyEvent {
+                            // Right before the section showed: open it and go to its first row.
+                            if (it.type != KeyEventType.KeyDown || it.nativeKeyEvent.keyCode != AndroidKeyEvent.KEYCODE_DPAD_RIGHT || page == p) {
+                                return@onPreviewKeyEvent false
+                            }
+                            resting = null
+                            open(p)
+                            enterPage++
+                            true
+                        },
                     headlineContent = { Text(p.label) },
                 )
             }
         }
-        Column(Modifier.weight(1f).fillMaxHeight().padding(horizontal = 28.dp, vertical = 16.dp)) {
+        Column(
+            Modifier.weight(1f).fillMaxHeight().padding(horizontal = 28.dp, vertical = 16.dp)
+                .focusProperties { enter = { pageFirst } }.focusGroup(),
+        ) {
             val src = openSource?.let { o -> vm.sources.firstOrNull { it.id == o.id } }
-            when {
-                page == Page.Playlists && src != null && editing -> EditSource(vm, src) { editing = false }
-                page == Page.Playlists && src != null -> SourceDetails(vm, src, onEdit = { editing = true }, onRemoved = { openSource = null })
-                else -> LazyColumn(Modifier.focusRestorer(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    when (page) {
-                        Page.Playlists -> playlists(vm, returnTo, lastOpened) { openSource = it }
-                        Page.FreeTv -> freeTv(vm)
-                        Page.Appearance -> appearance(vm)
-                        Page.Home -> home(vm)
-                        Page.Live -> live(vm)
-                        Page.Categories -> item { CategoriesPage(vm) }
-                        Page.Playback -> playback(vm)
-                        Page.Guide -> guide(vm)
-                        Page.Online -> item { OnlinePage(vm) }
-                        Page.About -> about(vm)
+            // A new page starts at the top, with no memory of the last page's focused row.
+            key(page) {
+                Box(Modifier.focusRequester(pageFirst)) {
+                    when {
+                        page == Page.Playlists && src != null && editing -> EditSource(vm, src) { editing = false }
+                        page == Page.Playlists && src != null -> SourceDetails(vm, src, onEdit = { editing = true }, onRemoved = { openSource = null })
+                        page == Page.Categories -> CategoriesPage(vm)
+                        else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            when (page) {
+                                Page.Playlists -> playlists(vm, returnTo, lastOpened) { openSource = it }
+                                Page.FreeTv -> freeTv(vm)
+                                Page.Appearance -> appearance(vm)
+                                Page.Home -> home(vm)
+                                Page.Live -> live(vm)
+                                Page.Categories -> {}
+                                Page.Playback -> playback(vm)
+                                Page.Guide -> guide(vm)
+                                Page.Online -> item { OnlinePage(vm) }
+                                Page.About -> about(vm)
+                            }
+                        }
                     }
                 }
             }
@@ -410,7 +461,10 @@ private fun LazyListScope.live(vm: MainViewModel) {
     }
 }
 
-/** Show or hide the categories of the current playlist. */
+/**
+ * Show or hide the categories of the current playlist. One lazy row per category: a big
+ * playlist has hundreds, and composing them all at once froze the TV until it ran out of memory.
+ */
 @Composable
 private fun CategoriesPage(vm: MainViewModel) {
     val s = vm.source ?: run {
@@ -424,27 +478,30 @@ private fun CategoriesPage(vm: MainViewModel) {
         if (s.isFreeTv) add("live:country" to "Countries")
     }
     var kind by remember(s.id) { mutableStateOf("live") }
-    var groups by remember(s.id, kind) { mutableStateOf<List<Group>>(emptyList()) }
+    var groups by remember(s.id, kind) { mutableStateOf<List<Group>?>(null) }
     LaunchedEffect(s.id, kind) {
         groups = if (kind == "live:country") vm.groupsOf(s, "live", FreeTv.COUNTRY_FIELD) else vm.groupsOf(s, kind)
     }
-    @Suppress("UNUSED_EXPRESSION") vm.settingsVersion
-    val hidden = vm.settings.hidden(s.id, kind)
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        SectionTitle("Categories of ${s.name}", "Hidden categories disappear from the list and from \"All\"")
-        ChoiceRow("Show categories of", "OK to switch", kind, kinds) { kind = it }
-        val orderKey = kind.substringBefore(':')
-        val order = vm.settings.categorySort[orderKey] ?: if (kind == "live:country") "name_asc" else "provider"
-        ChoiceRow(
-            "Order", "How the category list is sorted (for every playlist)", order,
-            listOf("provider" to "Provider order", "name_asc" to "A to Z", "name_desc" to "Z to A"),
-        ) { vm.setCategoryOrder(orderKey, it) }
-        if (groups.isEmpty()) Text("No categories.", color = Muted, modifier = Modifier.padding(12.dp))
-        for (g in groups) {
-            val shown = g.name !in hidden
-            SwitchRow(g.name, "${g.count} items", shown) { on ->
-                val realKind = if (kind == "live:country") "live:country" else kind
-                vm.setHidden(s, realKind, g.name, !on)
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        item { SectionTitle("Categories of ${s.name}", "Hidden categories disappear from the list and from \"All\"") }
+        item { ChoiceRow("Show categories of", "OK to switch", kind, kinds) { kind = it } }
+        item {
+            val orderKey = kind.substringBefore(':')
+            // categorySort is a plain map: settingsVersion makes this row follow its changes.
+            val order = vm.settingsVersion.let { vm.settings.categorySort[orderKey] } ?: if (kind == "live:country") "name_asc" else "provider"
+            ChoiceRow(
+                "Order", "How the category list is sorted (for every playlist)", order,
+                listOf("provider" to "Provider order", "name_asc" to "A to Z", "name_desc" to "Z to A"),
+            ) { vm.setCategoryOrder(orderKey, it) }
+        }
+        val list = groups
+        when {
+            list == null -> item { Text("Loading categories…", color = Muted, modifier = Modifier.padding(12.dp)) }
+            list.isEmpty() -> item { Text("No categories.", color = Muted, modifier = Modifier.padding(12.dp)) }
+            else -> items(list) { g ->
+                val k = kind
+                val shown = vm.settingsVersion.let { !vm.settings.isHidden(s.id, k, g.name) }
+                SwitchRow(g.name, "${g.count} items", shown) { on -> vm.setHidden(s, k, g.name, !on) }
             }
         }
     }
@@ -502,6 +559,7 @@ private val LANGUAGES = listOf(
 
 private fun LazyListScope.guide(vm: MainViewModel) {
     val st = vm.settings
+    @Suppress("UNUSED_EXPRESSION") vm.settingsVersion // the extra guide URLs are a plain list: rebuild the rows when it changes
     item { SectionTitle("Guide (EPG)") }
     item {
         ChoiceRow(
@@ -546,6 +604,7 @@ private fun LazyListScope.about(vm: MainViewModel) {
 @Composable
 private fun AboutRows(vm: MainViewModel) {
     val ctx = LocalContext.current
+    var confirmClear by remember { mutableStateOf(false) }
     val version = remember {
         try {
             ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: "?"
@@ -557,7 +616,17 @@ private fun AboutRows(vm: MainViewModel) {
         SectionTitle("About ${Brand.NAME} · ${Brand.NATIVE_NAME}")
         ActionRow("Version", value = version) {}
         ActionRow("Engine (madhyam-core)", value = vm.engineVersion) {}
-        ActionRow("Clear watch history", "Empties the Recent list") { vm.clearHistory() }
+        ActionRow(
+            if (confirmClear) "Press OK again to clear the watch history" else "Clear watch history",
+            "Empties the Recent list",
+        ) {
+            if (confirmClear) {
+                confirmClear = false
+                vm.clearHistory()
+            } else {
+                confirmClear = true
+            }
+        }
         Text(
             "${Brand.NAME} plays your own playlists and ships with no channels. Free TV channels come from iptv-org.",
             color = Muted, fontSize = 12.sp, modifier = Modifier.padding(12.dp),

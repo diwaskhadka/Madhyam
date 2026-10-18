@@ -2,86 +2,109 @@ package dev.madhyam
 
 import android.content.Context
 import android.util.Log
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 
 /**
  * User preferences, kept in settings.json in app-private storage (the same idea as the
- * Windows app's settings.json). Every property is plain state; call [save] after changing it.
+ * Windows app's settings.json). The simple properties are snapshot state, so the screens that
+ * show them recompose when they change; the collections are not (screens that show them read
+ * MainViewModel.settingsVersion). Call [save] after changing anything.
  */
 class AppSettings private constructor(private val file: File) {
     // ------------------------------------------------------------ general
-    var startupSection = "Last"            // Last | Live | Movies | Series | Favorites | Recent
-    var lastSection = "Live"
-    var lastSourceId: Int? = null
+    var startupSection by mutableStateOf("Last")            // Last | Live | Movies | Series | Favorites | Recent
+    var lastSection by mutableStateOf("Live")
+    var lastSourceId by mutableStateOf<Int?>(null)
 
     // ----------------------------------------------------------- live tv
-    var stripPrefixes = false               // "UK: BBC One" → "BBC One"
-    var showNumbers = true
-    var liveSortAz = false
-    var previewOnSelect = true              // play the selected channel in the preview window
+    var stripPrefixes by mutableStateOf(false)               // "UK: BBC One" → "BBC One"
+    var showNumbers by mutableStateOf(true)
+    var liveSortAz by mutableStateOf(false)
+    var previewOnSelect by mutableStateOf(true)              // play the selected channel in the preview window
 
     // ---------------------------------------------------------- playback
-    var resumePlayback = true
-    var showSubtitles = true
-    var audioLanguage = ""                   // ISO 639 code; "" = the stream's default
-    var subtitleLanguage = ""
+    var resumePlayback by mutableStateOf(true)
+    var showSubtitles by mutableStateOf(true)
+    var audioLanguage by mutableStateOf("")                   // ISO 639 code; "" = the stream's default
+    var subtitleLanguage by mutableStateOf("")
 
     // ------------------------------------------------- online services
-    var omdbApiKey = ""                      // omdbapi.com: IMDb and Rotten Tomatoes ratings
-    var osApiKey = ""                        // opensubtitles.com API key
-    var osUsername = ""                      // optional; the password is kept in Secrets
-    var osLanguages = "en"                   // comma-separated ISO 639-1 codes
+    var omdbApiKey by mutableStateOf("")                      // omdbapi.com: IMDb and Rotten Tomatoes ratings
+    var osApiKey by mutableStateOf("")                        // opensubtitles.com API key
+    var osUsername by mutableStateOf("")                      // optional; the password is kept in Secrets
+    var osLanguages by mutableStateOf("en")                   // comma-separated ISO 639-1 codes
 
     // ---------------------------------------------------- movies, series
-    var vodSort = "provider"                 // a catalog Sort name (provider, added_desc, name_asc, rating_desc…)
-    var vodMinRating = 0                     // 0 = any rating
+    var vodSort by mutableStateOf("provider")                 // a catalog Sort name (provider, added_desc, name_asc, rating_desc…)
+    var vodMinRating by mutableStateOf(0)                     // 0 = any rating
 
     // ---------------------------------------------------- home, search
-    var dashHero = true
-    var dashContinue = true
-    var dashLiveFavorites = true
-    var dashRecentLive = true
-    var dashFavoriteVod = true
-    var dashRecentlyAdded = true
-    var searchLive = true
-    var searchMovies = true
-    var searchSeries = true
-    var searchAllSources = true
+    var dashHero by mutableStateOf(true)
+    var dashContinue by mutableStateOf(true)
+    var dashLiveFavorites by mutableStateOf(true)
+    var dashRecentLive by mutableStateOf(true)
+    var dashFavoriteVod by mutableStateOf(true)
+    var dashRecentlyAdded by mutableStateOf(true)
+    var searchLive by mutableStateOf(true)
+    var searchMovies by mutableStateOf(true)
+    var searchSeries by mutableStateOf(true)
+    var searchAllSources by mutableStateOf(true)
 
     // -------------------------------------------------------------- guide
-    var epgRefreshHours = 12
+    var epgRefreshHours by mutableStateOf(12)
 
     // --------------------------------------------------------- categories
     /** "source:kind" (or "source:live:country") → hidden category names. */
     val hiddenCategories = mutableMapOf<String, MutableSet<String>>()
 
     // ------------------------------------------------------------ free tv
-    var freeTvSourceId: Int? = null
-    var freeTvGroupBy = "category"          // category | country
+    var freeTvSourceId by mutableStateOf<Int?>(null)
+    var freeTvGroupBy by mutableStateOf("category")          // category | country
     // Free TV comes preinstalled: added once on the first start, never again after the user removes it.
-    var freeTvPreinstalled = false
+    var freeTvPreinstalled by mutableStateOf(false)
 
     // ------------------------------------------- 0.9.0: Windows 0.4.11 parity
-    var theme = "Dark"                      // Dark (Navy & Crimson) | Light | System | Custom
-    var customColor = "#DC143C"             // Custom theme: the picked colour
-    var customLight = false                 // Custom theme on a light base
-    var coverSize = "Medium"                // Small | Medium | Large
-    var titlesUnderCovers = true
-    var epgOffsetMinutes = 0                // positive = programmes shown later
+    var theme by mutableStateOf("Dark")                      // Dark (Navy & Crimson) | Light | System | Custom
+    var customColor by mutableStateOf("#DC143C")             // Custom theme: the picked colour
+    var customLight by mutableStateOf(false)                 // Custom theme on a light base
+    var coverSize by mutableStateOf("Medium")                // Small | Medium | Large
+    var titlesUnderCovers by mutableStateOf(true)
+    var epgOffsetMinutes by mutableStateOf(0)                // positive = programmes shown later
     val extraEpgUrls = mutableListOf<String>()
     /** Playlist id → user agent sent for its downloads and streams ("" = the default). */
     val sourceUserAgent = mutableMapOf<Int, String>()
-    var liveFormat = "Auto"                 // Auto | TS | HLS (Xtream live streams)
-    var bufferMs = 1500                     // playback starts after this much is buffered
+    var liveFormat by mutableStateOf("Auto")                 // Auto | TS | HLS (Xtream live streams)
+    var bufferMs by mutableStateOf(1500)                     // playback starts after this much is buffered
     /** Kind ("live", "movie", "series") → "provider" | "name_asc" | "name_desc". */
     val categorySort = mutableMapOf<String, String>()
 
     fun hidden(source: Int, kind: String): MutableSet<String> =
         hiddenCategories.getOrPut(hiddenKey(source, kind)) { mutableSetOf() }
 
+    /** Whether a category is hidden, without adding an empty set (safe to call while composing). */
+    fun isHidden(source: Int, kind: String, name: String): Boolean = hiddenCategories[hiddenKey(source, kind)]?.contains(name) == true
+
+    /**
+     * Writes settings.json. The JSON is built here (the caller's thread, which owns the collections);
+     * the file is written on a background thread, the newest text winning when changes come quickly.
+     */
     fun save() {
+        synchronized(this) { pending = toJson() }
+        writer.execute {
+            val text = synchronized(this) { pending.also { pending = null } } ?: return@execute
+            write(text)
+        }
+    }
+
+    private var pending: String? = null
+    private val writer = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "settings-writer").apply { isDaemon = true } }
+
+    private fun toJson(): String {
         val o = JSONObject()
             .put("startupSection", startupSection)
             .put("lastSection", lastSection)
@@ -128,9 +151,13 @@ class AppSettings private constructor(private val file: File) {
             .put("liveFormat", liveFormat)
             .put("bufferMs", bufferMs)
             .put("categorySort", JSONObject().apply { for ((k, v) in categorySort) put(k, v) })
+        return o.toString(2)
+    }
+
+    private fun write(text: String) {
         try {
             val tmp = File(file.path + ".tmp")
-            tmp.writeText(o.toString(2))
+            tmp.writeText(text)
             if (!tmp.renameTo(file)) {
                 tmp.copyTo(file, overwrite = true)
                 tmp.delete()

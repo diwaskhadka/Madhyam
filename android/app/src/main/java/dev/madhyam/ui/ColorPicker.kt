@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -36,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
 import androidx.tv.material3.Button
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.DenseListItem
@@ -71,76 +73,82 @@ fun ColorPickerDialog(color: String, light: Boolean, onDone: (String, Boolean) -
         lig = l
     }
 
-    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+    // Two columns, so the whole dialog fits a 540 dp high TV screen.
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(
-            Modifier.width(620.dp).background(Panel, RoundedCornerShape(16.dp)).padding(horizontal = 22.dp, vertical = 16.dp)
+            Modifier.width(800.dp).heightIn(max = 500.dp).background(Panel, RoundedCornerShape(16.dp)).padding(horizontal = 22.dp, vertical = 16.dp)
                 .onPreviewKeyEvent { if (it.type == KeyEventType.KeyDown) armed = true; false }
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text("Custom theme colour", fontSize = 20.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+                Column(Modifier.width(320.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // Preview: a mini screen in the palette this colour produces.
+                    Row(
+                        Modifier.background(p.background, RoundedCornerShape(12.dp)).padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Box(Modifier.size(36.dp, 56.dp).background(p.panel, RoundedCornerShape(8.dp)))
+                        Column(
+                            Modifier.width(236.dp).background(p.panel, RoundedCornerShape(8.dp))
+                                .border(2.dp, p.accent, RoundedCornerShape(8.dp)).padding(horizontal = 14.dp, vertical = 8.dp),
+                        ) {
+                            Text("Live TV", color = p.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Now: Evening News", color = p.muted, fontSize = 12.sp)
+                            Spacer(Modifier.height(4.dp))
+                            Box(Modifier.height(4.dp).width(160.dp).background(p.accent, RoundedCornerShape(2.dp)))
+                        }
+                    }
 
-            // Preview: a mini screen in the palette this colour produces.
-            Row(
-                Modifier.background(p.background, RoundedCornerShape(12.dp)).padding(12.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Box(Modifier.size(36.dp, 56.dp).background(p.panel, RoundedCornerShape(8.dp)))
-                Column(
-                    Modifier.width(420.dp).background(p.panel, RoundedCornerShape(8.dp))
-                        .border(2.dp, p.accent, RoundedCornerShape(8.dp)).padding(horizontal = 14.dp, vertical = 8.dp),
-                ) {
-                    Text("Live TV", color = p.text, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                    Text("Now: Evening News", color = p.muted, fontSize = 12.sp)
-                    Spacer(Modifier.height(4.dp))
-                    Box(Modifier.height(4.dp).width(160.dp).background(p.accent, RoundedCornerShape(2.dp)))
-                }
-            }
-
-            val name = colorName(current.toHex())
-            Text(if (name.startsWith("#")) name else "$name · ${current.toHex()}", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
-            Text(focusedPreset?.let { "Presets: $it" } ?: "Presets", color = Muted, fontSize = 12.sp)
-            THEME_PRESETS.chunked(6).forEachIndexed { row, presets ->
-                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    presets.forEachIndexed { i, (presetName, hex) ->
-                        val c = parseColor(hex)!!
-                        Surface(
-                            onClick = { if (armed) set(c) },
-                            shape = ClickableSurfaceDefaults.shape(CircleShape),
-                            colors = ClickableSurfaceDefaults.colors(containerColor = c, focusedContainerColor = c),
-                            border = ClickableSurfaceDefaults.border(
-                                focusedBorder = androidx.tv.material3.Border(androidx.compose.foundation.BorderStroke(3.dp, TextColor)),
-                            ),
-                            modifier = Modifier.size(40.dp)
-                                .onFocusChanged { if (it.isFocused) focusedPreset = presetName else if (focusedPreset == presetName) focusedPreset = null }
-                                .then(if (row == 0 && i == 0) Modifier.focusRequester(first) else Modifier),
-                        ) {}
+                    val name = colorName(current.toHex())
+                    Text(if (name.startsWith("#")) name else "$name · ${current.toHex()}", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                    Text(focusedPreset?.let { "Presets: $it" } ?: "Presets", color = Muted, fontSize = 12.sp)
+                    THEME_PRESETS.chunked(6).forEachIndexed { row, presets ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            presets.forEachIndexed { i, (presetName, hex) ->
+                                val c = parseColor(hex)!!
+                                Surface(
+                                    onClick = { if (armed) set(c) },
+                                    shape = ClickableSurfaceDefaults.shape(CircleShape),
+                                    colors = ClickableSurfaceDefaults.colors(containerColor = c, focusedContainerColor = c),
+                                    border = ClickableSurfaceDefaults.border(
+                                        focusedBorder = androidx.tv.material3.Border(androidx.compose.foundation.BorderStroke(3.dp, TextColor)),
+                                    ),
+                                    modifier = Modifier.size(40.dp)
+                                        .onFocusChanged { if (it.isFocused) focusedPreset = presetName else if (focusedPreset == presetName) focusedPreset = null }
+                                        .then(if (row == 0 && i == 0) Modifier.focusRequester(first) else Modifier),
+                                ) {}
+                            }
+                        }
                     }
                 }
-            }
-
-            StepRow("Hue", "${hue.toInt()}°") { hue = ((hue + it * 10) % 360 + 360) % 360 }
-            StepRow("Saturation", "${(sat * 100).toInt()} %") { sat = (sat + it * 0.05f).coerceIn(0f, 1f) }
-            StepRow("Lightness", "${(lig * 100).toInt()} %") { lig = (lig + it * 0.05f).coerceIn(0.1f, 0.9f) }
-            DenseListItem(
-                selected = false,
-                onClick = { if (armed) editHex = true },
-                headlineContent = { Text("Hex code") },
-                supportingContent = { Text("OK to type one, like #DC143C", color = Muted, fontSize = 11.sp) },
-                trailingContent = { Text(current.toHex(), color = Accent) },
-            )
-            DenseListItem(
-                selected = false,
-                onClick = { if (armed) isLight = !isLight },
-                // Down goes to "Use this theme", not to whichever button is nearest.
-                modifier = Modifier.focusProperties { down = use },
-                headlineContent = { Text("Base") },
-                supportingContent = { Text("OK switches dark / light", color = Muted, fontSize = 11.sp) },
-                trailingContent = { Text(if (isLight) "Light" else "Dark", color = Accent) },
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Button(onClick = { if (armed) { onDone(current.toHex(), isLight); onDismiss() } }, modifier = Modifier.focusRequester(use)) { Text("Use this theme") }
-                OutlinedButton(onClick = onDismiss) { Text("Cancel") }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    StepRow("Hue", "${hue.toInt()}°") { hue = ((hue + it * 10) % 360 + 360) % 360 }
+                    StepRow("Saturation", "${(sat * 100).toInt()} %") { sat = (sat + it * 0.05f).coerceIn(0f, 1f) }
+                    StepRow("Lightness", "${(lig * 100).toInt()} %") { lig = (lig + it * 0.05f).coerceIn(0.1f, 0.9f) }
+                    DenseListItem(
+                        selected = false,
+                        onClick = { if (armed) editHex = true },
+                        headlineContent = { Text("Hex code") },
+                        supportingContent = { Text("OK to type one, like #DC143C", color = Muted, fontSize = 11.sp) },
+                        trailingContent = { Text(current.toHex(), color = Accent) },
+                    )
+                    DenseListItem(
+                        selected = false,
+                        onClick = { if (armed) isLight = !isLight },
+                        // Down goes to "Use this theme", not to whichever button is nearest.
+                        modifier = Modifier.focusProperties { down = use },
+                        headlineContent = { Text("Base") },
+                        supportingContent = { Text("OK switches dark / light", color = Muted, fontSize = 11.sp) },
+                        trailingContent = { Text(if (isLight) "Light" else "Dark", color = Accent) },
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(onClick = { if (armed) { onDone(current.toHex(), isLight); onDismiss() } }, modifier = Modifier.focusRequester(use)) { Text("Use this theme") }
+                        OutlinedButton(onClick = onDismiss) { Text("Cancel") }
+                    }
+                }
             }
         }
     }
