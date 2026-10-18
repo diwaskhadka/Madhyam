@@ -213,6 +213,13 @@ private fun JSONArray.items(): List<Item> = (0 until length()).map { parseItem(g
 class Repository(context: Context) {
     private val core = MadhyamCore()
     private val snapshot = File(context.filesDir, "catalog.jsonl")
+    /**
+     * Favorites, resume positions and history, written on every change instead of the whole
+     * catalog (a large playlist's snapshot takes seconds to write on a TV). It only exists while
+     * it is newer than the snapshot: writing the snapshot deletes it.
+     */
+    private val userStateFile = File(context.filesDir, "user-state.json")
+    private val saveLock = Any()
     private val cache = context.cacheDir
     private val secrets = Secrets(File(context.filesDir, "secrets.json"))
     val settings: AppSettings = AppSettings.load(context)
@@ -247,6 +254,7 @@ class Repository(context: Context) {
             try {
                 core.call("load_snapshot", args("path" to snapshot.path))
                 restoreSecrets()
+                loadUserState()
                 // Before 0.5.0 the password was written in plain text: rewrite the file without it.
                 if (secrets.available && snapshotHasPasswords()) save()
             } catch (e: IptvException) {
@@ -254,6 +262,7 @@ class Repository(context: Context) {
                 snapshot.delete()
             }
         }
+        if (!snapshot.exists()) loadUserState()
         epgDir.listFiles { f -> f.name.endsWith(".xml") }?.forEach { f ->
             try {
                 importGuide(f)
@@ -309,12 +318,56 @@ class Repository(context: Context) {
         }
     }
 
-    private fun save() {
+    /** Write the whole catalog, after a catalog change. It includes the user state. */
+    private fun save() = synchronized(saveLock) {
+        val started = System.currentTimeMillis()
         try {
             syncSecrets()
             core.call("save_snapshot", args("path" to snapshot.path, "redact_passwords" to secrets.available))
+            userStateFile.delete()
+            Log.i(TAG, "catalog saved in ${System.currentTimeMillis() - started} ms")
         } catch (e: Exception) {
             Log.w(TAG, "could not save snapshot", e)
+        }
+    }
+
+    /** Write favorites, progress and history only (after playback, a favorite, a watched mark). */
+    private fun saveUserState() = synchronized(saveLock) {
+        val started = System.currentTimeMillis()
+        val tmp = File(userStateFile.path + ".tmp")
+        try {
+            tmp.writeText(core.obj("export_user_state").toString())
+            if (!tmp.renameTo(userStateFile)) throw IOException("cannot rename ${tmp.name}")
+            Log.i(TAG, "user state saved in ${System.currentTimeMillis() - started} ms")
+        } catch (e: Exception) {
+            Log.w(TAG, "could not save user state", e)
+            tmp.delete()
+        }
+    }
+
+    /**
+     * Apply the user-state file when it is newer than the snapshot. It replaces the snapshot's
+     * user state instead of merging with it, so an unfavorited item or a cleared history stays so.
+     */
+    private fun loadUserState() {
+        if (!userStateFile.exists()) return
+        if (snapshot.exists() && userStateFile.lastModified() < snapshot.lastModified()) {
+            userStateFile.delete()
+            return
+        }
+        try {
+            val state = JSONObject(userStateFile.readText())
+            val favs = state.optJSONArray("favorites") ?: JSONArray()
+            val keep = (0 until favs.length()).map { favs.getJSONObject(it).optString("id") }.toSet()
+            val old = core.obj("export_user_state").optJSONArray("favorites") ?: JSONArray()
+            for (i in 0 until old.length()) {
+                val id = old.getJSONObject(i).optString("id")
+                if (id !in keep) core.call("set_favorite", args("id" to id, "on" to false))
+            }
+            core.call("clear_history")
+            core.importBytes("user_state", state.toString().toByteArray())
+        } catch (e: Exception) {
+            Log.w(TAG, "user state unreadable, keeping the snapshot's", e)
         }
     }
 
@@ -464,7 +517,7 @@ class Repository(context: Context) {
         }
         val keep = (0 until index).map { epgFile(id, it).name }.toSet()
         epgFiles(id).filter { it.name !in keep }.forEach { it.delete() }
-        save()
+        // No catalog save: the snapshot leaves the guide out.
     }
 
     /** The HTTP client for a playlist: its own user agent (Settings › playlist › Edit) when one is set. */
@@ -636,14 +689,14 @@ class Repository(context: Context) {
 
     suspend fun removeFromHistory(id: String) = io {
         core.call("remove_history", args("id" to id))
-        save()
+        saveUserState()
     }
 
     suspend fun favoriteIds(): Set<String> = io { core.arr("favorites").items().map { it.id }.toSet() }
 
     suspend fun setFavorite(id: String, on: Boolean) = io {
         core.call("set_favorite", args("id" to id, "on" to on))
-        save()
+        saveUserState()
     }
 
     /** One item with its saved progress, or null if it no longer exists. */
@@ -701,7 +754,7 @@ class Repository(context: Context) {
             val dur = listOf(it.durationSec, it.durationHint).firstOrNull { d -> d > 0 } ?: 1.0
             core.call("set_progress", args("id" to it.id, "position" to if (watched) dur else 0.0, "duration" to dur))
         }
-        save()
+        saveUserState()
     }
 
     // ----------------------------------------------------------------- EPG
@@ -808,10 +861,11 @@ class Repository(context: Context) {
 
     suspend fun clearHistory() = io {
         core.call("clear_history")
-        save()
+        saveUserState()
     }
 
-    suspend fun persist() = io { save() }
+    /** Save favorites, resume positions and history; the catalog is saved when it changes. */
+    suspend fun persist() = io { saveUserState() }
 
     // ------------------------------------------------------ online services
 
