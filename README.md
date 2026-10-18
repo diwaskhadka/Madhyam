@@ -120,17 +120,17 @@ More platforms are on the way and will be released in future versions. The engin
 
 ## Screenshots
 
-|                                Android TV: Free TV by country (light theme)                                 |                         Android TV: Settings                          |
+|                                Android TV: Free TV by country (light theme)                                 |                         Android TV: Appearance                        |
 | :---------------------------------------------------------------------------------------------------------: | :-------------------------------------------------------------------: |
-|    ![Android TV: Free TV channels by country in the light theme](docs/screenshots/tv-countries-light.png)    |   ![Android TV: Settings](docs/screenshots/tv-settings.png)           |
+|    ![Android TV: Free TV channels by country in the light theme](docs/screenshots/tv-countries-light.png)    |   ![Android TV: Appearance settings in Navy & Crimson](docs/screenshots/tv-settings.png)           |
 |                                    Android TV: Custom theme colour picker                                   |                   Windows: Home with Continue watching                |
 |            ![Android TV: Custom theme colour picker](docs/screenshots/tv-custom-theme.png)                  |   ![Windows: Home with Continue watching](docs/screenshots/windows-home.png) |
 |                                Windows: Live TV with guide timeline                                         |                     Windows: Movies with sort and rating filter        |
 |          ![Windows: Live TV with now/next and guide timeline](docs/screenshots/windows-live.png)            |   ![Windows: Movies grid](docs/screenshots/windows-movies.png)        |
 |                                Windows: Series with seasons and episodes                                    |                     Windows: Search across everything                  |
 |            ![Windows: Series details with seasons](docs/screenshots/windows-series.png)                     |   ![Windows: Search](docs/screenshots/windows-search.png)             |
-|                                Windows: Light theme                                                         |                                                                       |
-|               ![Windows: Light theme](docs/screenshots/windows-light.png)                                   |                                                                       |
+|                                Windows: Light theme                                                         |                     Windows: Custom theme (Teal)                      |
+|               ![Windows: Light theme](docs/screenshots/windows-light.png)                                   |   ![Windows: Custom theme built from Teal](docs/screenshots/windows-custom.png) |
 
 _Windows screenshots use made-up demo data rendered by CI._
 
