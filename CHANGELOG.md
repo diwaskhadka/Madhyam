@@ -6,6 +6,28 @@ so. The engine (`crates/madhyam-core`) keeps its own version, given in each sect
 
 How to cut a release and how to add a platform: [docs/RELEASING.md](docs/RELEASING.md).
 
+## 1.1.0
+
+Madhyam for Linux.
+
+### Linux
+- **New platform:** Madhyam for Linux (x86_64), as a `.deb` for Ubuntu 24.04 / Debian 13 and newer, and as an AppImage for any distribution from 2024 on.
+- The same app as on Windows: Dashboard, Live TV with now / next and the guide timeline or list, Movies and Series with details, seasons and episodes, Favorites, Recently viewed, Recently added and Advanced search.
+- Navy & Crimson, Light, System (follows the desktop's light or dark style) and Custom themes; the theme changes at once.
+- Free TV comes preinstalled on the first start.
+- Video by mpv, drawn inside the window: hardware decoding, audio and subtitle tracks, audio and subtitle delay, speed, subtitle files and OpenSubtitles search, full screen.
+- Playlists, guides and settings live in `~/.local/share/Madhyam`; Xtream and OpenSubtitles passwords go to the desktop keyring (GNOME Keyring, KWallet, KeePassXC), or to a file only you can read when there is none.
+- Trailers open on YouTube in your browser.
+
+### Windows
+- No functional changes.
+
+### Android TV
+- No functional changes.
+
+### Engine
+- madhyam-core 0.2.0, unchanged. Also built as `libmadhyam_core_ffi.so` for Linux (developer files).
+
 ## 1.0.0
 
 First stable release.

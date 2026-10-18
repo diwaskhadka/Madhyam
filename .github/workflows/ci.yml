@@ -196,6 +196,119 @@ jobs:
           if (Test-Path $app) { Write-Host "::error::uninstall left Madhyam.exe behind"; exit 1 }
           Write-Host "::notice::Installer installs, starts and uninstalls cleanly"
 
+  linux-app:
+    name: linux app (GTK 4 + mpv, .deb + AppImage)
+    runs-on: ubuntu-latest
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: Build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends libgtk-4-dev libmpv-dev dpkg-dev librsvg2-bin \
+            xvfb xauth imagemagick libgl1-mesa-dri dbus-x11 file fuse3 > /dev/null
+      - name: Format and lint (warnings are errors)
+        working-directory: linux
+        run: |
+          cargo fmt --check
+          cargo clippy --all-targets -- -D warnings
+      - name: Build (engine .so for the test helpers, and the app)
+        run: |
+          cargo build --release -p madhyam-core-ffi
+          (cd linux && cargo build --release)
+          target/release/madhyam --version
+      - name: Smoke test - starts without errors
+        # A fresh data folder: first start preinstalls Free TV (downloads the iptv-org list).
+        run: |
+          export XDG_DATA_HOME="$RUNNER_TEMP/smoke"
+          xvfb-run -a -s "-screen 0 1600x1000x24" dbus-run-session -- timeout 25 target/release/madhyam || code=$?
+          log="$XDG_DATA_HOME/Madhyam/error.log"
+          if [ -f "$log" ]; then head -30 "$log" | sed 's/^/::error::/'; exit 1; fi
+          if [ "${code:-0}" != 124 ]; then echo "::error::madhyam exited during startup (code ${code:-0})"; exit 1; fi
+          echo "::notice::madhyam started and stayed up for 25 s; $(grep -c . "$XDG_DATA_HOME/Madhyam/app.log" 2>/dev/null || echo 0) log lines"
+          sed 's/^/  /' "$XDG_DATA_HOME/Madhyam/app.log" 2>/dev/null | tail -15 || true
+      - name: Playback test - mpv draws video into the window
+        run: |
+          export XDG_DATA_HOME="$RUNNER_TEMP/play"
+          python3 linux/ci/make_test_playlist.py target/release/libmadhyam_core_ffi.so "$XDG_DATA_HOME/Madhyam"
+          mkdir -p shots
+          xvfb-run -a -s "-screen 0 1600x1000x24" timeout 60 target/release/madhyam --mode Live --play-first --screenshot "$PWD/shots/linux-20-live-playing.png"
+          log="$XDG_DATA_HOME/Madhyam/app.log"; cat "$log"
+          grep -q "first video frame" "$log" || { echo "::error::no video frame was drawn"; exit 1; }
+          grep -qE "time-pos=Some\([1-9]" "$log" || { echo "::error::playback did not advance"; exit 1; }
+          # The picture area must not be black (mean brightness of the middle of the video).
+          m=$(convert shots/linux-20-live-playing.png -crop 500x250+800+200 -format "%[fx:mean]" info:)
+          echo "::notice::video area brightness $m"
+          awk "BEGIN { exit !($m > 0.15) }" || { echo "::error::the video area is black"; exit 1; }
+      - name: UI screenshots (demo data)
+        run: |
+          export XDG_DATA_HOME="$RUNNER_TEMP/demo"
+          data="$XDG_DATA_HOME/Madhyam"
+          python3 windows/ci/make_demo_snapshot.py target/release/libmadhyam_core_ffi.so "$data"
+          shot() {
+            name=$1; theme=$2; shift 2
+            if [ -n "$theme" ]; then echo "$theme" > "$data/settings.json"; else rm -f "$data/settings.json"; fi
+            xvfb-run -a -s "-screen 0 1600x1000x24" timeout 60 target/release/madhyam "$@" --screenshot "$PWD/shots/linux-$name.png" \
+              && echo "::notice::screenshot $name ok" || echo "::warning::screenshot $name failed"
+          }
+          shot 01-dashboard "" --mode Dashboard
+          shot 02-live "" --mode Live
+          shot 03-movies "" --mode Movies
+          shot 04-movie-details "" --mode Movies --open-first
+          shot 05-series-details "" --mode Series --open-first
+          shot 06-favorites "" --mode Favorites
+          shot 07-recent "" --mode Recent
+          shot 09-search "" --mode Search --search the
+          shot 11-settings-src "" --mode Live --settings Sources
+          shot 13-light-dash '{ "Theme": "Light" }' --mode Dashboard
+          shot 17-custom-dark '{ "Theme": "Custom", "CustomColor": "#12A4A4" }' --mode Dashboard
+          shot 18-custom-light '{ "Theme": "Custom", "CustomColor": "#6C4AD8", "CustomLight": true }' --mode Live
+          if [ -f "$data/error.log" ]; then head -20 "$data/error.log" | sed 's/^/::warning::/'; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-screenshots
+          path: shots/*.png
+      - name: Package (.deb and AppImage)
+        run: |
+          mkdir -p tools
+          curl -fsSL -o tools/linuxdeploy-x86_64.AppImage https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
+          curl -fsSL -o tools/linuxdeploy-plugin-gtk.sh https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh
+          chmod +x tools/*
+          export PATH="$PWD/tools:$PATH"
+          LINUXDEPLOY="$PWD/tools/linuxdeploy-x86_64.AppImage" bash linux/packaging/package.sh target/release/madhyam dist \
+            "$(tr -d '[:space:]' < VERSION)+ci${{ github.run_number }}"
+          ls -la dist
+      - name: Install test - .deb installs, starts and removes
+        run: |
+          sudo apt-get install -y -qq ./dist/*.deb > /dev/null
+          test -x /usr/bin/madhyam && test -f /usr/share/applications/dev.madhyam.Madhyam.desktop
+          madhyam --version
+          export XDG_DATA_HOME="$RUNNER_TEMP/installed"
+          xvfb-run -a timeout 15 madhyam --mode Dashboard --screenshot "$PWD/installed.png"
+          test -s installed.png || { echo "::error::installed app did not render"; exit 1; }
+          sudo apt-get remove -y -qq madhyam > /dev/null
+          test ! -e /usr/bin/madhyam
+          echo "::notice::.deb installs, renders and uninstalls cleanly"
+      - name: AppImage test - runs on its own
+        run: |
+          app=$(ls dist/*.AppImage)
+          file "$app"
+          "$app" --appimage-extract-and-run --version
+          export XDG_DATA_HOME="$RUNNER_TEMP/appimage"
+          APPIMAGE_EXTRACT_AND_RUN=1 xvfb-run -a timeout 30 "$app" --mode Dashboard --screenshot "$PWD/appimage.png"
+          test -s appimage.png || { echo "::error::AppImage did not render"; exit 1; }
+          echo "::notice::AppImage $(du -h "$app" | cut -f1) starts and renders"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Madhyam-linux
+          path: |
+            dist/*.deb
+            dist/*.AppImage
+
   android:
     name: android (jniLibs + APK)
     runs-on: ubuntu-latest

@@ -4,3 +4,4 @@
 *.jsonl
 /windows/**/bin/
 /windows/**/obj/
+/linux/target/

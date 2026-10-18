@@ -13,7 +13,7 @@
 
 ⬇️ **[Download](#download)** | 📺 **[Free TV](#free-tv-comes-preinstalled)** | 🗺️ **[Platforms](#platforms)** | ☕ **[Buy me a coffee](https://buymeacoffee.com/diwaskhadka)**
 
-**Madhyam** is a free IPTV player for **Windows** and **Android TV / Google TV**. It plays M3U / M3U8 playlists and Xtream Codes accounts, with a TV guide (EPG), movies, series, favorites and continue-watching. One version number covers every platform, and both apps are built on the same fast Rust engine.
+**Madhyam** is a free IPTV player for **Windows**, **Linux** and **Android TV / Google TV**. It plays M3U / M3U8 playlists and Xtream Codes accounts, with a TV guide (EPG), movies, series, favorites and continue-watching. One version number covers every platform, and all the apps are built on the same fast Rust engine.
 
 > [!TIP]
 > **Free TV comes preinstalled.** Open the app for the first time and thousands of free, public channels are already there, sorted by category and by country. No account and no playlist needed.
@@ -36,7 +36,7 @@
 - Xtream Codes accounts and M3U / M3U8 playlists from a URL, as many as you like, with a playlist switcher
 - Free TV (iptv-org) preinstalled, by category or by country
 - Custom User-Agent per playlist, and a **Test connection** check
-- Playlist and OpenSubtitles passwords stored encrypted (Android Keystore / Windows DPAPI)
+- Playlist and OpenSubtitles passwords stored encrypted (Android Keystore / Windows DPAPI / the Linux desktop keyring)
 - Offline start: the catalog is cached, so the app opens instantly
 
 **Live TV & guide**
@@ -74,6 +74,8 @@ Every platform is in the [latest release](https://github.com/diwaskhadka/Madhyam
 |---|---|---|
 | 🪟 **Windows 10 / 11** (64-bit) | `Madhyam-Setup-X.Y.Z.exe` | Run it. It installs for your account (no admin needed) and upgrades in place, keeping your playlists. Windows may say "Windows protected your PC" because the app isn't code-signed yet: click **More info › Run anyway**. |
 | 📺 **Android TV / Google TV** (Android 5+) | `Madhyam-vX.Y.Z-androidtv.apk` | Sideload it, for example with *Send Files to TV* or `adb install`. Newer versions install over it and keep your playlists. |
+| 🐧 **Linux: Ubuntu / Debian / Mint** (64-bit; Ubuntu 24.04, Debian 13 or newer) | `Madhyam-vX.Y.Z-linux-amd64.deb` | `sudo apt install ./Madhyam-vX.Y.Z-linux-amd64.deb`. apt installs GTK 4 and mpv if needed, and newer versions install over it. Madhyam is then in your app menu. |
+| 🐧 **Linux: any distribution** (64-bit, from 2024 on) | `Madhyam-vX.Y.Z-linux-x86_64.AppImage` | Make it executable (`chmod +x Madhyam-*.AppImage`, or Properties › Allow executing) and run it. Nothing to install. |
 
 Download only from [GitHub Releases](https://github.com/diwaskhadka/Madhyam/releases). What changed on each platform: [CHANGELOG.md](CHANGELOG.md).
 
@@ -83,9 +85,9 @@ Download only from [GitHub Releases](https://github.com/diwaskhadka/Madhyam/rele
 |---|---|
 | 🪟 Windows 10 / 11 | ✅ Available |
 | 📺 Android TV / Google TV | ✅ Available |
+| 🐧 Linux (x86_64) | ✅ Available |
 | 📱 Android phones and tablets | 🛠️ In the pipeline |
 | 🍎 macOS, iPhone / iPad and Apple TV | 🛠️ In the pipeline |
-| 🐧 Linux | 🛠️ In the pipeline |
 | 🌐 Web | 🛠️ In the pipeline |
 
 More platforms are on the way and will be released in future versions. The engine underneath is already cross-platform (Windows, macOS, Linux, Android), so each new app reuses it, and every platform ships in the same release with the same version number.
@@ -103,7 +105,7 @@ More platforms are on the way and will be released in future versions. The engin
 | Play / Pause, ⏪ / ⏩ | Pause, seek 30 s back / forward |
 | Back | Close the player or go back |
 
-**Windows keyboard**
+**Windows and Linux keyboard**
 
 | Shortcut | Action |
 |---|---|
@@ -132,7 +134,7 @@ More platforms are on the way and will be released in future versions. The engin
 |                                Windows: Light theme                                                         |                     Windows: Custom theme (Teal)                      |
 |               ![Windows: Light theme](docs/screenshots/windows-light.png)                                   |   ![Windows: Custom theme built from Teal](docs/screenshots/windows-custom.png) |
 
-_Windows screenshots use made-up demo data rendered by CI._
+_Windows screenshots use made-up demo data rendered by CI. The Linux app looks the same; CI renders its screenshots too._
 
 ## Support the project ☕
 
@@ -145,7 +147,7 @@ Bug reports and ideas are welcome in [Issues](https://github.com/diwaskhadka/Mad
 ## For developers
 
 - **Engine:** a platform-independent IPTV engine in Rust (`crates/madhyam-core`), with M3U, XMLTV and Xtream Codes support and a 6-function C ABI. See [docs/ENGINE.md](docs/ENGINE.md) for the design, performance, layout and build steps, and [docs/API.md](docs/API.md) for every method.
-- **Apps:** Android TV in [`android/`](android) (Kotlin, Compose for TV, Media3), and Windows in [`windows/`](windows) (WPF, LibVLC).
+- **Apps:** Android TV in [`android/`](android) (Kotlin, Compose for TV, Media3), Windows in [`windows/`](windows) (WPF, LibVLC), and Linux in [`linux/`](linux) (Rust, GTK 4, mpv).
 - **Releases:** [docs/RELEASING.md](docs/RELEASING.md) covers the shared version, the changelog, signing and adding a platform.
 - **Branding:** the name, icon and colours are in [`branding/`](branding/README.md).
 
