@@ -116,17 +116,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var message by mutableStateOf<String?>(null)
         private set
-    /** Bumped whenever settings change, so pages that read [settings] recompose. */
+    /** Bumped whenever settings change, for screens that show the settings' collections (hidden categories, extra guides…); the simple settings are snapshot state themselves. */
     var settingsVersion by mutableStateOf(0)
         private set
     val nowNext = mutableStateMapOf<String, NowNext>()
 
     val engineVersion: String get() = repo.version
 
-    /** Settings › Appearance (read through [settingsVersion] so the theme follows changes at once). */
-    val themeName: String get() = settingsVersion.let { settings.theme }
-    val customColor: String get() = settingsVersion.let { settings.customColor }
-    val customLight: Boolean get() = settingsVersion.let { settings.customLight }
+    /** Settings › Appearance (snapshot state, so only a theme change recomposes the theme, not every setting). */
+    val themeName: String get() = settings.theme
+    val customColor: String get() = settings.customColor
+    val customLight: Boolean get() = settings.customLight
 
     private var itemsJob: Job? = null
     private var searchJob: Job? = null
@@ -237,6 +237,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         message = text
     }
 
+    /** Change settings and save them (settings.json is written in the background). */
     fun changeSettings(block: AppSettings.() -> Unit) {
         settings.block()
         settings.save()

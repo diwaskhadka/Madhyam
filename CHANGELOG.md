@@ -18,6 +18,11 @@ Android TV: streams stop when you leave them, and large playlists need half the 
 - Favorites, resume positions and recently watched are saved in a small file of their own when you close the player, press Home, add a favorite or mark something watched. Before, each of these rewrote the whole catalog: for a 265 000-item playlist, a 122 MB file and about 4 s of work on a TV. The catalog is saved only when it changes (refresh, adding, editing or removing a playlist, a series' episodes loaded for the first time).
 - The guide is kept from a day back to three days ahead (the TV guide shows two days ahead).
 - Posters and logos: a smaller memory cache, 16-bit pictures on TVs with less than 2 GB of RAM, and the cache is emptied in the background. The video buffer is capped at a quarter of the app's memory.
+- Settings › Categories no longer freezes the TV and closes Madhyam with a large playlist: the categories are listed as you scroll instead of all at once.
+- Settings shows a section once the focus rests on it, so moving down the list no longer opens every section on the way. OK or Right opens a section at once, and entering a section puts the focus on its first row.
+- A setting shows its new value as soon as you press OK, and pressing OK again changes it again (before, the row kept the old value until you left the page, and "Start in" moved only once however often you pressed). Changing a setting no longer redraws the whole app, and settings are saved in the background.
+- The custom colour dialog fits on the screen.
+- Clear watch history asks you to press OK again, like Remove playlist.
 
 ### Windows
 - No functional changes. Uses engine 0.3.0: large playlists take less memory and load and save faster.
