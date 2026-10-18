@@ -1425,11 +1425,12 @@ impl App {
                         sleep_ms(4000).await;
                         if let Some(m) = self.mpv() {
                             crate::log(&format!(
-                                "screenshot: playing={} time-pos={:?} video={:?}x{:?}",
+                                "screenshot: playing={} time-pos={:?} video={:?}x{:?} {}",
                                 !m.get_flag("idle-active"),
                                 m.get_f64("time-pos"),
                                 m.get_i64("width"),
-                                m.get_i64("height")
+                                m.get_i64("height"),
+                                crate::mpv::stats()
                             ));
                         }
                     }

@@ -43,6 +43,13 @@ struct mpv_event_end_file {
 }
 
 #[repr(C)]
+struct mpv_event_log_message {
+    prefix: *const c_char,
+    level: *const c_char,
+    text: *const c_char,
+}
+
+#[repr(C)]
 struct mpv_render_param {
     kind: c_int,
     data: *mut c_void,
@@ -67,6 +74,7 @@ const FORMAT_INT64: c_int = 4;
 const FORMAT_DOUBLE: c_int = 5;
 
 const EVENT_SHUTDOWN: c_int = 1;
+const EVENT_LOG_MESSAGE: c_int = 2;
 const EVENT_END_FILE: c_int = 7;
 const EVENT_FILE_LOADED: c_int = 8;
 const EVENT_PLAYBACK_RESTART: c_int = 21;
@@ -122,6 +130,7 @@ unsafe extern "C" {
         d: *mut c_void,
     );
     fn mpv_free(data: *mut c_void);
+    fn mpv_request_log_messages(ctx: *mut mpv_handle, min_level: *const c_char) -> c_int;
     fn mpv_render_context_create(
         res: *mut *mut mpv_render_context,
         mpv: *mut mpv_handle,
@@ -184,6 +193,34 @@ unsafe extern "C" fn get_proc_address(_ctx: *mut c_void, name: *const c_char) ->
         }
     }
     std::ptr::null_mut()
+}
+
+/// glGetString for the log ("llvmpipe", "Mesa Intel…"), from the current context.
+fn gl_string(name: u32) -> String {
+    type GetString = unsafe extern "C" fn(u32) -> *const c_char;
+    let f = unsafe { get_proc_address(std::ptr::null_mut(), c"glGetString".as_ptr()) };
+    if f.is_null() {
+        return "?".into();
+    }
+    // SAFETY: glGetString from the current GL context; returns a static string or NULL.
+    let p = unsafe { std::mem::transmute::<*mut c_void, GetString>(f)(name) };
+    if p.is_null() {
+        "?".into()
+    } else {
+        unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned()
+    }
+}
+
+fn gl_flush() {
+    type Flush = unsafe extern "C" fn();
+    static F: OnceLock<usize> = OnceLock::new();
+    let f = *F.get_or_init(|| unsafe {
+        get_proc_address(std::ptr::null_mut(), c"glFlush".as_ptr()) as usize
+    });
+    if f != 0 {
+        // SAFETY: glFlush of the current GL context.
+        unsafe { std::mem::transmute::<usize, Flush>(f)() };
+    }
 }
 
 fn current_fbo() -> c_int {
@@ -307,6 +344,9 @@ impl Mpv {
         }
         unsafe {
             mpv_observe_property(handle, 1, c"pause".as_ptr(), FORMAT_FLAG);
+            // mpv's own warnings and errors go to app.log (a stream that fails, a GPU problem).
+            let level = c(&std::env::var("MADHYAM_MPV_LOG").unwrap_or_else(|_| "warn".into()));
+            mpv_request_log_messages(handle, level.as_ptr());
         }
         HANDLER.with(|h| *h.borrow_mut() = Some(Rc::new(on_event)));
         PLAYER.with(|p| *p.borrow_mut() = Some(Rc::downgrade(&mpv)));
@@ -478,6 +518,19 @@ impl Mpv {
             let event = match ev.event_id {
                 0 => break,
                 EVENT_SHUTDOWN => break,
+                EVENT_LOG_MESSAGE if !ev.data.is_null() => {
+                    let m = unsafe { &*(ev.data as *const mpv_event_log_message) };
+                    let text = |p: *const c_char| {
+                        unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned()
+                    };
+                    crate::log(&format!(
+                        "mpv {} [{}]: {}",
+                        text(m.level),
+                        text(m.prefix),
+                        text(m.text).trim_end()
+                    ));
+                    None
+                }
                 EVENT_FILE_LOADED | EVENT_PLAYBACK_RESTART => Some(Event::Playing),
                 EVENT_END_FILE if !ev.data.is_null() => {
                     let end = unsafe { &*(ev.data as *const mpv_event_end_file) };
@@ -548,8 +601,10 @@ impl Mpv {
             )
         };
         crate::log(&format!(
-            "video surface ready (GLES: {})",
-            area.context().is_some_and(|c| c.uses_es())
+            "video surface ready (GLES: {}, {} / {})",
+            area.context().is_some_and(|c| c.uses_es()),
+            gl_string(0x1F01), // GL_RENDERER
+            gl_string(0x1F02), // GL_VERSION
         ));
         self.render.set(ctx);
         *self.render_area.borrow_mut() = Some(area.downgrade());
@@ -596,6 +651,9 @@ impl Mpv {
         ];
         let r = unsafe { mpv_render_context_render(ctx, params.as_mut_ptr()) };
         count(3);
+        // GTK composites the area's texture from its own context: make sure mpv's commands
+        // have reached the GPU first, or the frame can show up black (seen with Mesa).
+        gl_flush();
         static FIRST: std::sync::Once = std::sync::Once::new();
         FIRST.call_once(|| {
             crate::log(&format!(

@@ -904,6 +904,13 @@ impl App {
         self.vod_playing.set(!it.is_live());
         self.move_video(it.is_live());
         self.video.set_visible(true);
+        // mpv must have its OpenGL renderer before the file opens: a video output that starts
+        // without one could stay black. Realize the area now rather than on the next frame.
+        if let Some(area) = self.controls.area.borrow().as_ref() {
+            if !area.is_realized() {
+                area.realize();
+            }
+        }
         self.video_hint.set_visible(false);
 
         let ua = it
