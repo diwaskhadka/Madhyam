@@ -23,7 +23,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MadhyamTheme(theme = vm.themeName) {
+            MadhyamTheme(theme = vm.themeName, customColor = vm.customColor, customLight = vm.customLight) {
                 Box(Modifier.fillMaxSize().background(Background)) {
                     when (vm.screen) {
                         Screen.Loading -> Text("Loading…", color = Muted, modifier = Modifier.align(Alignment.Center))

@@ -329,7 +329,7 @@ fun Field(label: String, value: String, type: KeyboardType = KeyboardType.Text, 
 
 /** Edit one line of text: the field has the focus (and the keyboard) at once; OK or Save keeps it. */
 @Composable
-private fun TextEditDialog(label: String, initial: String, type: KeyboardType, secret: Boolean, onDone: (String) -> Unit, onDismiss: () -> Unit) {
+internal fun TextEditDialog(label: String, initial: String, type: KeyboardType, secret: Boolean, onDone: (String) -> Unit, onDismiss: () -> Unit) {
     var text by remember { mutableStateOf(initial) }
     val field = remember { FocusRequester() }
     LaunchedEffect(Unit) {
@@ -634,8 +634,23 @@ private fun LazyListScope.appearance(vm: MainViewModel) {
     val st = vm.settings
     item { SectionTitle("Appearance") }
     item {
-        ChoiceRow("Theme", "Dark suits a dim room; Follow the TV uses the TV's own setting", st.theme,
-            listOf("Dark" to "Dark", "Light" to "Light", "System" to "Follow the TV")) { vm.changeSettings { theme = it } }
+        ChoiceRow("Theme", "Navy & Crimson is the dark theme; Custom builds one from your colour", st.theme,
+            listOf("Dark" to "Navy & Crimson", "Light" to "Light", "System" to "Follow the TV", "Custom" to "Custom")) { vm.changeSettings { theme = it } }
+    }
+    item {
+        var picking by remember { mutableStateOf(false) }
+        ActionRow("Custom colour", "Pick any colour; the Custom theme is built from it", "${colorName(st.customColor)} · ${if (st.customLight) "Light" else "Dark"}") {
+            picking = true
+        }
+        if (picking) {
+            ColorPickerDialog(st.customColor, st.customLight, onDone = { c, light ->
+                vm.changeSettings {
+                    customColor = c
+                    customLight = light
+                    theme = "Custom"
+                }
+            }) { picking = false }
+        }
     }
     item {
         ChoiceRow("Cover size", "Posters in Movies and Series", st.coverSize,

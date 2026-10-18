@@ -124,6 +124,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Settings › Appearance (read through [settingsVersion] so the theme follows changes at once). */
     val themeName: String get() = settingsVersion.let { settings.theme }
+    val customColor: String get() = settingsVersion.let { settings.customColor }
+    val customLight: Boolean get() = settingsVersion.let { settings.customLight }
 
     private var itemsJob: Job? = null
     private var searchJob: Job? = null

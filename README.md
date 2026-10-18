@@ -64,7 +64,7 @@
 - Home page with a continue-watching banner and rows of favorites, recent channels and recently added
 - Favorites, watch history and global search across Live TV, movies and series
 - Hide categories and choose their order (provider, A–Z, Z–A)
-- Dark, light or **follow the system** theme
+- Themes: **Navy & Crimson** (dark), light, follow the system, or **Custom**: pick any colour (presets like Crimson, Royal blue and Teal, or your own) and the whole theme is built from it
 
 ## Download
 
@@ -123,8 +123,8 @@ More platforms are on the way and will be released in future versions. The engin
 |                                Android TV: Free TV by country (light theme)                                 |                         Android TV: Settings                          |
 | :---------------------------------------------------------------------------------------------------------: | :-------------------------------------------------------------------: |
 |    ![Android TV: Free TV channels by country in the light theme](docs/screenshots/tv-countries-light.png)    |   ![Android TV: Settings](docs/screenshots/tv-settings.png)           |
-|                                    Android TV: Appearance settings                                          |                   Windows: Home with Continue watching                |
-|            ![Android TV: theme, cover size and titles](docs/screenshots/tv-appearance.png)                  |   ![Windows: Home with Continue watching](docs/screenshots/windows-home.png) |
+|                                    Android TV: Custom theme colour picker                                   |                   Windows: Home with Continue watching                |
+|            ![Android TV: Custom theme colour picker](docs/screenshots/tv-custom-theme.png)                  |   ![Windows: Home with Continue watching](docs/screenshots/windows-home.png) |
 |                                Windows: Live TV with guide timeline                                         |                     Windows: Movies with sort and rating filter        |
 |          ![Windows: Live TV with now/next and guide timeline](docs/screenshots/windows-live.png)            |   ![Windows: Movies grid](docs/screenshots/windows-movies.png)        |
 |                                Windows: Series with seasons and episodes                                    |                     Windows: Search across everything                  |
@@ -148,8 +148,6 @@ Bug reports and ideas are welcome in [Issues](https://github.com/diwaskhadka/Mad
 - **Apps:** Android TV in [`android/`](android) (Kotlin, Compose for TV, Media3), and Windows in [`windows/`](windows) (WPF, LibVLC).
 - **Releases:** [docs/RELEASING.md](docs/RELEASING.md) covers the shared version, the changelog, signing and adding a platform.
 - **Branding:** the name, icon and colours are in [`branding/`](branding/README.md).
-
-
 
 ## License
 

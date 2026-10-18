@@ -130,11 +130,19 @@ jobs:
             "14-light-details"  = @("--mode", "Series", "--open-first", "--light")
             "15-movie-playing"  = @("--mode", "Movies", "--open-first", "--play-first")
             "16-episode-playing" = @("--mode", "Series", "--open-first", "--play-first")
+            "17-custom-dark"    = @("--mode", "Dashboard")
+            "18-custom-light"   = @("--mode", "Live")
+          }
+          # Custom themes (Settings › Visual theme › Custom), each built from one picked colour.
+          $themes = @{
+            "17-custom-dark"  = '{ "Theme": "Custom", "CustomColor": "#12A4A4" }'
+            "18-custom-light" = '{ "Theme": "Custom", "CustomColor": "#6C4AD8", "CustomLight": true }'
           }
           foreach ($name in $cases.Keys) {
             $out = Join-Path (Resolve-Path shots) "$name.png"
             $settingsFile = Join-Path $data "settings.json"
-            if ($cases[$name] -contains "--light") { '{ "Theme": "Light" }' | Set-Content $settingsFile } else { Remove-Item $settingsFile -ErrorAction SilentlyContinue }
+            if ($themes.Contains($name)) { $themes[$name] | Set-Content $settingsFile }
+            elseif ($cases[$name] -contains "--light") { '{ "Theme": "Light" }' | Set-Content $settingsFile } else { Remove-Item $settingsFile -ErrorAction SilentlyContinue }
             $p = Start-Process publish/Madhyam/Madhyam.exe -ArgumentList ($cases[$name] + @("--screenshot", "`"$out`"")) -PassThru
             if (-not $p.WaitForExit(45000)) { Stop-Process -Id $p.Id -Force; Write-Host "::warning::$name timed out" }
             if (Test-Path $out) { Write-Host "::notice::screenshot $name ok" } else { Write-Host "::warning::screenshot $name missing" }

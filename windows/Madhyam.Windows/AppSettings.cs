@@ -13,7 +13,9 @@ namespace Madhyam.Windows;
 public sealed class AppSettings
 {
     // ---- General
-    public string Theme { get; set; } = "Dark";            // Dark | Light | System
+    public string Theme { get; set; } = "Dark";            // Dark (Navy & Crimson) | Light | System | Custom
+    public string CustomColor { get; set; } = ThemeColors.Crimson; // Custom theme: the picked colour
+    public bool CustomLight { get; set; }                  // Custom theme on a light base
     public string CoverSize { get; set; } = "Medium";      // Small | Medium | Large
     public bool TitlesUnderCovers { get; set; } = true;
     public string StartupView { get; set; } = "Dashboard"; // Dashboard | Live | Movies | Series | Favorites | Recent | Last
@@ -123,7 +125,7 @@ public sealed class AppSettings
 
     /// <summary>Dark/Light after resolving "System" from the Windows app theme.</summary>
     public bool IsLight =>
-        Theme == "Light" || (Theme == "System" && WindowsUsesLightTheme());
+        Theme == "Light" || (Theme == "System" && WindowsUsesLightTheme()) || (Theme == "Custom" && CustomLight);
 
     private static bool WindowsUsesLightTheme()
     {
@@ -172,8 +174,10 @@ public sealed class AppSettings
     /// </summary>
     public static void ApplyTheme(ResourceDictionary res)
     {
-        if (!Current.IsLight) return;
-        foreach (var (key, hex) in LightPalette)
+        var palette = Current.Theme == "Custom" ? ThemeColors.Custom(Current.CustomColor, Current.CustomLight)
+            : Current.IsLight ? LightPalette
+            : ThemeColors.NavyCrimson;
+        foreach (var (key, hex) in palette)
         {
             var color = (Color)ColorConverter.ConvertFromString(hex);
             // Replace (not mutate): brushes referenced by templates are frozen at load.

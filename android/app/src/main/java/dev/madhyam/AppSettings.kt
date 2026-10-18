@@ -64,7 +64,9 @@ class AppSettings private constructor(private val file: File) {
     var freeTvPreinstalled = false
 
     // ------------------------------------------- 0.9.0: Windows 0.4.11 parity
-    var theme = "Dark"                      // Dark | Light | System
+    var theme = "Dark"                      // Dark (Navy & Crimson) | Light | System | Custom
+    var customColor = "#DC143C"             // Custom theme: the picked colour
+    var customLight = false                 // Custom theme on a light base
     var coverSize = "Medium"                // Small | Medium | Large
     var titlesUnderCovers = true
     var epgOffsetMinutes = 0                // positive = programmes shown later
@@ -116,6 +118,8 @@ class AppSettings private constructor(private val file: File) {
                 for ((k, v) in hiddenCategories) if (v.isNotEmpty()) put(k, JSONArray(v.sorted()))
             })
             .put("theme", theme)
+            .put("customColor", customColor)
+            .put("customLight", customLight)
             .put("coverSize", coverSize)
             .put("titlesUnderCovers", titlesUnderCovers)
             .put("epgOffsetMinutes", epgOffsetMinutes)
@@ -178,6 +182,8 @@ class AppSettings private constructor(private val file: File) {
                 }
             }
             theme = o.optString("theme", theme)
+            customColor = o.optString("customColor", customColor)
+            customLight = o.optBoolean("customLight", customLight)
             coverSize = o.optString("coverSize", coverSize)
             titlesUnderCovers = o.optBoolean("titlesUnderCovers", titlesUnderCovers)
             epgOffsetMinutes = o.optInt("epgOffsetMinutes", epgOffsetMinutes)

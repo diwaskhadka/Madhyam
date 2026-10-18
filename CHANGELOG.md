@@ -6,6 +6,26 @@ says so. The engine (`crates/madhyam-core`) keeps its own version, given in each
 
 How to cut a release and how to add a platform: [docs/RELEASING.md](docs/RELEASING.md).
 
+## 0.10.0
+
+New dark theme and a custom colour theme.
+
+### Windows
+- **Navy & Crimson:** the dark theme now uses deep navy surfaces with crimson highlights. Existing dark-theme users get it automatically.
+- **Custom theme:** Settings › General › Visual theme › Custom, then **Pick colour…** opens a colour picker. Choose a preset (Crimson, Royal blue, Vermilion, Saffron, Green, Teal, Sky blue, Violet, Purple, Rose, Slate, Brown), set Hue, Saturation and Lightness, or type a hex code, then choose a dark or light base. A preview shows the result, and the whole theme is built from that one colour so text stays readable. It applies on the next start, as before.
+- The About link points at the renamed repository, github.com/diwaskhadka/Madhyam.
+
+### Android TV
+- **Navy & Crimson:** the same new dark theme.
+- **Custom theme:** Settings › Appearance › Custom colour opens a colour picker made for the remote. It has the same named presets, ◀ ▶ on Hue, Saturation and Lightness, a hex code and a dark or light base, with a live preview. The theme changes at once.
+
+### Engine
+- madhyam-core 0.2.0, unchanged.
+
+### Project
+- The repository is now **diwaskhadka/Madhyam**; old links redirect.
+- The old project name no longer appears in the README, the changelog or the release notes.
+
 ## 0.9.1
 
 Free TV comes preinstalled, and a new README.
@@ -37,7 +57,7 @@ and `Madhyam-vX.Y.Z-androidtv.apk`.
 - Version number aligned with the other platforms: 0.4.11 → 0.9.0.
 - **Name:** window title, Start menu and desktop shortcuts, Settings > Apps, `Madhyam.exe`; About shows माध्यम too.
 - **New icon** for the exe, the window, the sidebar and the installer.
-- **Upgrades Madhyam 0.4.x in place:** setup replaces `Madhyam.exe` and its Start menu and desktop shortcuts, leaving one app in Settings > Apps.
+- **Upgrades 0.4.x in place:** setup replaces the old exe and its Start menu and desktop shortcuts, leaving one app in Settings > Apps. On first start, playlists, settings, favorites and progress move from the old data folder to `%LOCALAPPDATA%\Madhyam`; saved passwords keep working.
 
 ### Android TV (first public release)
 Built in steps 0.5 to 0.9 (never published separately), to match Windows 0.4.11:
@@ -76,5 +96,5 @@ Each Windows version had its own number; Android TV was not published.
 - **0.4.1** Pop-up menu font and floating player controls fixed.
 - **0.4.0** dashboard, advanced search, movie and series pages, sources.
 - **0.3.0** Settings page, timeline guide, light theme.
-- **0.2.0** UI; single Madhyam.exe.
+- **0.2.0** UI; a single exe.
 - **0.1.x** First Windows player (WPF + LibVLC) on the madhyam-core engine.

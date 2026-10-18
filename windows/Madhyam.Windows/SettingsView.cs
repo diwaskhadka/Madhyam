@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Shapes;
 using Microsoft.Win32;
 
 namespace Madhyam.Windows;
@@ -140,6 +141,7 @@ public sealed class SettingsView : UserControl
     }
 
     private static int _group;
+    private RadioButton? _customChoice; // the theme choice's "Custom" option, checked by Pick colour
 
     private static Panel Choice(IEnumerable<(string Value, string Label)> options, string current, Action<string> changed)
     {
@@ -224,17 +226,47 @@ public sealed class SettingsView : UserControl
         restart.Margin = new Thickness(0, 10, 0, 0);
         restart.HorizontalAlignment = HorizontalAlignment.Left;
         var themeBox = new StackPanel();
-        themeBox.Children.Add(Choice(new[] { ("Light", "☀  Light"), ("Dark", "☾  Dark"), ("System", "🖥  System") }, S.Theme, v =>
+        void ThemeChanged()
         {
-            S.Theme = v;
             Save();
             themeNote.Text = $"The new theme is used the next time {Brand.Name} starts.";
             themeNote.Visibility = Visibility.Visible;
             restart.Visibility = Visibility.Visible;
-        }));
+        }
+        var customSwatch = new Ellipse { Width = 14, Height = 14, Margin = new Thickness(0, 0, 8, 0), VerticalAlignment = VerticalAlignment.Center };
+        var customName = new TextBlock { Foreground = Brush("Muted"), Margin = new Thickness(0, 0, 12, 0), VerticalAlignment = VerticalAlignment.Center };
+        void ShowCustom()
+        {
+            customSwatch.Fill = new SolidColorBrush(ThemeColors.Parse(S.CustomColor) ?? Colors.Crimson);
+            customName.Text = $"{ThemeColors.NameOf(S.CustomColor)} · {(S.CustomLight ? "light" : "dark")}";
+        }
+        ShowCustom();
+        var pick = Btn("Pick colour…", () =>
+        {
+            if (ColorPickerWindow.Show(Window.GetWindow(this)!, S.CustomColor, S.CustomLight) is { } chosen)
+            {
+                (S.CustomColor, S.CustomLight) = chosen;
+                ShowCustom();
+                if (S.Theme != "Custom") _customChoice!.IsChecked = true; // → Checked → ThemeChanged
+                else ThemeChanged();
+            }
+            return Task.CompletedTask;
+        });
+        var themeChoice = Choice(new[] { ("Dark", "☾  Navy & Crimson"), ("Light", "☀  Light"), ("System", "🖥  System"), ("Custom", "🎨  Custom") }, S.Theme, v =>
+        {
+            S.Theme = v;
+            ThemeChanged();
+        });
+        _customChoice = themeChoice.Children.OfType<RadioButton>().Last();
+        themeBox.Children.Add(themeChoice);
+        themeBox.Children.Add(new StackPanel
+        {
+            Orientation = Orientation.Horizontal, Margin = new Thickness(0, 10, 0, 0),
+            Children = { customSwatch, customName, pick },
+        });
         themeBox.Children.Add(themeNote);
         themeBox.Children.Add(restart);
-        Row("Visual theme", "Light, dark, or follow the Windows app setting.", themeBox, controlBelow: true);
+        Row("Visual theme", "Navy & Crimson is the dark theme: deep navy with crimson highlights. Custom builds a theme from any colour you pick.", themeBox, controlBelow: true);
 
         Row("Cover size", "Size of posters in the movie and series grids. Larger is easier to see from a distance; smaller shows more per row.",
             Choice(new[] { ("Small", "Small"), ("Medium", "Medium"), ("Large", "Large") }, S.CoverSize, v =>
