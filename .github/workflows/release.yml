@@ -207,7 +207,9 @@ jobs:
   linux:
     name: linux (.deb + AppImage, engine .so)
     needs: version
-    runs-on: ubuntu-latest
+    # The oldest supported Ubuntu: the .deb's library versions and the AppImage's glibc
+    # come from the build system, so building on 24.04 keeps both working there and later.
+    runs-on: ubuntu-24.04
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
