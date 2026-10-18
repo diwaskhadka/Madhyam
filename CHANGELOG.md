@@ -15,6 +15,7 @@ Android TV: streams stop when you leave them, and large playlists need half the 
 - Home button, another app or the screen saver: the stream stops and frees the connection, then starts again when you come back (live at the live edge, films where they were). Resume points are saved as before.
 - About half the memory with a large playlist: on a TCL TV with 1.8 GB of RAM and a playlist of 53 000 channels, 161 000 films and 38 000 series, 194 MB instead of 426 MB after start. Android no longer closes Madhyam a few seconds after you press Home, so you come back to where you were.
 - The same playlist loads in about 12 s instead of 17 s.
+- Favorites, resume positions and recently watched are saved in a small file of their own when you close the player, press Home, add a favorite or mark something watched. Before, each of these rewrote the whole catalog: for a 265 000-item playlist, a 122 MB file and about 4 s of work on a TV. The catalog is saved only when it changes (refresh, adding, editing or removing a playlist, a series' episodes loaded for the first time).
 - The guide is kept from a day back to three days ahead (the TV guide shows two days ahead).
 - Posters and logos: a smaller memory cache, 16-bit pictures on TVs with less than 2 GB of RAM, and the cache is emptied in the background. The video buffer is capped at a quarter of the app's memory.
 
