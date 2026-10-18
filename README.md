@@ -20,7 +20,7 @@
 
 ⚠️ Madhyam is a **player**. It does not sell subscriptions, channels or playlists. Free TV lists publicly available streams collected by the [iptv-org](https://github.com/iptv-org/iptv) project. Channels and pictures in the screenshots are for demonstration only.
 
-![Madhyam on Android TV: Free TV with 12,000+ channels by category](docs/screenshots/tv-free-tv.png)
+![Madhyam on Windows: Home with Continue watching, in the Navy & Crimson theme](docs/screenshots/windows-home.png)
 
 ## Free TV comes preinstalled
 
@@ -123,8 +123,8 @@ More platforms are on the way and will be released in future versions. The engin
 |                                Android TV: Free TV by country (light theme)                                 |                         Android TV: Appearance                        |
 | :---------------------------------------------------------------------------------------------------------: | :-------------------------------------------------------------------: |
 |    ![Android TV: Free TV channels by country in the light theme](docs/screenshots/tv-countries-light.png)    |   ![Android TV: Appearance settings in Navy & Crimson](docs/screenshots/tv-settings.png)           |
-|                                    Android TV: Custom theme colour picker                                   |                   Windows: Home with Continue watching                |
-|            ![Android TV: Custom theme colour picker](docs/screenshots/tv-custom-theme.png)                  |   ![Windows: Home with Continue watching](docs/screenshots/windows-home.png) |
+|                                    Android TV: Custom theme colour picker                                   |              Android TV: Free TV with 12,000+ channels               |
+|            ![Android TV: Custom theme colour picker](docs/screenshots/tv-custom-theme.png)                  |   ![Android TV: Free TV with 12,000+ channels by category](docs/screenshots/tv-free-tv.png) |
 |                                Windows: Live TV with guide timeline                                         |                     Windows: Movies with sort and rating filter        |
 |          ![Windows: Live TV with now/next and guide timeline](docs/screenshots/windows-live.png)            |   ![Windows: Movies grid](docs/screenshots/windows-movies.png)        |
 |                                Windows: Series with seasons and episodes                                    |                     Windows: Search across everything                  |
