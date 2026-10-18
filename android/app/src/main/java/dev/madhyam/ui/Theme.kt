@@ -6,6 +6,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.tv.material3.LocalContentColor
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.darkColorScheme
@@ -49,6 +50,21 @@ val Panel: Color @Composable @ReadOnlyComposable get() = LocalPalette.current.pa
 val Muted: Color @Composable @ReadOnlyComposable get() = LocalPalette.current.muted
 /** Main text colour (white on dark, near-black on light). */
 val TextColor: Color @Composable @ReadOnlyComposable get() = LocalPalette.current.text
+
+/**
+ * Whether we are inside a focused list row or button, whose highlight is the opposite of the
+ * page (a light bar on the dark theme): its content colour is then dark on dark pages.
+ */
+private val onHighlight: Boolean
+    @Composable @ReadOnlyComposable get() = (LocalContentColor.current.luminance() < 0.5f) == LocalPalette.current.dark
+
+/** Secondary text in a list row: [Muted], or the row's own colour, dimmed, on a focused row. */
+val RowMuted: Color
+    @Composable @ReadOnlyComposable get() = if (onHighlight) LocalContentColor.current.copy(alpha = 0.72f) else Muted
+
+/** A value shown in a list row: [Accent], or the row's own colour on a focused row. */
+val RowAccent: Color
+    @Composable @ReadOnlyComposable get() = if (onHighlight) LocalContentColor.current else Accent
 
 /**
  * TV Material for focusable widgets, plus the phone Material 3 theme because text fields only

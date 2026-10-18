@@ -15,6 +15,7 @@ import java.io.BufferedInputStream
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.zip.GZIPInputStream
 
@@ -80,14 +81,46 @@ data class Item(
     /** Name as shown, optionally without a "UK: " / "|EN| " style prefix (live channels only). */
     fun displayName(stripPrefix: Boolean): String = if (stripPrefix && isLive) stripPrefix(name) else name
 
+    /** Rating with one decimal ("8.227" → "8.2"). */
+    val ratingLabel: String? get() = rating?.let(::ratingText)
+
+    /**
+     * The episode's own title, without the series name and episode code providers repeat in it:
+     * "PL - Blade: The Series (2006) (US) - S01E01 - Dom Chthona" → "Dom Chthona" (as on Windows).
+     */
+    val episodeTitle: String
+        get() {
+            val code = EPISODE_CODE.find(name) ?: return name.trim(*TITLE_TRIM)
+            // What follows the code; before it is only the series name.
+            return name.substring(code.range.last + 1).trim(*TITLE_TRIM)
+        }
+
+    /** The series name an episode's title starts with ("PL - Blade: The Series (2006) (US)"), if any. */
+    val episodeSeries: String?
+        get() = EPISODE_CODE.find(name)?.let { name.substring(0, it.range.first).trim(*TITLE_TRIM) }?.takeIf { it.length > 1 }
+
+    /** "S01E01 · Dom Chthona", or just "S01E01" when the title says nothing more. */
+    val episodeLabel: String
+        get() = episodeTitle.let { if (it.length > 1) "$seasonEpisode · $it" else seasonEpisode }
+
+    /** The "EN" / "4K-TOP" tag before a film's name, which tells apart versions of one film. */
+    val nameTag: String?
+        get() = VOD_TAG.find(name)?.groupValues?.get(1)
+
     companion object {
         const val CATCHUP = "catchup"
 
         private val PREFIX = Regex("""^\s*(\|[^|]{1,12}\||\[[^]]{1,12}]|[A-Za-z0-9]{1,6}\s*[:|\-]\s+)\s*""")
+        private val EPISODE_CODE = Regex("""\bS\d{1,2}\s*E\d{1,3}\b""", RegexOption.IGNORE_CASE)
+        private val VOD_TAG = Regex("""^\s*([A-Z0-9][A-Z0-9+\-]{0,9})\s+[-|:]\s+""")
+        private val TITLE_TRIM = charArrayOf(' ', '-', '·', '|', ':', '.')
 
         fun stripPrefix(name: String): String = PREFIX.replace(name, "").ifBlank { name }
     }
 }
+
+/** A rating with one decimal ("8.227" → "8.2", "6" → "6.0"); as given when it is not a number. */
+fun ratingText(r: String): String = r.toDoubleOrNull()?.let { String.format(Locale.US, "%.1f", it) } ?: r
 
 data class Programme(val title: String, val start: Long, val stop: Long, val desc: String) {
     /** 0..1 progress of the programme at `now` (Unix seconds). */

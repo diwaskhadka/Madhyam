@@ -5,6 +5,8 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.BringIntoViewSpec
 import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -124,9 +126,9 @@ private fun Hero(vm: MainViewModel, item: Item, info: DetailsInfo?, poster: Stri
     Row {
         Poster(poster, item.name, Modifier.size(200.dp, 300.dp).clip(RoundedCornerShape(14.dp)))
         Column(Modifier.padding(start = 32.dp).widthIn(max = 720.dp)) {
-            Text(item.name, fontSize = 30.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(item.name, fontSize = 30.sp, lineHeight = 36.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
             FlowRow(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                (info?.rating ?: item.rating)?.let { Chip("★ $it", Accent) }
+                (info?.rating ?: item.rating)?.let { Chip("★ ${dev.madhyam.ratingText(it)}", Accent) }
                 vm.ratings?.imdb?.let { Chip("IMDb $it", Color(0xFFF5C518)) }
                 vm.ratings?.rotten?.let { Chip("Rotten Tomatoes $it", Color(0xFFFA6240)) }
                 for (c in chips(item, info)) Chip(c)
@@ -149,9 +151,6 @@ private fun Hero(vm: MainViewModel, item: Item, info: DetailsInfo?, poster: Stri
                     )
                 }
             }
-            if (vm.detailsLoading) {
-                Text(if (item.isSeries) "Loading details and episodes…" else "Loading details…", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 14.dp))
-            }
             Buttons(vm, item)
         }
     }
@@ -161,8 +160,11 @@ private fun Hero(vm: MainViewModel, item: Item, info: DetailsInfo?, poster: Stri
 @Composable
 private fun Buttons(vm: MainViewModel, item: Item) {
     val first = remember { FocusRequester() }
-    // Opening the page puts the focus on Play / Resume (again once the episodes are known).
-    LaunchedEffect(item.id, vm.detailsLoading) {
+    // A series without episodes loses its Play button once loading ends.
+    val noPlay = item.isSeries && vm.episodes.isEmpty() && !vm.detailsLoading
+    // Opening the page puts the focus on Play / Resume. The button keeps its place while the
+    // episodes load, so the row doesn't shift and the focus stays where it is.
+    LaunchedEffect(item.id, noPlay) {
         delay(80)
         runCatching { first.requestFocus() }
     }
@@ -170,13 +172,17 @@ private fun Buttons(vm: MainViewModel, item: Item) {
         if (item.isSeries) {
             val resume = vm.resumeEpisode()
             val ep = resume ?: vm.episodes.firstOrNull()
-            if (ep != null) {
+            if (!noPlay) {
                 ActionButton(
-                    if (resume != null) "Resume ${ep.seasonEpisode}" else "Play ${ep.seasonEpisode}",
+                    when {
+                        ep == null -> "Loading episodes…"
+                        resume != null -> "Resume ${ep.seasonEpisode}"
+                        else -> "Play ${ep.seasonEpisode}"
+                    },
                     Icons.Filled.PlayArrow,
                     Modifier.focusRequester(first),
                     primary = true,
-                ) { vm.playEpisode(ep) }
+                ) { if (ep != null) vm.playEpisode(ep) }
             }
         } else {
             ActionButton(if (item.isStarted) "Resume" else "Play", Icons.Filled.PlayArrow, Modifier.focusRequester(first), primary = true) {
@@ -188,7 +194,7 @@ private fun Buttons(vm: MainViewModel, item: Item) {
         ActionButton(
             if (fav) "Favorite" else "Add to favorites",
             if (fav) Icons.Filled.Star else Icons.Filled.StarBorder,
-            if (item.isSeries && vm.episodes.isEmpty()) Modifier.focusRequester(first) else Modifier,
+            if (noPlay) Modifier.focusRequester(first) else Modifier,
         ) { vm.toggleFavorite(item) }
         if (!item.isSeries) {
             ActionButton(if (item.isWatched) "Watched" else "Mark as watched", Icons.Filled.Check) { vm.toggleWatched(item) }
@@ -256,7 +262,10 @@ private fun Seasons(vm: MainViewModel, series: Item) {
 @Composable
 private fun EpisodeCard(vm: MainViewModel, series: Item, ep: Item) {
     var focused by remember { mutableStateOf(false) }
-    Column(Modifier.width(240.dp)) {
+    // The page scrolls to the card's picture only; show its title and plot under it too.
+    val whole = remember { BringIntoViewRequester() }
+    LaunchedEffect(focused) { if (focused) whole.bringIntoView() }
+    Column(Modifier.width(240.dp).bringIntoViewRequester(whole).padding(bottom = 16.dp)) {
         Surface(
             onClick = { vm.playEpisode(ep) },
             onLongClick = { vm.toggleWatched(ep) },
@@ -277,7 +286,7 @@ private fun EpisodeCard(vm: MainViewModel, series: Item, ep: Item) {
             }
         }
         Text(
-            "${ep.episode ?: ""}. ${ep.name}".trimStart('.', ' '),
+            listOfNotNull(ep.episode, ep.episodeTitle.ifBlank { null }).joinToString(". ").ifBlank { ep.seasonEpisode },
             fontSize = 14.sp,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -334,17 +343,20 @@ private fun timeLeft(item: Item): String {
     return if (s >= 3600) "${s / 3600}h ${s % 3600 / 60}m left" else "${(s / 60).coerceAtLeast(1)}m left"
 }
 
-/** Play a YouTube trailer in the TV's YouTube app (or the browser when there is none). */
+/**
+ * Play a YouTube trailer. The web link comes first: every YouTube app (the official one,
+ * SmartTube…) and browsers accept it, while some apps that claim `vnd.youtube:` links can't
+ * open them. The app link is the fallback when nothing takes the web link.
+ */
 private fun openTrailer(context: android.content.Context, id: String) {
-    val app = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("vnd.youtube:$id"))
-    val web = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://www.youtube.com/watch?v=$id"))
-    try {
-        context.startActivity(app)
-    } catch (_: android.content.ActivityNotFoundException) {
+    val links = listOf("https://www.youtube.com/watch?v=$id", "vnd.youtube:$id")
+    for (link in links) {
+        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(link))
         try {
-            context.startActivity(web)
+            context.startActivity(intent)
+            return
         } catch (_: android.content.ActivityNotFoundException) {
-            android.widget.Toast.makeText(context, "No app can play YouTube trailers on this device.", android.widget.Toast.LENGTH_LONG).show()
         }
     }
+    android.widget.Toast.makeText(context, "No app can play YouTube trailers on this device.", android.widget.Toast.LENGTH_LONG).show()
 }

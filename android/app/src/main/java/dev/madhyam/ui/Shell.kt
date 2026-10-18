@@ -100,6 +100,10 @@ fun MainShell(vm: MainViewModel) {
             }
             }
         }
+        // The open rail covers the left of the page: dim the page so the cut-off bits of it
+        // (category names, counts) don't show beside the rail.
+        val scrim by androidx.compose.animation.core.animateFloatAsState(if (railFocused) 0.82f else 0f, label = "scrim")
+        if (scrim > 0f) Box(Modifier.fillMaxSize().background(Background.copy(alpha = scrim)))
         Rail(vm, railFocus, onFocus = { railFocused = it }, expanded = railFocused, onPlaylists = { pickPlaylist = true })
 
         // Status line (busy / messages), bottom right, over everything.
@@ -178,7 +182,7 @@ private fun RailEntry(
             if (expanded) Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
         },
         supportingContent = if (expanded && sub != null) {
-            { Text(sub, fontSize = 11.sp, color = Muted, maxLines = 1) }
+            { Text(sub, fontSize = 11.sp, color = RowMuted, maxLines = 1) }
         } else {
             null
         },
@@ -221,7 +225,7 @@ private fun PlaylistDialog(vm: MainViewModel, onDismiss: () -> Unit) {
                                     else -> "M3U playlist"
                                 },
                                 fontSize = 12.sp,
-                                color = Muted,
+                                color = RowMuted,
                             )
                         },
                     )
@@ -241,10 +245,10 @@ private fun PlaylistDialog(vm: MainViewModel, onDismiss: () -> Unit) {
 }
 
 @Composable
-fun SectionTitle(title: String, sub: String? = null) {
+fun SectionTitle(title: String, sub: String? = null, subLines: Int = 1) {
     Column(Modifier.padding(bottom = 10.dp)) {
         Text(title, fontSize = 24.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        if (sub != null) Text(sub, color = Muted, fontSize = 12.sp, maxLines = 1)
+        if (sub != null) Text(sub, color = Muted, fontSize = 12.sp, lineHeight = 15.sp, maxLines = subLines, overflow = TextOverflow.Ellipsis)
     }
 }
 

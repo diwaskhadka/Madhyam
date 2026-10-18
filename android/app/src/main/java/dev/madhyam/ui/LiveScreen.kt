@@ -2,6 +2,7 @@ package dev.madhyam.ui
 
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,12 +21,14 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -127,16 +130,31 @@ private fun CategoryRow(vm: MainViewModel, c: Category) {
             Text(c.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp,
                 fontWeight = if (c.isAll) FontWeight.SemiBold else FontWeight.Normal)
         },
-        trailingContent = { Text("${c.count}", color = Muted, fontSize = 11.sp) },
+        trailingContent = { Text("${c.count}", color = RowMuted, fontSize = 11.sp) },
     )
 }
 
+/** A filter or tab chip: on is filled with the accent colour and ticked, off is outlined. */
 @Composable
 fun ToggleChip(label: String, on: Boolean, onClick: () -> Unit) {
-    val content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = { Text(label, fontSize = 12.sp) }
     val pad = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-    if (on) Button(onClick = onClick, contentPadding = pad, content = content)
-    else OutlinedButton(onClick = onClick, contentPadding = pad, content = content)
+    if (on) {
+        Button(
+            onClick = onClick,
+            contentPadding = pad,
+            colors = androidx.tv.material3.ButtonDefaults.colors(
+                containerColor = Accent,
+                contentColor = Color.White,
+                focusedContainerColor = TextColor,
+                focusedContentColor = Background,
+            ),
+        ) {
+            Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(14.dp))
+            Text(" $label", fontSize = 12.sp)
+        }
+    } else {
+        OutlinedButton(onClick = onClick, contentPadding = pad) { Text(label, fontSize = 12.sp) }
+    }
 }
 
 @kotlin.OptIn(ExperimentalComposeUiApi::class)
@@ -146,7 +164,7 @@ private fun ChannelList(vm: MainViewModel, now: Long, modifier: Modifier) {
     Column(modifier.fillMaxHeight().padding(horizontal = 12.dp, vertical = 16.dp)) {
         val title = vm.group ?: vm.categories.firstOrNull()?.name ?: "Live TV"
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) { SectionTitle(title, "${vm.total} channels · hold OK for favorite") }
+            Column(Modifier.weight(1f)) { SectionTitle(title, "%,d channels · hold OK for favorite".format(vm.total), subLines = 2) }
             ToggleChip("TV guide", false) { vm.openGuide() }
         }
         if (vm.items.isEmpty()) {
@@ -161,8 +179,10 @@ private fun ChannelList(vm: MainViewModel, now: Long, modifier: Modifier) {
             runCatching { start.requestFocus() }
         }
         LazyColumn(
-            Modifier.focusRestorer(),
+            // Rows scrolling out fade under the header instead of being cut in half.
+            Modifier.focusRestorer().fadeEdges(16.dp),
             state = rememberLazyListState(initialFirstVisibleItemIndex = startIndex),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             itemsIndexed(vm.items, key = { _, it -> it.id }) { i, item ->
@@ -187,30 +207,43 @@ private fun ChannelList(vm: MainViewModel, now: Long, modifier: Modifier) {
 private fun ChannelRow(modifier: Modifier, vm: MainViewModel, number: Int, item: Item, now: Long, strip: Boolean, onFocused: () -> Unit) {
     val nn = vm.nowNext[item.id]
     val playing = vm.playback.current?.id == item.id
+    var focused by remember { mutableStateOf(false) }
     DenseListItem(
         selected = playing,
         onClick = { vm.open(item) },
         onLongClick = { vm.toggleFavorite(item) },
-        modifier = modifier.onFocusChanged { if (it.isFocused) onFocused() },
+        modifier = modifier.onFocusChanged {
+            focused = it.isFocused
+            if (it.isFocused) onFocused()
+        },
         leadingContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (vm.settings.showNumbers) {
-                    Text("$number", color = Muted, fontSize = 12.sp, modifier = Modifier.width(34.dp))
+                    Text("$number", color = RowMuted, fontSize = 12.sp, modifier = Modifier.width(34.dp))
                 }
                 Logo(item, 56.dp, 34.dp, strip)
             }
         },
         headlineContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (playing) Icon(Icons.Filled.PlayArrow, null, tint = Accent, modifier = Modifier.size(16.dp).padding(end = 2.dp))
-                Text(item.displayName(strip), maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 15.sp, modifier = Modifier.weight(1f, fill = false))
+                if (playing) Icon(Icons.Filled.PlayArrow, null, tint = RowAccent, modifier = Modifier.size(16.dp).padding(end = 2.dp))
+                // The column is narrow: the focused name scrolls to show all of it.
+                Text(
+                    item.displayName(strip),
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = if (focused) TextOverflow.Clip else TextOverflow.Ellipsis,
+                    fontSize = 15.sp,
+                    modifier = Modifier.weight(1f, fill = false)
+                        .then(if (focused) Modifier.basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 900) else Modifier),
+                )
                 if (vm.isFavorite(item)) Icon(Icons.Filled.Star, null, tint = Color(0xFFFFC94D), modifier = Modifier.padding(start = 4.dp).size(14.dp))
             }
         },
         supportingContent = nn?.now?.let { cur ->
             {
                 Column {
-                    Text(cur.title, color = Muted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(cur.title, color = RowMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     ProgressBar(cur.progress(now), width = 160.dp)
                 }
             }
@@ -261,7 +294,10 @@ private fun Preview(vm: MainViewModel) {
     val cur = vm.playback.current
     Surface(
         onClick = { vm.enterFullScreen() },
-        modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
+        // On the preview, the info below is about what plays in it, not the last row focused
+        // (which may be a separator row the focus passed on the way).
+        modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+            .onFocusChanged { f -> if (f.isFocused) cur?.let { vm.focus(it) } },
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
         colors = ClickableSurfaceDefaults.colors(containerColor = Color.Black, focusedContainerColor = Color.Black),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),
@@ -270,7 +306,13 @@ private fun Preview(vm: MainViewModel) {
             if (cur != null) {
                 VideoSurface(vm.playback.player, Modifier.fillMaxSize())
                 vm.playback.error?.let {
-                    Text(it, color = ErrorRed, fontSize = 13.sp, modifier = Modifier.padding(12.dp))
+                    Column(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)).padding(14.dp), verticalArrangement = Arrangement.Center) {
+                        Text(it, color = ErrorRed, fontSize = 13.sp)
+                        Text(
+                            "OK on the channel to try again" + (vm.playback.errorDetail?.let { d -> "  ·  $d" } ?: ""),
+                            color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp),
+                        )
+                    }
                 }
             } else {
                 Text("Press OK on a channel to watch it here.\nOK again for full screen.", color = Muted, fontSize = 13.sp)

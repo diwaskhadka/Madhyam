@@ -112,9 +112,15 @@ class Playback(private val context: Context, private val settings: AppSettings) 
     /** What is loaded in the player, or null when stopped. */
     var current by mutableStateOf<Item?>(null)
         private set
+    /** What went wrong, as a sentence for the screen; [errorDetail] holds the player's code. */
     var error by mutableStateOf<String?>(null)
         private set
+    var errorDetail by mutableStateOf<String?>(null)
+        private set
     var isPlaying by mutableStateOf(false)
+        private set
+    /** Paused by the user (as opposed to playing or buffering). */
+    var paused by mutableStateOf(false)
         private set
 
     /** Channels that Up/Down (or Channel +/-) zap through, and the position of [current] in it. */
@@ -138,8 +144,13 @@ class Playback(private val context: Context, private val settings: AppSettings) 
                     player.seekToDefaultPosition()
                     player.prepare()
                 } else {
-                    error = "Playback failed (${e.errorCodeName}). Press OK to retry."
+                    error = describe(e)
+                    errorDetail = e.errorCodeName.removePrefix("ERROR_CODE_")
                 }
+            }
+
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                paused = !playWhenReady
             }
 
             override fun onIsPlayingChanged(playing: Boolean) {
@@ -172,6 +183,7 @@ class Playback(private val context: Context, private val settings: AppSettings) 
 
     private fun load(item: Item, resumeMs: Long) {
         error = null
+        errorDetail = null
         current = item
         externalSubtitles = emptyList()
         changeAudioDelay(0)
@@ -258,12 +270,46 @@ class Playback(private val context: Context, private val settings: AppSettings) 
 
     fun retry() {
         error = null
+        errorDetail = null
         player.prepare()
         player.play()
     }
 
     fun togglePause() {
-        if (player.isPlaying) player.pause() else player.play()
+        if (player.playWhenReady) player.pause() else player.play()
+    }
+
+    fun play() = player.play()
+
+    fun pause() = player.pause()
+
+    /** A plain sentence for a playback error (the code goes to [errorDetail]). */
+    private fun describe(e: PlaybackException): String {
+        val what = if (current?.isLive == true) "this channel" else "this stream"
+        val http = (e.cause as? androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException)?.responseCode
+        return when (e.errorCode) {
+            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+            PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ->
+                "Couldn't connect to $what. The provider may be offline, or your account may be using all its connections."
+            PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> when (http) {
+                401, 403 -> "The provider refused $what. Your account may have expired or be using all its connections."
+                404, 410 -> "The provider no longer has $what."
+                else -> "The provider couldn't send $what${http?.let { " (error $it)" } ?: ""}. Try again in a moment."
+            }
+            PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND -> "The provider no longer has $what."
+            PlaybackException.ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE,
+            PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
+            PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED ->
+                "The provider sent something that isn't a video for $what."
+            PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED,
+            PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED,
+            PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+            PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED,
+            PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
+            PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES ->
+                "This TV can't play the format of $what."
+            else -> "Playback of $what stopped with an error."
+        }
     }
 
     fun seekBy(ms: Long) {
@@ -341,6 +387,7 @@ class Playback(private val context: Context, private val settings: AppSettings) 
         player.clearMediaItems()
         current = null
         error = null
+        errorDetail = null
     }
 
     /**

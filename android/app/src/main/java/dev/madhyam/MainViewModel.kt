@@ -991,7 +991,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         private set
     private var guideJob: Job? = null
 
+    /**
+     * The channel the guide opens at: the one playing when it was opened, else the focused one.
+     * (The guide has no preview, so the stream stops as it opens.)
+     */
+    var guideStartId by mutableStateOf<String?>(null)
+        private set
+
     fun openGuide() {
+        guideStartId = playback.current?.takeIf { it.isLive }?.id ?: focused?.id
         if (section != Section.Live) selectSection(Section.Live)
         guideOpen = true
         guideNow()
