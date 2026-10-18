@@ -1,0 +1,39 @@
+[package]
+name = "madhyam-linux"
+description = "Madhyam for Linux: GTK 4 IPTV player on the madhyam-core engine, video by mpv."
+version = "0.0.0" # unused: the app reports the repository VERSION file (build.rs)
+edition = "2024"
+license = "MIT"
+rust-version = "1.85"
+publish = false
+
+# Not a member of the engine workspace: it needs GTK and mpv, which the engine's own
+# Windows / macOS / Android builds must not depend on.
+[workspace]
+
+[[bin]]
+name = "madhyam"
+path = "src/main.rs"
+
+[dependencies]
+# The engine's C ABI crate, linked in statically: the same iptv_call / iptv_import
+# dispatcher that libmadhyam_core_ffi.so and the Windows DLL export.
+madhyam-core-ffi = { path = "../crates/madhyam-core-ffi" }
+# GTK 4.12+ (Ubuntu 24.04, Debian 13, Fedora 39 and newer).
+gtk = { version = "0.11", package = "gtk4", features = ["v4_12"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ureq = { version = "3", default-features = false, features = ["rustls", "gzip"] }
+flate2 = "1"
+libloading = "0.9"
+regex = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+
+[build-dependencies]
+pkg-config = "0.3"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
+strip = true
