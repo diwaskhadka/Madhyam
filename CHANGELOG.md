@@ -47,7 +47,8 @@ Android TV: a much faster start, streams stop when you leave them, large playlis
 - Filter chips keep the focus when you turn them on or off, and after choosing a sort or a minimum rating the focus returns to that button (before, it fell back to the rail).
 
 ### Windows
-- No functional changes. Uses engine 0.3.0: large playlists take less memory and load and save faster.
+- Full screen is black edge to edge: a wide movie (2.39:1, like most films) showed light grey bars above and below the picture, and the controls sat on grey. The bars are now black, also while the window switches to and from full screen.
+- Uses engine 0.3.0: large playlists take less memory and load and save faster.
 
 ### Linux
 - No functional changes. Uses engine 0.3.0: large playlists take less memory and load and save faster.
