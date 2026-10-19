@@ -958,9 +958,6 @@ impl App {
         mpv.set("slang", &crate::ui::player::mpv_lang(&s.subtitle_language));
         mpv.set("sid", if s.show_subtitles { "auto" } else { "no" });
         mpv.set("start", "none");
-        // YouTube (trailers) goes through yt-dlp; IPTV streams never need it.
-        let youtube = url.contains("youtube.com/") || url.contains("youtu.be/");
-        mpv.set("ytdl", if youtube { "yes" } else { "no" });
         if !it.is_live() && !it.id.is_empty() && s.resume_playback {
             let (repo, id) = (self.repo.clone(), it.id.clone());
             let resume = bgv(move || repo.resume_seconds(&id)).await;
