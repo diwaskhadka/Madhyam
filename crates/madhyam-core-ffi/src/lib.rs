@@ -20,7 +20,7 @@
 //!
 //! The method list lives in [`dispatch`]; see `docs/API.md`.
 
-use madhyam_core::catalog::{ListQuery, SearchFilter, Sort, SourceKind};
+use madhyam_core::catalog::{ListQuery, ParsedGuide, SearchFilter, Sort, SourceKind};
 use madhyam_core::json::{self, ToJson, Value, obj};
 use madhyam_core::xtream::{XtreamClient, XtreamCredentials, XtreamSnapshot};
 use madhyam_core::{Catalog, Error, Item, ItemId, ItemKind, Result, SourceId, m3u, time};
@@ -666,6 +666,16 @@ fn with_state<T>(core: &MadhyamCore, f: impl FnOnce(&mut State) -> T) -> T {
     f(&mut g)
 }
 
+/// `import_xmltv_file`, parsing the file before taking the lock: a TV loads its guides in the
+/// background while the app already browses, and parsing a guide takes seconds there.
+fn import_xmltv_unlocked(core: &MadhyamCore, a: &Value) -> Result<Value> {
+    let now = a.int("now").unwrap_or_else(time::now);
+    let keep = a.int("keep_from").unwrap_or(now - 86_400);
+    let until = a.int("keep_until").unwrap_or(i64::MAX);
+    let guide = ParsedGuide::parse(open_file(&arg_str(a, "path")?)?, keep, until)?;
+    Ok(with_state(core, |st| st.catalog.merge_guide(guide)).to_json())
+}
+
 /// Create a core. Free it with [`iptv_core_free`].
 #[unsafe(no_mangle)]
 pub extern "C" fn iptv_core_new() -> *mut MadhyamCore {
@@ -699,6 +709,9 @@ pub unsafe extern "C" fn iptv_call(
         let core = unsafe { core.as_ref() }.ok_or_else(|| Error::Invalid("null core".into()))?;
         let method = unsafe { cstr(method) }?;
         let args = parse_args(unsafe { cstr(args_json) }?)?;
+        if method == "import_xmltv_file" {
+            return import_xmltv_unlocked(core, &args);
+        }
         with_state(core, |st| dispatch(st, method, &args))
     })))
 }

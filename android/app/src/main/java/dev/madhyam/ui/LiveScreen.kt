@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -34,7 +35,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
@@ -54,7 +57,6 @@ import androidx.media3.ui.PlayerView
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.Icon
 import androidx.tv.material3.DenseListItem
-import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.Button
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
@@ -62,6 +64,7 @@ import dev.madhyam.Category
 import dev.madhyam.Item
 import dev.madhyam.MainViewModel
 import dev.madhyam.Section
+import androidx.compose.ui.platform.LocalFocusManager
 import kotlinx.coroutines.delay
 
 /**
@@ -99,6 +102,7 @@ fun LiveScreen(vm: MainViewModel) {
 }
 
 /** Category column shared by Live TV, Movies and Series. */
+@Suppress("DEPRECATION") // FocusProperties.enter, as in the rail
 @kotlin.OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun CategoryPanel(vm: MainViewModel, modifier: Modifier = Modifier) {
@@ -109,23 +113,38 @@ fun CategoryPanel(vm: MainViewModel, modifier: Modifier = Modifier) {
                 ToggleChip("Countries", vm.liveGroupBy == "country") { vm.groupLiveBy("country") }
             }
         }
-        val list = rememberLazyListState()
-        LazyColumn(state = list, modifier = Modifier.focusRestorer(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            itemsIndexed(vm.categories, key = { _, c -> (if (c.isAll) "\u0000all" else c.name) }) { _, c ->
-                CategoryRow(vm, c)
+        // Open scrolled to the chosen category, and entering the list (Right from the rail) lands
+        // on it: landing on the category at the same height would open that one instead.
+        val selectedIndex = vm.categories.indexOfFirst { if (it.isAll) vm.group == null else vm.group == it.name }.coerceAtLeast(0)
+        val list = rememberLazyListState(initialFirstVisibleItemIndex = (selectedIndex - 3).coerceAtLeast(0))
+        val current = remember { FocusRequester() }
+        LazyColumn(
+            state = list,
+            modifier = Modifier.focusProperties {
+                enter = { if (list.layoutInfo.visibleItemsInfo.any { it.index == selectedIndex }) current else FocusRequester.Default }
+            }.focusGroup(),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            itemsIndexed(vm.categories, key = { _, c -> (if (c.isAll) "\u0000all" else c.name) }) { i, c ->
+                CategoryRow(vm, c, if (i == selectedIndex) Modifier.focusRequester(current) else Modifier)
             }
         }
     }
 }
 
 @Composable
-private fun CategoryRow(vm: MainViewModel, c: Category) {
+private fun CategoryRow(vm: MainViewModel, c: Category, modifier: Modifier = Modifier) {
     val selected = if (c.isAll) vm.group == null else vm.group == c.name
+    val focusManager = LocalFocusManager.current
     DenseListItem(
         selected = selected,
-        onClick = { vm.selectCategory(c) },
+        // OK on a category goes into its channels or posters.
+        onClick = {
+            vm.selectCategory(c)
+            focusManager.moveFocus(FocusDirection.Right)
+        },
         // Moving the focus over a category shows its contents, as on most TV apps.
-        modifier = Modifier.onFocusChanged { if (it.isFocused) vm.selectCategory(c) },
+        modifier = modifier.onFocusChanged { if (it.isFocused) vm.selectCategory(c) },
         headlineContent = {
             Text(c.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp,
                 fontWeight = if (c.isAll) FontWeight.SemiBold else FontWeight.Normal)
@@ -134,26 +153,33 @@ private fun CategoryRow(vm: MainViewModel, c: Category) {
     )
 }
 
-/** A filter or tab chip: on is filled with the accent colour and ticked, off is outlined. */
+/**
+ * A filter or tab chip: on is filled with the accent colour and ticked, off is outlined. One
+ * button for both states: swapping two kinds of button on OK dropped the focus to the rail.
+ */
 @Composable
-fun ToggleChip(label: String, on: Boolean, onClick: () -> Unit) {
+fun ToggleChip(label: String, on: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val pad = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 4.dp)
-    if (on) {
-        Button(
-            onClick = onClick,
-            contentPadding = pad,
-            colors = androidx.tv.material3.ButtonDefaults.colors(
-                containerColor = Accent,
-                contentColor = Color.White,
-                focusedContainerColor = TextColor,
-                focusedContentColor = Background,
-            ),
-        ) {
-            Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(14.dp))
-            Text(" $label", fontSize = 12.sp)
-        }
-    } else {
-        OutlinedButton(onClick = onClick, contentPadding = pad) { Text(label, fontSize = 12.sp) }
+    Button(
+        onClick = onClick,
+        modifier = modifier,
+        contentPadding = pad,
+        colors = androidx.tv.material3.ButtonDefaults.colors(
+            containerColor = if (on) Accent else Color.Transparent,
+            contentColor = if (on) Color.White else TextColor,
+            focusedContainerColor = TextColor,
+            focusedContentColor = Background,
+        ),
+        border = androidx.tv.material3.ButtonDefaults.border(
+            border = if (on) {
+                androidx.tv.material3.Border.None
+            } else {
+                androidx.tv.material3.Border(androidx.compose.foundation.BorderStroke(1.dp, Muted.copy(alpha = 0.7f)))
+            },
+        ),
+    ) {
+        if (on) Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(14.dp))
+        Text(if (on) " $label" else label, fontSize = 12.sp)
     }
 }
 

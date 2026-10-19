@@ -1,5 +1,6 @@
 package dev.madhyam.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
@@ -34,9 +35,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusProperties
@@ -45,6 +48,8 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -57,6 +62,7 @@ import androidx.tv.material3.Text
 import dev.madhyam.MainViewModel
 import dev.madhyam.Section
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private val RailCollapsed = 72.dp
 private val RailExpanded = 230.dp
@@ -81,6 +87,10 @@ fun MainShell(vm: MainViewModel) {
     var railFocused by remember { mutableStateOf(false) }
     val railFocus = remember { FocusRequester() }
     var pickPlaylist by remember { mutableStateOf(false) }
+    var askExit by remember { mutableStateOf(false) }
+    // Back at the top of the app asks before closing it. Pages with their own Back (details,
+    // guide, Settings' playlist page) are composed later, so theirs runs first.
+    BackHandler { askExit = true }
 
     LaunchedEffect(vm.message) {
         if (vm.message != null) {
@@ -120,12 +130,40 @@ fun MainShell(vm: MainViewModel) {
     }
 
     if (pickPlaylist) PlaylistDialog(vm) { pickPlaylist = false }
+    if (askExit) ExitDialog { askExit = false }
+}
+
+/** "Exit Madhyam?" with Cancel focused, so a Back pressed once too often changes nothing. */
+@Composable
+private fun ExitDialog(onDismiss: () -> Unit) {
+    val activity = LocalContext.current as? android.app.Activity
+    val cancel = remember { FocusRequester() }
+    var armed by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(80)
+        runCatching { cancel.requestFocus() }
+    }
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.width(420.dp).background(Panel, RoundedCornerShape(16.dp)).padding(24.dp)
+                .onPreviewKeyEvent { if (it.type == KeyEventType.KeyDown) armed = true; false },
+        ) {
+            Text("Exit ${dev.madhyam.Brand.NAME}?", fontSize = 22.sp)
+            Text("Press Back again or choose Cancel to stay.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp, bottom = 18.dp))
+            androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                androidx.tv.material3.Button(onClick = { if (armed) onDismiss() }, modifier = Modifier.focusRequester(cancel)) { Text("Cancel") }
+                androidx.tv.material3.OutlinedButton(onClick = { if (armed) activity?.finish() }) { Text("Exit") }
+            }
+        }
+    }
 }
 
 @Suppress("DEPRECATION") // FocusProperties.enter
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun Rail(vm: MainViewModel, selected: FocusRequester, onFocus: (Boolean) -> Unit, expanded: Boolean, onPlaylists: () -> Unit) {
+    val focusManager = LocalFocusManager.current
+    val scope = rememberCoroutineScope()
     val width by animateDpAsState(if (expanded) RailExpanded else RailCollapsed, label = "rail")
     Column(
         Modifier
@@ -156,7 +194,14 @@ private fun Rail(vm: MainViewModel, selected: FocusRequester, onFocus: (Boolean)
                 expanded = expanded,
                 selected = vm.section == s,
                 modifier = if (vm.section == s) Modifier.focusRequester(selected) else Modifier,
-                onClick = { if (vm.section != s) vm.selectSection(s) },
+                onClick = {
+                    if (vm.section != s) vm.selectSection(s)
+                    // OK closes the rail and goes into the page (once the new page is composed).
+                    scope.launch {
+                        delay(150)
+                        if (!focusManager.moveFocus(FocusDirection.Right)) focusManager.moveFocus(FocusDirection.Next)
+                    }
+                },
             )
         }
     }

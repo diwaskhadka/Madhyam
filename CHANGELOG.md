@@ -8,7 +8,7 @@ How to cut a release and how to add a platform: [docs/RELEASING.md](docs/RELEASI
 
 ## 1.1.1
 
-Android TV: streams stop when you leave them, large playlists need half the memory, and fixes from a test on a TV.
+Android TV: a much faster start, streams stop when you leave them, large playlists need half the memory, and fixes from a test on a TV.
 
 ### Android TV
 - Leaving the player from Search, Favorites, Recent or Home, or leaving Live TV for another section, now stops the stream. Before, it kept playing hidden: the sound, the data and the provider's only connection stayed in use, so the next channel could fail with a network error.
@@ -38,6 +38,14 @@ Android TV: streams stop when you leave them, large playlists need half the memo
 - Secondary text and values in focused rows (Settings, search results, the playlist list) are readable on the light highlight.
 - The focused poster's two-line title has normal line spacing, and the player's hint bar uses plain arrows instead of coloured emoji.
 
+- **Faster start:** a large playlist opens in about 5 s on a TV instead of 15 s. The pages show as soon as the catalog is in; the guides load behind them and now/next fills in a few seconds later.
+- **New loading screen:** the logo, the name and a progress bar timed from the previous start, instead of a plain "Loading…".
+- **Search shows cards:** channels as logo cards and films, series and episodes as posters, in rows like Home. The search box opens the keyboard only when you press OK on it (before, some TVs opened it on their own and the next OK typed a "q"), and Down from it goes to the filter chips.
+- **Smaller covers:** Settings › Appearance › Cover size adds Extra small and Tiny (six posters a row). Home and Search rows follow the setting too.
+- **Exit asks first:** Back at the top of the app asks "Exit Madhyam?", with Cancel focused.
+- **OK goes into the page:** OK on a section in the left rail closes the rail and moves into that page, and OK on a category moves into its channels or posters. Entering the category column lands on the selected category, not on the one at the same height.
+- Filter chips keep the focus when you turn them on or off, and after choosing a sort or a minimum rating the focus returns to that button (before, it fell back to the rail).
+
 ### Windows
 - No functional changes. Uses engine 0.3.0: large playlists take less memory and load and save faster.
 
@@ -49,6 +57,8 @@ Android TV: streams stop when you leave them, large playlists need half the memo
 - A catalog takes less than half the memory: each item keeps its text in one allocation and shares its group name and the directories of its logo and stream URLs with the other items; guide programmes are stored packed; the search index is three flat arrays. For a 265 000-item catalog on 32-bit ARM: 78 MB instead of 176 MB, plus 33 MB instead of 55 MB for its guide.
 - Snapshots are read and written without building a JSON tree for every item, so loading takes about a third less time on a TV and saving half. The file is the same.
 - `import_xmltv_file` and `xmltv` take `keep_until`: programmes starting later are left out.
+- Snapshots load on up to four threads and the search index is built in parallel: about a quarter faster on a PC, a third on a four-core TV.
+- `import_xmltv_file` parses the guide before taking the catalog's lock, so other calls (browsing, search) go on while a guide loads. New `ParsedGuide::parse` and `Catalog::merge_guide` do the same in Rust.
 - Rust API: the `Item` fields `remote_id`, `name`, `logo`, `url`, `epg_id` and `extra` are now methods (`name()`, `extra(key)`, `extras()`) with `set_*` setters, and `group` is a shared `Arc<str>`. `Catalog::now_next` and `Catalog::guide` return owned programmes. The JSON of the FFI is unchanged, except that a programme's `channel` is now its (lowercase) guide key.
 - `cargo run --release --example memory -- catalog.jsonl [guide.xml]` measures how much memory a catalog takes.
 

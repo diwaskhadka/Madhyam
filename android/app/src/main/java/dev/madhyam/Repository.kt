@@ -246,6 +246,7 @@ private fun JSONArray.items(): List<Item> = (0 until length()).map { parseItem(g
 class Repository(context: Context) {
     private val core = MadhyamCore()
     private val snapshot = File(context.filesDir, "catalog.jsonl")
+    val hasSnapshot: Boolean get() = snapshot.exists()
     /**
      * Favorites, resume positions and history, written on every change instead of the whole
      * catalog (a large playlist's snapshot takes seconds to write on a TV). It only exists while
@@ -280,7 +281,7 @@ class Repository(context: Context) {
 
     val version: String get() = core.version
 
-    /** Restore the last catalog so the app starts instantly, even offline. */
+    /** Restore the last catalog (without its guides, see [loadCachedGuides]), even offline. */
     suspend fun init() = io {
         val started = System.currentTimeMillis()
         if (snapshot.exists()) {
@@ -296,6 +297,15 @@ class Repository(context: Context) {
             }
         }
         if (!snapshot.exists()) loadUserState()
+        Log.i(TAG, "catalog loaded in ${System.currentTimeMillis() - started} ms")
+    }
+
+    /**
+     * Re-import the downloaded guides. Called after [init], while the pages already show: the
+     * engine parses each file without holding the catalog, so browsing goes on meanwhile.
+     */
+    suspend fun loadCachedGuides() = io {
+        val started = System.currentTimeMillis()
         epgDir.listFiles { f -> f.name.endsWith(".xml") }?.forEach { f ->
             try {
                 importGuide(f)
@@ -303,7 +313,7 @@ class Repository(context: Context) {
                 Log.w(TAG, "cached guide ${f.name} unreadable", e)
             }
         }
-        Log.i(TAG, "catalog and guides loaded in ${System.currentTimeMillis() - started} ms")
+        Log.i(TAG, "guides loaded in ${System.currentTimeMillis() - started} ms")
     }
 
     /**

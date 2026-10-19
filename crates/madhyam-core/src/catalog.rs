@@ -104,6 +104,58 @@ pub struct EpgStats {
     pub skipped: usize,
 }
 
+/// An XMLTV guide parsed on its own, ready for [`Catalog::merge_guide`].
+#[derive(Debug, Default)]
+pub struct ParsedGuide {
+    channels: Vec<(String, EpgChannel)>,
+    epg: FastMap<String, Vec<Slot>>,
+    stats: EpgStats,
+}
+
+impl ParsedGuide {
+    /// Stream an XMLTV guide, keeping programmes that end after `keep_from` and start before
+    /// `keep_until`. Needs no catalog, so it can run while the catalog serves other calls.
+    pub fn parse<R: BufRead>(reader: R, keep_from: i64, keep_until: i64) -> Result<Self> {
+        let mut g = ParsedGuide::default();
+        let mut parser = XmltvReader::new(reader);
+        // Guides list each channel's programmes consecutively, so caching the
+        // last key saves a lowercase allocation for almost every programme.
+        let (mut last_raw, mut last_key) = (String::new(), String::new());
+        for item in parser.by_ref() {
+            match item? {
+                XmltvItem::Channel(c) => {
+                    g.stats.channels += 1;
+                    g.channels.push((epg_key(&c.id), c));
+                }
+                XmltvItem::Programme(p) => {
+                    if (p.stop != 0 && p.stop < keep_from) || p.start > keep_until {
+                        continue;
+                    }
+                    if p.channel != last_raw {
+                        last_key = epg_key(&p.channel);
+                        last_raw.clone_from(&p.channel);
+                    }
+                    let slot = Slot::pack(&p);
+                    match g.epg.get_mut(&last_key) {
+                        Some(v) => v.push(slot),
+                        None => {
+                            g.epg.insert(last_key.clone(), vec![slot]);
+                        }
+                    }
+                }
+            }
+        }
+        g.stats.skipped = parser.skipped;
+        for list in g.epg.values_mut() {
+            normalise_schedule(list);
+            list.retain(|p| p.stop >= keep_from);
+            list.shrink_to_fit();
+            g.stats.programmes += list.len();
+        }
+        Ok(g)
+    }
+}
+
 impl ToJson for EpgStats {
     fn to_json(&self) -> Value {
         obj([
@@ -159,18 +211,51 @@ struct SearchIndex {
 
 impl SearchIndex {
     fn build(items: &[Item]) -> Self {
-        let mut map: FastMap<String, Vec<u32>> = FastMap::default();
-        for (i, it) in items.iter().enumerate() {
-            if it.kind == ItemKind::Episode {
-                continue; // episodes are reached through their series
-            }
-            for t in tokens(it.name()) {
-                let p = map.entry(t).or_default();
-                if p.last() != Some(&(i as u32)) {
-                    p.push(i as u32);
+        // Each thread indexes a range of items; ranges are merged in order, so every posting
+        // list stays sorted.
+        fn part(items: &[Item], base: usize) -> FastMap<String, Vec<u32>> {
+            let mut map: FastMap<String, Vec<u32>> = FastMap::default();
+            for (i, it) in items.iter().enumerate() {
+                if it.kind == ItemKind::Episode {
+                    continue; // episodes are reached through their series
+                }
+                let i = (base + i) as u32;
+                for t in tokens(it.name()) {
+                    let p = map.entry(t).or_default();
+                    if p.last() != Some(&i) {
+                        p.push(i);
+                    }
                 }
             }
+            map
         }
+        let workers = std::thread::available_parallelism()
+            .map_or(1, |n| n.get())
+            .clamp(1, 4);
+        let map = if workers == 1 || items.len() < 4096 {
+            part(items, 0)
+        } else {
+            let chunk = items.len().div_ceil(workers);
+            let mut parts = std::thread::scope(|s| {
+                let handles: Vec<_> = items
+                    .chunks(chunk)
+                    .enumerate()
+                    .map(|(k, slice)| s.spawn(move || part(slice, k * chunk)))
+                    .collect();
+                handles
+                    .into_iter()
+                    .map(|h| h.join().expect("search index thread panicked"))
+                    .collect::<Vec<_>>()
+            })
+            .into_iter();
+            let mut map = parts.next().unwrap_or_default();
+            for p in parts {
+                for (t, list) in p {
+                    map.entry(t).or_default().extend(list);
+                }
+            }
+            map
+        };
         let mut sorted: Vec<_> = map.into_iter().collect();
         sorted.sort_unstable_by(|a, b| a.0.cmp(&b.0));
         let mut ix = SearchIndex {
@@ -506,13 +591,19 @@ impl Catalog {
             it.intern(&mut shared);
         }
         self.items.shrink_to_fit();
-        self.by_id = self
-            .items
-            .iter()
-            .enumerate()
-            .map(|(i, it)| (it.id, i as u32))
-            .collect();
-        self.index = SearchIndex::build(&self.items);
+        // The search index on a second thread while the id map is built: both only read items.
+        let items = &self.items;
+        let (by_id, index) = std::thread::scope(|s| {
+            let index = s.spawn(|| SearchIndex::build(items));
+            let by_id = items
+                .iter()
+                .enumerate()
+                .map(|(i, it)| (it.id, i as u32))
+                .collect();
+            (by_id, index.join().expect("search index thread panicked"))
+        });
+        self.by_id = by_id;
+        self.index = index;
     }
 
     /// Import an M3U playlist into an M3U source, replacing its previous items.
@@ -841,51 +932,26 @@ impl Catalog {
         keep_from: i64,
         keep_until: i64,
     ) -> Result<EpgStats> {
-        let mut fresh: FastMap<String, Vec<Slot>> = FastMap::default();
-        let mut stats = EpgStats::default();
-        let mut parser = XmltvReader::new(reader);
-        // Guides list each channel's programmes consecutively, so caching the
-        // last key saves a lowercase allocation for almost every programme.
-        let (mut last_raw, mut last_key) = (String::new(), String::new());
-        for item in parser.by_ref() {
-            match item? {
-                XmltvItem::Channel(c) => {
-                    stats.channels += 1;
-                    let key = epg_key(&c.id);
-                    for n in &c.names {
-                        self.epg_by_name
-                            .entry(name_key(n))
-                            .or_insert_with(|| key.clone());
-                    }
-                    self.epg_channels.insert(key, c);
-                }
-                XmltvItem::Programme(p) => {
-                    if (p.stop != 0 && p.stop < keep_from) || p.start > keep_until {
-                        continue;
-                    }
-                    if p.channel != last_raw {
-                        last_key = epg_key(&p.channel);
-                        last_raw.clone_from(&p.channel);
-                    }
-                    let slot = Slot::pack(&p);
-                    match fresh.get_mut(&last_key) {
-                        Some(v) => v.push(slot),
-                        None => {
-                            fresh.insert(last_key.clone(), vec![slot]);
-                        }
-                    }
-                }
+        let guide = ParsedGuide::parse(reader, keep_from, keep_until)?;
+        Ok(self.merge_guide(guide))
+    }
+
+    /// Put a guide parsed with [`ParsedGuide::parse`] in. Channels present in it replace what
+    /// was stored for them; other channels are untouched. Cheap next to parsing, so a caller
+    /// that shares the catalog between threads can parse without holding it.
+    pub fn merge_guide(&mut self, guide: ParsedGuide) -> EpgStats {
+        for (key, c) in guide.channels {
+            for n in &c.names {
+                self.epg_by_name
+                    .entry(name_key(n))
+                    .or_insert_with(|| key.clone());
             }
+            self.epg_channels.insert(key, c);
         }
-        stats.skipped = parser.skipped;
-        for (ch, mut list) in fresh {
-            normalise_schedule(&mut list);
-            list.retain(|p| p.stop >= keep_from);
-            list.shrink_to_fit();
-            stats.programmes += list.len();
+        for (ch, list) in guide.epg {
             self.epg.insert(ch, list);
         }
-        Ok(stats)
+        guide.stats
     }
 
     /// Merge programmes from another source (e.g. Xtream short EPG).
@@ -1182,65 +1248,134 @@ impl Catalog {
     /// Restore a catalog written by [`Self::save_snapshot`].
     pub fn load_snapshot<R: BufRead>(r: R) -> Result<Catalog> {
         let mut c = Catalog::new();
-        // Share group names and URL directories while reading, not only at the end: a
-        // string per item first would make start-up need a third more memory.
-        let mut shared: FastSet<Group> = FastSet::default();
-        for (n, line) in r.lines().enumerate() {
-            let line = line?;
-            if line.trim().is_empty() {
-                continue;
-            }
-            let bad = |e: Error| Error::parse("snapshot", n + 1, e.to_string());
-            // Item lines are nearly all of the file: read them without a JSON tree.
-            if let Some(it) = snapshot_item(&line, &mut shared).map_err(bad)? {
-                c.items.push(it);
-                continue;
-            }
-            let v = json::parse(&line).map_err(bad)?;
-            match v.text("t").as_deref() {
-                Some("header") => c.next_source = v.int("next_source").unwrap_or(1) as SourceId,
-                Some("source") => {
-                    let id = v
-                        .int("id")
-                        .ok_or_else(|| Error::parse("snapshot", n + 1, "source without id"))?
-                        as SourceId;
-                    let kind = if v.text("kind").as_deref() == Some("xtream") {
-                        let mut cr = XtreamCredentials::new(
-                            &v.text("location").unwrap_or_default(),
-                            &v.text("username").unwrap_or_default(),
-                            &v.text("password").unwrap_or_default(),
-                        );
-                        cr.live_ext = v.text("live_ext").unwrap_or_else(|| "ts".into());
-                        SourceKind::Xtream(cr)
-                    } else {
-                        SourceKind::M3u {
-                            location: v.text("location").unwrap_or_default(),
-                        }
-                    };
-                    let epg_urls = v
-                        .get("epg_urls")
-                        .and_then(Value::as_array)
-                        .map(|a| a.iter().filter_map(Value::to_text).collect())
-                        .unwrap_or_default();
-                    c.sources.insert(
-                        id,
-                        Source {
-                            id,
-                            name: v.text("name").unwrap_or_default(),
-                            kind,
-                            epg_urls,
-                            updated_at: v.int("updated_at").unwrap_or(0),
-                        },
-                    );
-                    c.next_source = c.next_source.max(id + 1);
+        // Item lines are nearly all of the file: they are read in batches, each batch split over
+        // a few threads (a TV has four slow cores), and kept in file order. Each thread shares
+        // group names and URL directories while reading, so start-up needs no string per item.
+        let workers = std::thread::available_parallelism()
+            .map_or(1, |n| n.get())
+            .clamp(1, 4);
+        let mut shared: Vec<FastSet<Group>> = (0..workers).map(|_| FastSet::default()).collect();
+        let mut lines = r.lines();
+        let mut batch: Vec<String> = Vec::with_capacity(SNAPSHOT_BATCH);
+        let mut first = 0usize; // number of lines before this batch
+        loop {
+            batch.clear();
+            for line in lines.by_ref() {
+                batch.push(line?);
+                if batch.len() == SNAPSHOT_BATCH {
+                    break;
                 }
-                Some("user") => c.import_user_state(&v)?,
-                _ => {}
             }
+            if batch.is_empty() {
+                break;
+            }
+            let parsed = parse_snapshot_batch(&batch, &mut shared)
+                .map_err(|(i, e)| Error::parse("snapshot", first + i + 1, e.to_string()))?;
+            for (i, (line, item)) in batch.iter().zip(parsed).enumerate() {
+                match item {
+                    Some(it) => c.items.push(it),
+                    None if line.trim().is_empty() => {}
+                    None => c.snapshot_line(line, first + i + 1)?,
+                }
+            }
+            first += batch.len();
         }
         c.reindex();
         Ok(c)
     }
+
+    /// A snapshot line that is not an item: the header, a source or the user state.
+    fn snapshot_line(&mut self, line: &str, n: usize) -> Result<()> {
+        let c = self;
+        let bad = |e: Error| Error::parse("snapshot", n, e.to_string());
+        let v = json::parse(line).map_err(bad)?;
+        match v.text("t").as_deref() {
+            Some("header") => c.next_source = v.int("next_source").unwrap_or(1) as SourceId,
+            Some("source") => {
+                let id = v
+                    .int("id")
+                    .ok_or_else(|| Error::parse("snapshot", n, "source without id"))?
+                    as SourceId;
+                let kind = if v.text("kind").as_deref() == Some("xtream") {
+                    let mut cr = XtreamCredentials::new(
+                        &v.text("location").unwrap_or_default(),
+                        &v.text("username").unwrap_or_default(),
+                        &v.text("password").unwrap_or_default(),
+                    );
+                    cr.live_ext = v.text("live_ext").unwrap_or_else(|| "ts".into());
+                    SourceKind::Xtream(cr)
+                } else {
+                    SourceKind::M3u {
+                        location: v.text("location").unwrap_or_default(),
+                    }
+                };
+                let epg_urls = v
+                    .get("epg_urls")
+                    .and_then(Value::as_array)
+                    .map(|a| a.iter().filter_map(Value::to_text).collect())
+                    .unwrap_or_default();
+                c.sources.insert(
+                    id,
+                    Source {
+                        id,
+                        name: v.text("name").unwrap_or_default(),
+                        kind,
+                        epg_urls,
+                        updated_at: v.int("updated_at").unwrap_or(0),
+                    },
+                );
+                c.next_source = c.next_source.max(id + 1);
+            }
+            Some("user") => c.import_user_state(&v)?,
+            _ => {}
+        }
+        Ok(())
+    }
+}
+
+/// Lines per snapshot batch: big enough that starting threads costs nothing, small enough
+/// that the batch's text (a few MB) does not matter next to the catalog.
+const SNAPSHOT_BATCH: usize = 16 * 1024;
+
+/// Parse a batch's item lines on one thread per `shared` set, in order (`None` for other
+/// lines). An error comes back with the index of its line in the batch.
+fn parse_snapshot_batch(
+    lines: &[String],
+    shared: &mut [FastSet<Group>],
+) -> std::result::Result<Vec<Option<Item>>, (usize, Error)> {
+    fn run(
+        part: &[String],
+        set: &mut FastSet<Group>,
+        base: usize,
+    ) -> std::result::Result<Vec<Option<Item>>, (usize, Error)> {
+        part.iter()
+            .enumerate()
+            .map(|(i, l)| {
+                if l.trim().is_empty() {
+                    Ok(None)
+                } else {
+                    snapshot_item(l, set).map_err(|e| (base + i, e))
+                }
+            })
+            .collect()
+    }
+    if shared.len() == 1 || lines.len() < 1024 {
+        return run(lines, &mut shared[0], 0);
+    }
+    let chunk = lines.len().div_ceil(shared.len());
+    std::thread::scope(|s| {
+        let handles: Vec<_> = lines
+            .chunks(chunk)
+            .zip(shared.iter_mut())
+            .enumerate()
+            .map(|(k, (part, set))| s.spawn(move || run(part, set, k * chunk)))
+            .collect();
+        let mut out = Vec::with_capacity(lines.len());
+        for h in handles {
+            out.extend(h.join().expect("snapshot worker panicked")?);
+        }
+        Ok(out)
+    })
 }
 
 /// An item line of a snapshot as an [`Item`] (`None` for the other lines), read with

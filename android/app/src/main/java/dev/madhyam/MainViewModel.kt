@@ -136,7 +136,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         viewModelScope.launch {
+            val started = System.currentTimeMillis()
             repo.init()
+            // Remembered for next time's progress bar (only when there was a catalog to load).
+            if (repo.hasSnapshot) changeSettings { lastLoadMs = System.currentTimeMillis() - started }
             sources = repo.sources()
             favorites = repo.favoriteIds()
             if (sources.isEmpty()) {
@@ -150,6 +153,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 section = startSection()
                 selectSource(start)
             }
+            // Guides last: the pages show first, now/next fills in when they are in.
+            repo.loadCachedGuides()
+            refreshNowNext()
             refreshStaleGuides()
         }
         // The shared player only runs while it is on screen (#25): leaving the player from Search,

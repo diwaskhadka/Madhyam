@@ -67,12 +67,14 @@ class AppSettings private constructor(private val file: File) {
     var freeTvGroupBy by mutableStateOf("category")          // category | country
     // Free TV comes preinstalled: added once on the first start, never again after the user removes it.
     var freeTvPreinstalled by mutableStateOf(false)
+    /** How long the catalog took to load last time, for the start-up progress bar. */
+    var lastLoadMs by mutableStateOf(0L)
 
     // ------------------------------------------- 0.9.0: Windows 0.4.11 parity
     var theme by mutableStateOf("Dark")                      // Dark (Navy & Crimson) | Light | System | Custom
     var customColor by mutableStateOf("#DC143C")             // Custom theme: the picked colour
     var customLight by mutableStateOf(false)                 // Custom theme on a light base
-    var coverSize by mutableStateOf("Medium")                // Small | Medium | Large
+    var coverSize by mutableStateOf("Medium")                // Tiny | Extra small | Small | Medium | Large
     var titlesUnderCovers by mutableStateOf(true)
     var epgOffsetMinutes by mutableStateOf(0)                // positive = programmes shown later
     val extraEpgUrls = mutableListOf<String>()
@@ -137,6 +139,7 @@ class AppSettings private constructor(private val file: File) {
             .put("freeTvSourceId", freeTvSourceId ?: JSONObject.NULL)
             .put("freeTvGroupBy", freeTvGroupBy)
             .put("freeTvPreinstalled", freeTvPreinstalled)
+            .put("lastLoadMs", lastLoadMs)
             .put("hiddenCategories", JSONObject().apply {
                 for ((k, v) in hiddenCategories) if (v.isNotEmpty()) put(k, JSONArray(v.sorted()))
             })
@@ -202,6 +205,7 @@ class AppSettings private constructor(private val file: File) {
             freeTvSourceId = o.optIntOrNull("freeTvSourceId")
             freeTvGroupBy = o.optString("freeTvGroupBy", freeTvGroupBy)
             freeTvPreinstalled = o.optBoolean("freeTvPreinstalled", freeTvPreinstalled)
+            lastLoadMs = o.optLong("lastLoadMs", lastLoadMs)
             o.optJSONObject("hiddenCategories")?.let { h ->
                 for (k in h.keys()) {
                     val a = h.optJSONArray(k) ?: continue
