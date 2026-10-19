@@ -92,15 +92,15 @@ impl Mode {
 
     fn icon(self) -> &'static str {
         match self {
-            Mode::Dashboard => "go-home-symbolic",
-            Mode::Search => "system-search-symbolic",
-            Mode::Favorites => "emote-love-symbolic",
-            Mode::Recent => "document-open-recent-symbolic",
-            Mode::Movies => "video-x-generic-symbolic",
-            Mode::Live => "tv-symbolic",
-            Mode::Series => "view-grid-symbolic",
-            Mode::Added => "x-office-calendar-symbolic",
-            Mode::Settings => "emblem-system-symbolic",
+            Mode::Dashboard => "madhyam-go-home-symbolic",
+            Mode::Search => "madhyam-system-search-symbolic",
+            Mode::Favorites => "madhyam-emote-love-symbolic",
+            Mode::Recent => "madhyam-document-open-recent-symbolic",
+            Mode::Movies => "madhyam-video-x-generic-symbolic",
+            Mode::Live => "madhyam-tv-symbolic",
+            Mode::Series => "madhyam-view-grid-symbolic",
+            Mode::Added => "madhyam-x-office-calendar-symbolic",
+            Mode::Settings => "madhyam-emblem-system-symbolic",
         }
     }
 
@@ -394,7 +394,7 @@ impl App {
         chip.add_css_class("chip-icon");
         chip.set_valign(gtk::Align::Center);
         chip.set_margin_start(8);
-        let li = kit::icon("view-list-symbolic", 14);
+        let li = kit::icon("madhyam-view-list-symbolic", 14);
         li.set_halign(gtk::Align::Center);
         chip.set_homogeneous(true);
         chip.append(&li);
@@ -409,7 +409,7 @@ impl App {
         names.append(&playlist_name);
         names.append(&playlist_count);
         pb.append(&names);
-        let dd = kit::icon("pan-down-symbolic", 12);
+        let dd = kit::icon("madhyam-pan-down-symbolic", 12);
         dd.add_css_class("muted");
         dd.set_margin_end(10);
         pb.append(&dd);
@@ -422,7 +422,7 @@ impl App {
         let search_pill = kit::hbox(10);
         search_pill.add_css_class("topbar-box");
         search_pill.set_size_request(460, 46);
-        let si = kit::icon("system-search-symbolic", 14);
+        let si = kit::icon("madhyam-system-search-symbolic", 14);
         si.add_css_class("muted");
         si.set_margin_start(12);
         search_pill.append(&si);
@@ -434,7 +434,7 @@ impl App {
         search.set_hexpand(true);
         search.set_placeholder_text(Some("Search in this playlist…"));
         search_pill.append(&search);
-        let search_clear = kit::icon_button("window-close-symbolic", "Clear", || {});
+        let search_clear = kit::icon_button("madhyam-window-close-symbolic", "Clear", || {});
         search_clear.add_css_class("small");
         search_clear.set_visible(false);
         search_pill.append(&search_clear);
@@ -445,7 +445,7 @@ impl App {
         search_pill.append(&kbd);
         search_pill.set_hexpand(false);
         topbar.append(&search_pill);
-        let add_btn = kit::icon_button("list-add-symbolic", "Add a playlist", || {});
+        let add_btn = kit::icon_button("madhyam-list-add-symbolic", "Add a playlist", || {});
         topbar.append(&add_btn);
         let status = gtk::Label::new(None);
         status.add_css_class("status");
@@ -464,11 +464,15 @@ impl App {
         let cats_title = title_label("Categories");
         cats_title.set_hexpand(true);
         head.append(&cats_title);
-        let cat_search_btn = kit::icon_button("system-search-symbolic", "Search categories", || {});
-        let cat_sort_btn =
-            kit::icon_button("view-sort-ascending-symbolic", "Sort categories", || {});
+        let cat_search_btn =
+            kit::icon_button("madhyam-system-search-symbolic", "Search categories", || {});
+        let cat_sort_btn = kit::icon_button(
+            "madhyam-view-sort-ascending-symbolic",
+            "Sort categories",
+            || {},
+        );
         let cat_manage_btn = kit::icon_button(
-            "checkbox-checked-symbolic",
+            "madhyam-checkbox-checked-symbolic",
             "Manage categories (show / hide)",
             || {},
         );
@@ -485,7 +489,7 @@ impl App {
         cat_filter_box.add_css_class("topbar-box");
         kit::margins(&cat_filter_box, 4, 0, 4, 10);
         cat_filter_box.set_size_request(-1, 36);
-        let fi = kit::icon("system-search-symbolic", 12);
+        let fi = kit::icon("madhyam-system-search-symbolic", 12);
         fi.add_css_class("muted");
         fi.set_margin_start(12);
         cat_filter_box.append(&fi);
@@ -514,7 +518,8 @@ impl App {
         lh.append(&list_title);
         let list_count = kit::text("", 12.0, "muted", 400, false);
         lh.append(&list_count);
-        let live_sort_btn = kit::icon_button("view-sort-ascending-symbolic", "Sort A–Z", || {});
+        let live_sort_btn =
+            kit::icon_button("madhyam-view-sort-ascending-symbolic", "Sort A–Z", || {});
         live_sort_btn.add_css_class("small");
         lh.append(&live_sort_btn);
         list_panel.append(&lh);
@@ -555,7 +560,7 @@ impl App {
         live_card_header.append(&lt);
         let live_close_btn = gtk::Button::new();
         let lcb = kit::hbox(8);
-        lcb.append(&kit::icon("window-close-symbolic", 11));
+        lcb.append(&kit::icon("madhyam-window-close-symbolic", 11));
         lcb.append(&gtk::Label::new(Some("Close player")));
         live_close_btn.set_child(Some(&lcb));
         live_close_btn.add_css_class("pill");
@@ -571,7 +576,7 @@ impl App {
         let video_hint = kit::vbox(12);
         video_hint.set_halign(gtk::Align::Center);
         video_hint.set_valign(gtk::Align::Center);
-        let vh = kit::icon("tv-symbolic", 40);
+        let vh = kit::icon("madhyam-tv-symbolic", 40);
         vh.add_css_class("muted");
         video_hint.append(&vh);
         video_hint.append(&kit::text(
@@ -598,11 +603,11 @@ impl App {
         guide_panel.set_vexpand(true);
         let gh = kit::hbox(0);
         gh.set_margin_bottom(8);
-        let guide_prev = kit::icon_button("go-previous-symbolic", "Previous day", || {});
+        let guide_prev = kit::icon_button("madhyam-go-previous-symbolic", "Previous day", || {});
         let guide_day = kit::text("", 14.0, "", 600, false);
         guide_day.set_hexpand(true);
         guide_day.set_xalign(0.5);
-        let guide_next = kit::icon_button("go-next-symbolic", "Next day", || {});
+        let guide_next = kit::icon_button("madhyam-go-next-symbolic", "Next day", || {});
         gh.append(&guide_prev);
         gh.append(&guide_day);
         gh.append(&guide_next);
@@ -639,14 +644,18 @@ impl App {
         tlt.append(&tl_channel);
         tlt.append(&tl_now);
         th.append(&tlt);
-        let live_mute = kit::icon_button("audio-volume-high-symbolic", "Mute", || {});
-        let tl_full = kit::icon_button("view-fullscreen-symbolic", "Full screen (F11)", || {});
-        let tl_nowbtn = kit::icon_button("find-location-symbolic", "Jump to now", || {});
-        let tl_prev = kit::icon_button("go-previous-symbolic", "Previous day", || {});
+        let live_mute = kit::icon_button("madhyam-audio-volume-high-symbolic", "Mute", || {});
+        let tl_full = kit::icon_button(
+            "madhyam-view-fullscreen-symbolic",
+            "Full screen (F11)",
+            || {},
+        );
+        let tl_nowbtn = kit::icon_button("madhyam-find-location-symbolic", "Jump to now", || {});
+        let tl_prev = kit::icon_button("madhyam-go-previous-symbolic", "Previous day", || {});
         let tl_day = kit::text("", 13.0, "", 600, false);
         tl_day.set_size_request(110, -1);
         tl_day.set_xalign(0.5);
-        let tl_next = kit::icon_button("go-next-symbolic", "Next day", || {});
+        let tl_next = kit::icon_button("madhyam-go-next-symbolic", "Next day", || {});
         for w in [
             live_mute.upcast_ref::<gtk::Widget>(),
             tl_full.upcast_ref(),
@@ -708,9 +717,9 @@ impl App {
             b
         };
         let sort_label = gtk::Label::new(Some("Sort: Provider order"));
-        let sort_btn = chip_btn("view-sort-ascending-symbolic", &sort_label);
+        let sort_btn = chip_btn("madhyam-view-sort-ascending-symbolic", &sort_label);
         let refine_label = gtk::Label::new(Some("Refine"));
-        let refine_btn = chip_btn("starred-symbolic", &refine_label);
+        let refine_btn = chip_btn("madhyam-starred-symbolic", &refine_label);
         gbar.append(&sort_btn);
         gbar.append(&refine_btn);
         let pp = kit::text("Per page", 12.0, "muted", 400, false);
@@ -727,8 +736,8 @@ impl App {
         let page_text = kit::text("1 / 1", 12.5, "", 400, false);
         page_text.set_margin_start(10);
         gbar.append(&page_text);
-        let prev_page = kit::icon_button("go-previous-symbolic", "Previous page", || {});
-        let next_page = kit::icon_button("go-next-symbolic", "Next page", || {});
+        let prev_page = kit::icon_button("madhyam-go-previous-symbolic", "Previous page", || {});
+        let next_page = kit::icon_button("madhyam-go-next-symbolic", "Next page", || {});
         next_page.set_margin_end(10);
         gbar.append(&prev_page);
         gbar.append(&next_page);
@@ -754,7 +763,7 @@ impl App {
         let vod_col = kit::vbox(0);
         let vod_header = kit::hbox(12);
         kit::margins(&vod_header, 18, 14, 18, 0);
-        let vod_back = kit::icon_button("go-previous-symbolic", "Back (Esc)", || {});
+        let vod_back = kit::icon_button("madhyam-go-previous-symbolic", "Back (Esc)", || {});
         vod_header.append(&vod_back);
         let vod_header_title = kit::text("", 16.0, "", 600, false);
         vod_header_title.set_max_width_chars(1);
@@ -783,7 +792,7 @@ impl App {
         vod_card_header.append(&vt);
         let vod_close = gtk::Button::new();
         let vcb = kit::hbox(8);
-        vcb.append(&kit::icon("window-close-symbolic", 11));
+        vcb.append(&kit::icon("madhyam-window-close-symbolic", 11));
         vcb.append(&gtk::Label::new(Some("Close player")));
         vod_close.set_child(Some(&vcb));
         vod_close.add_css_class("pill");
@@ -1772,7 +1781,7 @@ impl App {
         if let Some(cur) = self.source.borrow().clone() {
             let (me, c) = (self.clone(), cur.clone());
             fixed.push(MenuRow::new(
-                "help-about-symbolic",
+                "madhyam-help-about-symbolic",
                 "Playlist info",
                 false,
                 move || {
@@ -1783,7 +1792,7 @@ impl App {
             if cur.kind == "xtream" {
                 let (me, c) = (self.clone(), cur.clone());
                 fixed.push(MenuRow::new(
-                    "dialog-password-symbolic",
+                    "madhyam-dialog-password-symbolic",
                     "Account info",
                     false,
                     move || {
@@ -1795,7 +1804,7 @@ impl App {
         }
         let me = self.clone();
         fixed.push(MenuRow::new(
-            "list-add-symbolic",
+            "madhyam-list-add-symbolic",
             "Add playlist",
             false,
             move || me.open_add_source(),
@@ -1803,17 +1812,21 @@ impl App {
 
         let header = kit::hbox(10);
         kit::margins(&header, 10, 6, 4, 6);
-        let hi = kit::icon("view-list-symbolic", 13);
+        let hi = kit::icon("madhyam-view-list-symbolic", 13);
         hi.add_css_class("muted");
         header.append(&hi);
         let ht = kit::text("MY PLAYLISTS", 11.0, "muted", 700, false);
         ht.set_hexpand(true);
         header.append(&ht);
         let me = self.clone();
-        let manage = kit::icon_button("preferences-system-symbolic", "Manage sources", move || {
-            kit::close_popover();
-            me.open_settings("Sources");
-        });
+        let manage = kit::icon_button(
+            "madhyam-preferences-system-symbolic",
+            "Manage sources",
+            move || {
+                kit::close_popover();
+                me.open_settings("Sources");
+            },
+        );
         manage.add_css_class("small");
         header.append(&manage);
         let list = kit::vbox(0);
@@ -1847,9 +1860,9 @@ impl App {
         ib.set_size_request(36, 36);
         let ic = kit::icon(
             if src.kind == "xtream" {
-                "network-server-symbolic"
+                "madhyam-network-server-symbolic"
             } else {
-                "view-list-symbolic"
+                "madhyam-view-list-symbolic"
             },
             15,
         );
@@ -1907,7 +1920,7 @@ impl App {
         t.append(&sub);
         g.append(&t);
         let (me, s2) = (self.clone(), src.clone());
-        let more = kit::icon_button("view-more-symbolic", "More", move || {
+        let more = kit::icon_button("madhyam-view-more-symbolic", "More", move || {
             kit::close_popover();
             let (me, s3) = (me.clone(), s2.clone());
             glib::idle_add_local_once(move || me.playlist_more_menu(s3));
@@ -1935,7 +1948,7 @@ impl App {
         let mut rows = Vec::new();
         let (me, s) = (self.clone(), src.clone());
         rows.push(MenuRow::new(
-            "help-about-symbolic",
+            "madhyam-help-about-symbolic",
             "Playlist info",
             false,
             move || {
@@ -1946,7 +1959,7 @@ impl App {
         if src.kind == "xtream" {
             let (me, s) = (self.clone(), src.clone());
             rows.push(MenuRow::new(
-                "dialog-password-symbolic",
+                "madhyam-dialog-password-symbolic",
                 "Account info",
                 false,
                 move || {
@@ -1957,7 +1970,7 @@ impl App {
         }
         let (me, s) = (self.clone(), src.clone());
         rows.push(MenuRow::new(
-            "network-transmit-receive-symbolic",
+            "madhyam-network-transmit-receive-symbolic",
             "Check again",
             false,
             move || {
@@ -1967,7 +1980,7 @@ impl App {
         ));
         let (me, s) = (self.clone(), src.clone());
         rows.push(MenuRow::new(
-            "view-refresh-symbolic",
+            "madhyam-view-refresh-symbolic",
             "Refresh playlist",
             false,
             move || {
@@ -1979,7 +1992,7 @@ impl App {
         let (me, s) = (self.clone(), src.clone());
         rows.push(
             MenuRow::new(
-                "edit-delete-symbolic",
+                "madhyam-edit-delete-symbolic",
                 "Remove playlist",
                 false,
                 move || {
@@ -2743,9 +2756,9 @@ pub fn live_title(it: &Item, number: usize) -> String {
 pub fn paint_star(b: &gtk::Button, on: bool) {
     b.set_child(Some(&kit::icon(
         if on {
-            "starred-symbolic"
+            "madhyam-starred-symbolic"
         } else {
-            "non-starred-symbolic"
+            "madhyam-non-starred-symbolic"
         },
         14,
     )));

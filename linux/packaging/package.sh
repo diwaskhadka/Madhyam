@@ -50,7 +50,7 @@ Architecture: amd64
 Maintainer: Diwas Khadka <diwaskhadka@users.noreply.github.com>
 Installed-Size: $SIZE
 Depends: $DEPENDS
-Recommends: adwaita-icon-theme, gnome-keyring | kwalletmanager | keepassxc
+Recommends: yt-dlp, gnome-keyring | kwalletmanager | keepassxc
 Section: video
 Priority: optional
 Homepage: https://github.com/diwaskhadka/Madhyam

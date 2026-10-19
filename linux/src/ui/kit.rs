@@ -216,9 +216,9 @@ pub fn poster(
     h: i32,
 ) -> gtk::Widget {
     let placeholder = if it.is_live() {
-        "tv-symbolic"
+        "madhyam-tv-symbolic"
     } else {
-        "video-x-generic-symbolic"
+        "madhyam-video-x-generic-symbolic"
     };
     let (img, frame) = picture_frame(
         it.logo.as_deref(),
@@ -262,7 +262,9 @@ pub fn poster(
     }
     if let Some(rm) = remove {
         let it2 = it.clone();
-        let x = icon_button("window-close-symbolic", "Remove", move || rm(it2.clone()));
+        let x = icon_button("madhyam-window-close-symbolic", "Remove", move || {
+            rm(it2.clone())
+        });
         x.add_css_class("small");
         x.add_css_class("badge");
         x.set_halign(gtk::Align::End);
@@ -344,7 +346,9 @@ pub fn live_card(
     g.append(&info);
     if let Some(rm) = remove {
         let it2 = it.clone();
-        let x = icon_button("window-close-symbolic", "Remove", move || rm(it2.clone()));
+        let x = icon_button("madhyam-window-close-symbolic", "Remove", move || {
+            rm(it2.clone())
+        });
         x.add_css_class("small");
         g.append(&x);
     }
@@ -493,7 +497,7 @@ pub fn empty(icon_name: &str, title: &str, body: &str) -> gtk::Box {
 /// Rounded on/off filter chip with a check mark (advanced search filters).
 pub fn filter(label: &str, on: bool, changed: impl Fn(bool) + 'static) -> gtk::Button {
     let row = hbox(8);
-    let tick = icon("object-select-symbolic", 12);
+    let tick = icon("madhyam-object-select-symbolic", 12);
     row.append(&tick);
     row.append(&gtk::Label::new(Some(label)));
     let b = gtk::Button::new();
@@ -655,7 +659,7 @@ fn menu_row_widget(r: &MenuRow, pop: &gtk::Popover) -> gtk::Widget {
     }
     g.append(&t);
     if r.checked {
-        let check = icon("object-select-symbolic", 13);
+        let check = icon("madhyam-object-select-symbolic", 13);
         check.set_margin_start(10);
         g.append(&check);
     }
@@ -796,13 +800,13 @@ pub fn stepper(
         Rc::new(move || val.set_label(&value()))
     };
     let r2 = refresh.clone();
-    let m = icon_button("list-remove-symbolic", "Earlier", move || {
+    let m = icon_button("madhyam-list-remove-symbolic", "Earlier", move || {
         minus();
         r2();
     });
     m.add_css_class("small");
     let r3 = refresh.clone();
-    let p = icon_button("list-add-symbolic", "Later", move || {
+    let p = icon_button("madhyam-list-add-symbolic", "Later", move || {
         plus();
         r3();
     });

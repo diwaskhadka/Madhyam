@@ -404,9 +404,9 @@ button.link:hover { color: @Accent; }
 
 /* segmented choices */
 .segments { background-color: @Card; border-radius: 10px; padding: 3px; }
-togglebutton.segment, button.segment { background: transparent; color: @Muted; border: none; border-radius: 8px; padding: 6px 14px; min-height: 0; }
-togglebutton.segment:hover { color: @Fg; }
-togglebutton.segment:checked { background-color: @CardSelected; color: @Accent; font-weight: 600; }
+button.segment { background: transparent; color: @Muted; border: none; border-radius: 8px; padding: 6px 14px; min-height: 0; }
+button.segment:hover { color: @Fg; }
+button.segment:checked { background-color: @CardSelected; color: @Accent; font-weight: 600; }
 
 /* filter chips */
 .filter-chip { background-color: @Card; border: 1px solid @Line; border-radius: 17px; padding: 6px 15px; color: @Fg; }
