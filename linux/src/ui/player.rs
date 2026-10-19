@@ -150,7 +150,7 @@ pub fn build_controls() -> (gtk::Overlay, Controls) {
     volume.set_valign(gtk::Align::Center);
     volume.set_margin_end(8);
     volume.set_tooltip_text(Some("Volume (↑ / ↓)"));
-    let audio = player_button("madhyam-audio-speakers-symbolic", "Audio track and delay");
+    let audio = player_button("madhyam-audio-headphones-symbolic", "Audio track and delay");
     let subs = player_button("madhyam-media-view-subtitles-symbolic", "Subtitles");
     let speed = gtk::Button::with_label("1×");
     speed.add_css_class("player-button");
@@ -691,14 +691,17 @@ impl App {
             .into_iter()
             .map(|(id, label, sel)| {
                 let m = m.clone();
-                MenuRow::new("madhyam-audio-speakers-symbolic", &label, sel, move || {
-                    m.set("aid", &id.to_string())
-                })
+                MenuRow::new(
+                    "madhyam-audio-headphones-symbolic",
+                    &label,
+                    sel,
+                    move || m.set("aid", &id.to_string()),
+                )
             })
             .collect();
         if rows.is_empty() {
             rows.push(MenuRow::new(
-                "madhyam-audio-speakers-symbolic",
+                "madhyam-audio-headphones-symbolic",
                 "Default audio",
                 true,
                 || {},

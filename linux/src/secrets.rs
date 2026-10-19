@@ -29,7 +29,7 @@ impl Keyring {
             SERVICE_PATH,
             "org.freedesktop.Secret.Service",
             "OpenSession",
-            Some(&("plain", glib::Variant::from_variant(&"".to_variant())).to_variant()),
+            Some(&("plain", "".to_variant()).to_variant()),
         )?;
         let session = reply.child_value(1).get::<ObjectPath>()?;
         Some(Keyring { bus, session })
