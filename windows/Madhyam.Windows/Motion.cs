@@ -250,4 +250,18 @@ internal static class NativeMethods
 
     [System.Runtime.InteropServices.DllImport("gdi32.dll")]
     public static extern IntPtr CreateRectRgn(int left, int top, int right, int bottom);
+
+    [System.Runtime.InteropServices.DllImport("gdi32.dll")]
+    public static extern IntPtr GetStockObject(int index);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    public static extern bool RedrawWindow(IntPtr hwnd, IntPtr rect, IntPtr region, uint flags);
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    public static extern IntPtr GetParent(IntPtr hwnd);
+
+    public const int BlackBrush = 4;
+    public const int WmCtlColorStatic = 0x0138;
+    /// <summary>RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW.</summary>
+    public const uint RedrawAll = 0x0001 | 0x0004 | 0x0080 | 0x0100;
 }

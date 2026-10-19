@@ -101,6 +101,59 @@ public partial class MainWindow
         UpdatePlayerScroll();
     }
 
+    // ================================================================ black around the picture
+
+    private IntPtr _videoHostHwnd;
+    private bool _videoSizeHooked;
+    private DispatcherTimer? _repaintTimer;
+
+    /// <summary>
+    /// The video library hosts VLC in a native "Static" window, which paints the grey of an
+    /// empty Windows control. VLC sizes its picture window to the picture and leaves the rest to
+    /// its outer window, which it does not repaint after a resize. So a wide movie in full
+    /// screen showed grey bars above and below instead of black. Paint the host black and
+    /// repaint VLC's windows whenever the video area changes size.
+    /// </summary>
+    private void BlackVideoBackground()
+    {
+        if (Video.Template?.FindName("PART_PlayerHost", Video) is not System.Windows.Interop.HwndHost host) return;
+        var hwnd = host.Handle;
+        if (hwnd == IntPtr.Zero || hwnd == _videoHostHwnd) return;
+        _videoHostHwnd = hwnd;
+        var parent = NativeMethods.GetParent(hwnd);
+        if (System.Windows.Interop.HwndSource.FromHwnd(parent) is { } source)
+            source.AddHook((IntPtr _, int msg, IntPtr _, IntPtr lParam, ref bool handled) =>
+            {
+                if (msg != NativeMethods.WmCtlColorStatic || lParam != _videoHostHwnd) return IntPtr.Zero;
+                handled = true;
+                return NativeMethods.GetStockObject(NativeMethods.BlackBrush);
+            });
+        if (!_videoSizeHooked)
+        {
+            _videoSizeHooked = true;
+            Video.SizeChanged += (_, _) => RepaintVideoBackground();
+        }
+        RepaintVideoBackground();
+    }
+
+    /// <summary>Repaint now, and again once VLC has moved its picture window (it does so a moment later).</summary>
+    private void RepaintVideoBackground()
+    {
+        if (_videoHostHwnd == IntPtr.Zero) return;
+        NativeMethods.RedrawWindow(_videoHostHwnd, IntPtr.Zero, IntPtr.Zero, NativeMethods.RedrawAll);
+        if (_repaintTimer == null)
+        {
+            _repaintTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+            _repaintTimer.Tick += (_, _) =>
+            {
+                _repaintTimer.Stop();
+                NativeMethods.RedrawWindow(_videoHostHwnd, IntPtr.Zero, IntPtr.Zero, NativeMethods.RedrawAll);
+            };
+        }
+        _repaintTimer.Stop();
+        _repaintTimer.Start();
+    }
+
     // ================================================================ player scrolls with the page
 
     private void VodScroll_ScrollChanged(object sender, ScrollChangedEventArgs e) => UpdatePlayerScroll();

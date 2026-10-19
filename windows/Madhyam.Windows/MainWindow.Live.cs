@@ -440,6 +440,7 @@ public partial class MainWindow
         _vodPlaying = !it.IsLive;
         MoveVideo(it.IsLive ? LiveVideoHost : VodVideoHost);
         Video.Visibility = Visibility.Visible;
+        Dispatcher.BeginInvoke(BlackVideoBackground, DispatcherPriority.Loaded);
         VideoOverlay.Visibility = Visibility.Visible;
         _videoTucked = false;
         VodTuckedHint.Visibility = Visibility.Collapsed;
