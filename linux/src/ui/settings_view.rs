@@ -12,13 +12,21 @@ use std::cell::RefCell;
 use std::rc::{Rc, Weak};
 
 const SECTIONS: [(&str, &str, &str); 7] = [
-    ("General", "preferences-system-symbolic", "General"),
-    ("Sources", "view-list-symbolic", "Sources"),
-    ("Dashboard", "go-home-symbolic", "Dashboard"),
-    ("Playback", "media-playback-start-symbolic", "Playback"),
-    ("Guide", "appointment-soon-symbolic", "Programme guide"),
-    ("Data", "folder-symbolic", "Backup & data"),
-    ("About", "help-about-symbolic", "About"),
+    ("General", "madhyam-preferences-system-symbolic", "General"),
+    ("Sources", "madhyam-view-list-symbolic", "Sources"),
+    ("Dashboard", "madhyam-go-home-symbolic", "Dashboard"),
+    (
+        "Playback",
+        "madhyam-media-playback-start-symbolic",
+        "Playback",
+    ),
+    (
+        "Guide",
+        "madhyam-appointment-soon-symbolic",
+        "Programme guide",
+    ),
+    ("Data", "madhyam-folder-symbolic", "Backup & data"),
+    ("About", "madhyam-help-about-symbolic", "About"),
 ];
 
 pub struct SettingsView {
@@ -516,9 +524,9 @@ impl SettingsView {
         ib.set_valign(gtk::Align::Start);
         let ic = kit::icon(
             if src.kind == "xtream" {
-                "network-server-symbolic"
+                "madhyam-network-server-symbolic"
             } else {
-                "view-list-symbolic"
+                "madhyam-view-list-symbolic"
             },
             16,
         );
@@ -614,7 +622,7 @@ impl SettingsView {
         if !active {
             let sv = sv.clone();
             actions.append(&action(
-                "object-select-symbolic",
+                "madhyam-object-select-symbolic",
                 "Use this playlist",
                 Rc::new(move |a, _| {
                     let (s, sv) = (s1.clone(), sv.clone());
@@ -630,7 +638,7 @@ impl SettingsView {
         }
         let s1 = src.clone();
         actions.append(&action(
-            "network-transmit-receive-symbolic",
+            "madhyam-network-transmit-receive-symbolic",
             "Test connection",
             Rc::new(move |a, say| {
                 let s = s1.clone();
@@ -645,7 +653,7 @@ impl SettingsView {
         ));
         let (s1, sv1) = (src.clone(), sv.clone());
         actions.append(&action(
-            "view-refresh-symbolic",
+            "madhyam-view-refresh-symbolic",
             "Refresh (download again)",
             Rc::new(move |a, say| {
                 let (s, sv) = (s1.clone(), sv1.clone());
@@ -661,7 +669,7 @@ impl SettingsView {
         ));
         let (s1, sv1) = (src.clone(), sv.clone());
         actions.append(&action(
-            "document-edit-symbolic",
+            "madhyam-document-edit-symbolic",
             "Edit",
             Rc::new(move |a, say| {
                 let (s, sv) = (s1.clone(), sv1.clone());
@@ -719,7 +727,7 @@ impl SettingsView {
         ));
         let s1 = src.clone();
         actions.append(&action(
-            "help-about-symbolic",
+            "madhyam-help-about-symbolic",
             "Playlist info",
             Rc::new(move |a, _| {
                 let s = s1.clone();
@@ -732,7 +740,7 @@ impl SettingsView {
         if src.kind == "xtream" {
             let s1 = src.clone();
             actions.append(&action(
-                "dialog-password-symbolic",
+                "madhyam-dialog-password-symbolic",
                 "Account info",
                 Rc::new(move |a, _| {
                     let s = s1.clone();
@@ -745,7 +753,7 @@ impl SettingsView {
         }
         let (s1, sv1) = (src.clone(), sv.clone());
         actions.append(&action(
-            "edit-delete-symbolic",
+            "madhyam-edit-delete-symbolic",
             "Remove",
             Rc::new(move |a, _| {
                 let (s, sv) = (s1.clone(), sv1.clone());
@@ -1087,7 +1095,7 @@ impl SettingsView {
                     row.append(&chip);
                     let (render, u) = (render.clone(), url.clone());
                     row.append(&kit::icon_button(
-                        "edit-delete-symbolic",
+                        "madhyam-edit-delete-symbolic",
                         "Remove",
                         move || {
                             settings::update(|s| s.extra_epg_urls.retain(|x| x != &u));

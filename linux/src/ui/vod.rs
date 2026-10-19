@@ -24,12 +24,12 @@ const SORT_OPTIONS: [(&str, &str); 7] = [
 
 fn sort_icon(v: &str) -> &'static str {
     match v {
-        "provider" => "view-list-symbolic",
-        "added_desc" | "added_asc" => "appointment-soon-symbolic",
-        "name_asc" => "view-sort-ascending-symbolic",
-        "name_desc" => "view-sort-descending-symbolic",
-        "rating_desc" => "starred-symbolic",
-        _ => "non-starred-symbolic",
+        "provider" => "madhyam-view-list-symbolic",
+        "added_desc" | "added_asc" => "madhyam-appointment-soon-symbolic",
+        "name_asc" => "madhyam-view-sort-ascending-symbolic",
+        "name_desc" => "madhyam-view-sort-descending-symbolic",
+        "rating_desc" => "madhyam-starred-symbolic",
+        _ => "madhyam-non-starred-symbolic",
     }
 }
 
@@ -178,7 +178,7 @@ impl App {
                 it.logo.as_deref(),
                 w,
                 h,
-                "video-x-generic-symbolic",
+                "madhyam-video-x-generic-symbolic",
                 false,
                 "poster-frame",
             );
@@ -271,9 +271,9 @@ impl App {
                 let (me, v2) = (self.clone(), *v);
                 MenuRow::new(
                     if *v == 0.0 {
-                        "edit-clear-all-symbolic"
+                        "madhyam-edit-clear-all-symbolic"
                     } else {
-                        "starred-symbolic"
+                        "madhyam-starred-symbolic"
                     },
                     l,
                     (v - cur).abs() < 0.01,
@@ -611,8 +611,7 @@ impl App {
             self.vod_content.append(&self.seasons(&it));
         }
         if let Some(yt) = info.as_ref().and_then(|i| i.trailer.clone()) {
-            self.vod_content
-                .append(&trailer_section(&it, &yt, &self.window));
+            self.vod_content.append(&trailer_section(&it, &yt, self));
         }
         if self.details_loading.get() {
             let t = kit::text(
@@ -632,7 +631,7 @@ impl App {
     }
 
     /// IMDb and Rotten Tomatoes chips, only when OMDb had a score.
-    fn add_external_ratings(&self, chips: &gtk::FlowBox) {
+    fn add_external_ratings(&self, chips: &gtk::Box) {
         let Some(r) = self.ratings.borrow().clone() else {
             return;
         };
@@ -651,7 +650,7 @@ impl App {
                     .map(|v| format!("IMDb · {v} votes"))
                     .unwrap_or_else(|| "IMDb".into()),
             ));
-            chips.insert(&c, -1);
+            chips.append(&c);
         }
         if let Some(rt) = &r.rotten {
             let fresh = rt
@@ -674,27 +673,25 @@ impl App {
             } else {
                 "Rotten Tomatoes · Rotten"
             }));
-            chips.insert(&c, -1);
+            chips.append(&c);
         }
     }
 
-    fn chips(&self, it: &Item, info: Option<&DetailsInfo>) -> gtk::FlowBox {
-        let chips = gtk::FlowBox::new();
-        chips.set_selection_mode(gtk::SelectionMode::None);
-        chips.set_max_children_per_line(20);
-        chips.set_column_spacing(8);
-        chips.set_row_spacing(8);
+    /// One row of chips (rating, IMDb, year, genres, length, language, country). A plain row:
+    /// a FlowBox here measured its height wrongly and drew over the plot below it.
+    fn chips(&self, it: &Item, info: Option<&DetailsInfo>) -> gtk::Box {
+        let chips = kit::hbox(8);
         chips.set_halign(gtk::Align::Start);
         let rating = info.and_then(|i| i.rating.clone()).or_else(|| {
             it.has_rating()
                 .then(|| it.rating.clone().unwrap_or_default())
         });
         if let Some(r) = rating {
-            chips.insert(&kit::chip(&format!("★ {r}"), "rating"), -1);
+            chips.append(&kit::chip(&format!("★ {r}"), "rating"));
         }
         self.add_external_ratings(&chips);
         for c in chip_texts(it, info) {
-            chips.insert(&kit::chip(&c, ""), -1);
+            chips.append(&kit::chip(&c, ""));
         }
         chips
     }
@@ -711,7 +708,7 @@ impl App {
             poster,
             230,
             340,
-            "video-x-generic-symbolic",
+            "madhyam-video-x-generic-symbolic",
             false,
             "poster-frame",
         );
@@ -764,7 +761,7 @@ impl App {
                 let (me, e) = (self.clone(), ep.clone());
                 buttons.append(&kit::primary(
                     &format!("Resume {}", ep.se()),
-                    Some("media-playback-start-symbolic"),
+                    Some("madhyam-media-playback-start-symbolic"),
                     move || {
                         let (me, e) = (me.clone(), e.clone());
                         spawn(async move { me.play_episode(e).await });
@@ -775,7 +772,7 @@ impl App {
                 let (me, e) = (self.clone(), ep.clone());
                 buttons.append(&kit::primary(
                     &format!("Play first episode {}", ep.se()),
-                    Some("media-playback-start-symbolic"),
+                    Some("madhyam-media-playback-start-symbolic"),
                     move || {
                         let (me, e) = (me.clone(), e.clone());
                         spawn(async move { me.play_episode(e).await });
@@ -788,7 +785,7 @@ impl App {
             let me = self.clone();
             buttons.append(&kit::primary(
                 if started { "Resume" } else { "Play" },
-                Some("media-playback-start-symbolic"),
+                Some("madhyam-media-playback-start-symbolic"),
                 move || {
                     let me = me.clone();
                     spawn(async move { me.play_movie(false).await });
@@ -799,7 +796,7 @@ impl App {
                 let me = self.clone();
                 buttons.append(&kit::primary(
                     "Start over",
-                    Some("media-skip-backward-symbolic"),
+                    Some("madhyam-media-skip-backward-symbolic"),
                     move || {
                         let me = me.clone();
                         spawn(async move { me.play_movie(true).await });
@@ -817,9 +814,9 @@ impl App {
                 "Add to favorites"
             },
             Some(if fav {
-                "starred-symbolic"
+                "madhyam-starred-symbolic"
             } else {
-                "non-starred-symbolic"
+                "madhyam-non-starred-symbolic"
             }),
             move || {
                 let (me, i) = (me.clone(), i2.clone());
@@ -835,7 +832,7 @@ impl App {
                 } else {
                     "Mark as watched"
                 },
-                Some("object-select-symbolic"),
+                Some("madhyam-object-select-symbolic"),
                 move || {
                     let (me, i) = (me.clone(), i2.clone());
                     spawn(async move {
@@ -850,11 +847,11 @@ impl App {
             ));
         }
         if let Some(yt) = info.and_then(|i| i.trailer.clone()) {
-            let w = self.window.clone();
+            let me = self.clone();
             buttons.append(&kit::primary(
                 "Trailer",
-                Some("media-playback-start-symbolic"),
-                move || open_trailer(&w, &yt),
+                Some("madhyam-media-playback-start-symbolic"),
+                move || me.play_trailer(&yt),
                 true,
             ));
         }
@@ -875,7 +872,7 @@ impl App {
             poster,
             140,
             208,
-            "video-x-generic-symbolic",
+            "madhyam-video-x-generic-symbolic",
             false,
             "poster-frame",
         );
@@ -908,9 +905,9 @@ impl App {
                 "Add to favorites"
             },
             Some(if fav {
-                "starred-symbolic"
+                "madhyam-starred-symbolic"
             } else {
-                "non-starred-symbolic"
+                "madhyam-non-starred-symbolic"
             }),
             move || {
                 let (me, i) = (me.clone(), i2.clone());
@@ -993,7 +990,7 @@ impl App {
             } else {
                 "Mark season as watched"
             },
-            Some("object-select-symbolic"),
+            Some("madhyam-object-select-symbolic"),
             move || {
                 let (me, list) = (me.clone(), eps2.clone());
                 spawn(async move {
@@ -1020,7 +1017,7 @@ impl App {
             ep.logo.as_deref().or(series.logo.as_deref()),
             W,
             H,
-            "video-x-generic-symbolic",
+            "madhyam-video-x-generic-symbolic",
             false,
             "episode-frame",
         );
@@ -1047,7 +1044,7 @@ impl App {
         }
         // Watched toggle: filled when watched, an outline that shows on hover otherwise.
         let watch = gtk::Button::new();
-        let tick = kit::icon("object-select-symbolic", 12);
+        let tick = kit::icon("madhyam-object-select-symbolic", 12);
         watch.set_child(Some(&tick));
         watch.add_css_class("bare");
         watch.add_css_class("watched-dot");
@@ -1079,7 +1076,7 @@ impl App {
         hint.add_css_class("play-hint");
         hint.set_halign(gtk::Align::Center);
         hint.set_valign(gtk::Align::Center);
-        let pi = kit::icon("media-playback-start-symbolic", 16);
+        let pi = kit::icon("madhyam-media-playback-start-symbolic", 16);
         pi.set_halign(gtk::Align::Center);
         hint.set_homogeneous(true);
         hint.append(&pi);
@@ -1144,12 +1141,17 @@ impl App {
                 &card,
                 &e2.se(),
                 vec![
-                    MenuRow::new("media-playback-start-symbolic", "Play", false, move || {
-                        let (m, e) = (m1.clone(), e1.clone());
-                        spawn(async move { m.play_episode(e).await });
-                    }),
                     MenuRow::new(
-                        "object-select-symbolic",
+                        "madhyam-media-playback-start-symbolic",
+                        "Play",
+                        false,
+                        move || {
+                            let (m, e) = (m1.clone(), e1.clone());
+                            spawn(async move { m.play_episode(e).await });
+                        },
+                    ),
+                    MenuRow::new(
+                        "madhyam-object-select-symbolic",
                         if e2.is_watched() {
                             "Mark as unwatched"
                         } else {
@@ -1255,14 +1257,50 @@ fn now_playing_episode(ep: &Item) -> gtk::Widget {
 }
 
 /// Trailers open on YouTube in the default browser (the Windows app embeds WebView2).
-pub fn open_trailer(window: &gtk::ApplicationWindow, youtube_id: &str) {
-    crate::ui::dialogs::open_uri(
-        window,
-        &format!("https://www.youtube.com/watch?v={youtube_id}"),
-    );
+/// mpv plays YouTube through yt-dlp (or youtube-dl) when one is installed.
+fn yt_dlp_available() -> bool {
+    std::env::var_os("PATH").is_some_and(|p| {
+        std::env::split_paths(&p)
+            .any(|d| d.join("yt-dlp").is_file() || d.join("youtube-dl").is_file())
+    })
 }
 
-fn trailer_section(it: &Item, youtube_id: &str, window: &gtk::ApplicationWindow) -> gtk::Widget {
+impl App {
+    /// Play a trailer in the page's own player card, like the Windows app. Without yt-dlp
+    /// mpv cannot open YouTube, so the trailer opens in the browser instead.
+    pub fn play_trailer(self: &Rc<Self>, youtube_id: &str) {
+        let url = format!("https://www.youtube.com/watch?v={youtube_id}");
+        if !yt_dlp_available() {
+            self.set_status(
+                "Install yt-dlp to watch trailers inside Madhyam; opening it in your browser.",
+            );
+            crate::ui::dialogs::open_uri(&self.window, &url);
+            return;
+        }
+        let name = self
+            .details
+            .borrow()
+            .as_ref()
+            .map(|d| d.name.clone())
+            .unwrap_or_else(|| "Trailer".into());
+        // No id: a trailer is not in the catalog, so it gets no history or resume position.
+        let trailer = Item {
+            kind: "movie".into(),
+            name,
+            url,
+            ..Default::default()
+        };
+        *self.playlist.borrow_mut() = vec![trailer];
+        let me = self.clone();
+        spawn(async move {
+            me.play_at(0).await;
+            me.vod_card_label.set_text("TRAILER");
+            me.vod_card_sub.set_text("YouTube");
+        });
+    }
+}
+
+fn trailer_section(it: &Item, youtube_id: &str, app: &Rc<App>) -> gtk::Widget {
     let s = kit::vbox(0);
     s.append(&kit::section_header("Trailer", None, None, ""));
     let (thumb, frame) = kit::picture_frame(
@@ -1271,7 +1309,7 @@ fn trailer_section(it: &Item, youtube_id: &str, window: &gtk::ApplicationWindow)
         )),
         360,
         202,
-        "media-playback-start-symbolic",
+        "madhyam-media-playback-start-symbolic",
         false,
         "episode-frame",
     );
@@ -1292,10 +1330,10 @@ fn trailer_section(it: &Item, youtube_id: &str, window: &gtk::ApplicationWindow)
     label.set_valign(gtk::Align::End);
     kit::margins(&label, 10, 10, 10, 10);
     thumb.add_overlay(&label);
-    let (w, id) = (window.clone(), youtube_id.to_string());
-    let b = kit::bare(&thumb, move || open_trailer(&w, &id));
+    let (me, id) = (app.clone(), youtube_id.to_string());
+    let b = kit::bare(&thumb, move || me.play_trailer(&id));
     b.set_halign(gtk::Align::Start);
-    b.set_tooltip_text(Some("Play the trailer (opens your browser)"));
+    b.set_tooltip_text(Some("Play the trailer"));
     s.append(&b);
     s.upcast()
 }

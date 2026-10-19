@@ -77,7 +77,7 @@ pub fn build_controls() -> (gtk::Overlay, Controls) {
     big_play.add_css_class("big-play");
     big_play.set_halign(gtk::Align::Center);
     big_play.set_valign(gtk::Align::Center);
-    let big_play_icon = kit::icon("media-playback-start-symbolic", 30);
+    let big_play_icon = kit::icon("madhyam-media-playback-start-symbolic", 30);
     big_play_icon.set_halign(gtk::Align::Center);
     big_play.set_homogeneous(true);
     big_play.append(&big_play_icon);
@@ -114,12 +114,12 @@ pub fn build_controls() -> (gtk::Overlay, Controls) {
     bar.append(&time_row);
     let buttons = kit::hbox(2);
     let play_pause = player_button(
-        "media-playback-pause-symbolic",
+        "madhyam-media-playback-pause-symbolic",
         "Play / pause (Space, or click the picture)",
     );
-    let back10 = player_button("media-seek-backward-symbolic", "Back 10 s (←)");
-    let fwd10 = player_button("media-seek-forward-symbolic", "Forward 10 s (→)");
-    let next_ep = player_button("media-skip-forward-symbolic", "Next episode");
+    let back10 = player_button("madhyam-media-seek-backward-symbolic", "Back 10 s (←)");
+    let fwd10 = player_button("madhyam-media-seek-forward-symbolic", "Forward 10 s (→)");
+    let next_ep = player_button("madhyam-media-skip-forward-symbolic", "Next episode");
     next_ep.set_visible(false);
     let bar_live = gtk::Label::new(Some("● LIVE"));
     bar_live.add_css_class("live-badge");
@@ -141,7 +141,7 @@ pub fn build_controls() -> (gtk::Overlay, Controls) {
         buttons.append(w);
     }
     buttons.append(&kit::spacer());
-    let mute = player_button("audio-volume-high-symbolic", "Mute (M)");
+    let mute = player_button("madhyam-audio-volume-high-symbolic", "Mute (M)");
     let volume = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 100.0, 1.0);
     volume.set_value(100.0);
     volume.set_draw_value(false);
@@ -150,14 +150,14 @@ pub fn build_controls() -> (gtk::Overlay, Controls) {
     volume.set_valign(gtk::Align::Center);
     volume.set_margin_end(8);
     volume.set_tooltip_text(Some("Volume (↑ / ↓)"));
-    let audio = player_button("audio-speakers-symbolic", "Audio track and delay");
-    let subs = player_button("media-view-subtitles-symbolic", "Subtitles");
+    let audio = player_button("madhyam-audio-speakers-symbolic", "Audio track and delay");
+    let subs = player_button("madhyam-media-view-subtitles-symbolic", "Subtitles");
     let speed = gtk::Button::with_label("1×");
     speed.add_css_class("player-button");
     speed.set_tooltip_text(Some("Playback speed"));
     speed.set_valign(gtk::Align::Center);
     let full = player_button(
-        "view-fullscreen-symbolic",
+        "madhyam-view-fullscreen-symbolic",
         "Full screen (F11 or double-click)",
     );
     for w in [
@@ -218,9 +218,9 @@ impl Controls {
     pub fn set_fullscreen_icon(&self, on: bool) {
         self.full.set_child(Some(&kit::icon(
             if on {
-                "view-restore-symbolic"
+                "madhyam-view-restore-symbolic"
             } else {
-                "view-fullscreen-symbolic"
+                "madhyam-view-fullscreen-symbolic"
             },
             18,
         )));
@@ -425,8 +425,10 @@ impl App {
         let c = &self.controls;
         match e {
             Event::Playing => {
-                c.play_pause
-                    .set_child(Some(&kit::icon("media-playback-pause-symbolic", 18)));
+                c.play_pause.set_child(Some(&kit::icon(
+                    "madhyam-media-playback-pause-symbolic",
+                    18,
+                )));
                 if let Some(m) = self.mpv() {
                     m.set_flag("mute", c.muted.get()); // a new audio output starts unmuted
                 }
@@ -434,9 +436,9 @@ impl App {
             Event::Paused(p) => {
                 c.play_pause.set_child(Some(&kit::icon(
                     if p {
-                        "media-playback-start-symbolic"
+                        "madhyam-media-playback-start-symbolic"
                     } else {
-                        "media-playback-pause-symbolic"
+                        "madhyam-media-playback-pause-symbolic"
                     },
                     18,
                 )));
@@ -598,9 +600,9 @@ impl App {
         }
         let c = &self.controls;
         c.big_play_icon.set_icon_name(Some(if will_pause {
-            "media-playback-pause-symbolic"
+            "madhyam-media-playback-pause-symbolic"
         } else {
-            "media-playback-start-symbolic"
+            "madhyam-media-playback-start-symbolic"
         }));
         c.big_play.set_visible(true);
         self.restart_osd_timer();
@@ -644,9 +646,9 @@ impl App {
     fn update_mute_icons(&self) {
         let c = &self.controls;
         let name = if c.muted.get() || c.volume.value() == 0.0 {
-            "audio-volume-muted-symbolic"
+            "madhyam-audio-volume-muted-symbolic"
         } else {
-            "audio-volume-high-symbolic"
+            "madhyam-audio-volume-high-symbolic"
         };
         c.mute.set_child(Some(&kit::icon(name, 18)));
         self.live_mute.set_child(Some(&kit::icon(name, 16)));
@@ -689,14 +691,14 @@ impl App {
             .into_iter()
             .map(|(id, label, sel)| {
                 let m = m.clone();
-                MenuRow::new("audio-speakers-symbolic", &label, sel, move || {
+                MenuRow::new("madhyam-audio-speakers-symbolic", &label, sel, move || {
                     m.set("aid", &id.to_string())
                 })
             })
             .collect();
         if rows.is_empty() {
             rows.push(MenuRow::new(
-                "audio-speakers-symbolic",
+                "madhyam-audio-speakers-symbolic",
                 "Default audio",
                 true,
                 || {},
@@ -706,7 +708,7 @@ impl App {
         kit::margins(&sep, 6, 5, 6, 5);
         let (a1, a2, a3, a4) = (self.clone(), self.clone(), self.clone(), self.clone());
         let step = kit::stepper(
-            "media-playlist-repeat-symbolic",
+            "madhyam-media-playlist-repeat-symbolic",
             "Audio delay  (J / K)",
             Rc::new(move || delay_text(a1.controls.audio_delay.get())),
             Rc::new(move || a2.change_audio_delay(-50)),
@@ -734,28 +736,31 @@ impl App {
         let any_selected = tracks.iter().any(|t| t.2);
         let m2 = m.clone();
         let mut rows = vec![MenuRow::new(
-            "window-close-symbolic",
+            "madhyam-window-close-symbolic",
             "Off",
             !any_selected,
             move || m2.set("sid", "no"),
         )];
         rows.extend(tracks.into_iter().map(|(id, label, sel)| {
             let m = m.clone();
-            MenuRow::new("media-view-subtitles-symbolic", &label, sel, move || {
-                m.set("sid", &id.to_string())
-            })
+            MenuRow::new(
+                "madhyam-media-view-subtitles-symbolic",
+                &label,
+                sel,
+                move || m.set("sid", &id.to_string()),
+            )
         }));
         let (me1, me2) = (self.clone(), self.clone());
         let fixed = vec![
             MenuRow::sep(),
             MenuRow::new(
-                "document-open-symbolic",
+                "madhyam-document-open-symbolic",
                 "Load subtitle file…",
                 false,
                 move || me1.load_subtitle_file(),
             ),
             MenuRow::new(
-                "system-search-symbolic",
+                "madhyam-system-search-symbolic",
                 "Search subtitles online…",
                 false,
                 move || me2.search_subtitles_online(),
@@ -766,7 +771,7 @@ impl App {
         kit::margins(&sep, 6, 5, 6, 5);
         let (a1, a2, a3, a4) = (self.clone(), self.clone(), self.clone(), self.clone());
         let step = kit::stepper(
-            "appointment-soon-symbolic",
+            "madhyam-appointment-soon-symbolic",
             "Subtitle delay  (G / H)",
             Rc::new(move || delay_text(a1.controls.sub_delay.get())),
             Rc::new(move || a2.change_sub_delay(-50)),
@@ -802,11 +807,11 @@ impl App {
                     format!("{s}×")
                 };
                 let icon = if s < 1.0 {
-                    "media-seek-backward-symbolic"
+                    "madhyam-media-seek-backward-symbolic"
                 } else if s == 1.0 {
-                    "media-playback-start-symbolic"
+                    "madhyam-media-playback-start-symbolic"
                 } else {
-                    "media-seek-forward-symbolic"
+                    "madhyam-media-seek-forward-symbolic"
                 };
                 MenuRow::new(icon, &label, (s - cur).abs() < 0.01, move || {
                     m.set_f64("speed", s);

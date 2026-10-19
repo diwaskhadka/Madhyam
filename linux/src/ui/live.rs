@@ -314,19 +314,19 @@ impl App {
             "Sort categories",
             vec![
                 MenuRow::new(
-                    "view-list-symbolic",
+                    "madhyam-view-list-symbolic",
                     "Provider order",
                     cur == "provider",
                     set("provider"),
                 ),
                 MenuRow::new(
-                    "view-sort-ascending-symbolic",
+                    "madhyam-view-sort-ascending-symbolic",
                     "Name A–Z",
                     cur == "name_asc",
                     set("name_asc"),
                 ),
                 MenuRow::new(
-                    "view-sort-descending-symbolic",
+                    "madhyam-view-sort-descending-symbolic",
                     "Name Z–A",
                     cur == "name_desc",
                     set("name_desc"),
@@ -534,12 +534,17 @@ impl App {
                 &row,
                 &it2.display_name(),
                 vec![
-                    MenuRow::new("media-playback-start-symbolic", "Play", false, move || {
-                        let (a, i) = (a1.clone(), i1.clone());
-                        spawn(async move { a.play_live(i).await });
-                    }),
                     MenuRow::new(
-                        "starred-symbolic",
+                        "madhyam-media-playback-start-symbolic",
+                        "Play",
+                        false,
+                        move || {
+                            let (a, i) = (a1.clone(), i1.clone());
+                            spawn(async move { a.play_live(i).await });
+                        },
+                    ),
+                    MenuRow::new(
+                        "madhyam-starred-symbolic",
                         "Add / remove favorite",
                         false,
                         move || {
@@ -672,8 +677,18 @@ impl App {
             &self.live_sort_btn,
             "Sort channels",
             vec![
-                MenuRow::new("view-list-symbolic", "Provider order", !az, set(false)),
-                MenuRow::new("view-sort-ascending-symbolic", "Name A–Z", az, set(true)),
+                MenuRow::new(
+                    "madhyam-view-list-symbolic",
+                    "Provider order",
+                    !az,
+                    set(false),
+                ),
+                MenuRow::new(
+                    "madhyam-view-sort-ascending-symbolic",
+                    "Name A–Z",
+                    az,
+                    set(true),
+                ),
             ],
         );
     }
@@ -941,7 +956,10 @@ impl App {
         mpv.set("slang", &crate::ui::player::mpv_lang(&s.subtitle_language));
         mpv.set("sid", if s.show_subtitles { "auto" } else { "no" });
         mpv.set("start", "none");
-        if !it.is_live() && s.resume_playback {
+        // YouTube (trailers) goes through yt-dlp; IPTV streams never need it.
+        let youtube = url.contains("youtube.com/") || url.contains("youtu.be/");
+        mpv.set("ytdl", if youtube { "yes" } else { "no" });
+        if !it.is_live() && !it.id.is_empty() && s.resume_playback {
             let (repo, id) = (self.repo.clone(), it.id.clone());
             let resume = bgv(move || repo.resume_seconds(&id)).await;
             if resume > 0.0 {
@@ -952,7 +970,7 @@ impl App {
         mpv.load(&url);
         mpv.set("speed", "1");
         self.on_new_media(&it);
-        {
+        if !it.id.is_empty() {
             let (repo, id) = (self.repo.clone(), it.id.clone());
             spawn(async move { bgv(move || repo.record_play(&id)).await });
         }
@@ -995,7 +1013,7 @@ impl App {
     }
 
     pub fn save_progress(&self) {
-        let Some(it) = self.playing().filter(|p| !p.is_live()) else {
+        let Some(it) = self.playing().filter(|p| !p.is_live() && !p.id.is_empty()) else {
             return;
         };
         let Some(m) = self.mpv() else { return };

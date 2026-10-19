@@ -57,14 +57,14 @@ impl App {
         let s = kit::vbox(0);
         s.set_halign(gtk::Align::Center);
         s.append(&kit::empty(
-            "view-list-symbolic",
+            "madhyam-view-list-symbolic",
             "No playlist yet",
             "Add an Xtream Codes account or an M3U playlist from your provider to start watching.",
         ));
         let me = self.clone();
         let b = kit::primary(
             "Add playlist",
-            Some("list-add-symbolic"),
+            Some("madhyam-list-add-symbolic"),
             move || me.open_add_source(),
             false,
         );
@@ -347,7 +347,7 @@ impl App {
                     poster.as_deref(),
                     168,
                     248,
-                    "video-x-generic-symbolic",
+                    "madhyam-video-x-generic-symbolic",
                     false,
                     "poster-frame",
                 );
@@ -398,7 +398,7 @@ impl App {
                 let (me, i2) = (self.clone(), it.clone());
                 buttons.append(&kit::primary(
                     "Continue watching",
-                    Some("media-playback-start-symbolic"),
+                    Some("madhyam-media-playback-start-symbolic"),
                     move || {
                         let (me, i) = (me.clone(), i2.clone());
                         spawn(async move { me.go_to_vod(i, true).await });
@@ -408,7 +408,7 @@ impl App {
                 let (me, i2, t2) = (self.clone(), it.clone(), title.clone());
                 buttons.append(&kit::primary(
                     "Details",
-                    Some("help-about-symbolic"),
+                    Some("madhyam-help-about-symbolic"),
                     move || {
                         let (me, i) = (me.clone(), i2.clone());
                         let target = match (&i.kind[..], &i.series_id) {
@@ -434,7 +434,7 @@ impl App {
                 icon_box.add_css_class("welcome-icon");
                 icon_box.set_size_request(120, 120);
                 icon_box.set_valign(gtk::Align::Center);
-                let i = kit::icon("tv-symbolic", 46);
+                let i = kit::icon("madhyam-tv-symbolic", 46);
                 i.add_css_class("accent");
                 i.set_halign(gtk::Align::Center);
                 icon_box.set_homogeneous(true);
@@ -460,9 +460,14 @@ impl App {
                 let buttons = kit::hbox(10);
                 buttons.set_margin_top(22);
                 for (label, mode, icon, secondary) in [
-                    ("Live TV", Mode::Live, "tv-symbolic", false),
-                    ("Movies", Mode::Movies, "video-x-generic-symbolic", true),
-                    ("Series", Mode::Series, "view-grid-symbolic", true),
+                    ("Live TV", Mode::Live, "madhyam-tv-symbolic", false),
+                    (
+                        "Movies",
+                        Mode::Movies,
+                        "madhyam-video-x-generic-symbolic",
+                        true,
+                    ),
+                    ("Series", Mode::Series, "madhyam-view-grid-symbolic", true),
                 ] {
                     let me = Rc::downgrade(self);
                     buttons.append(&kit::primary(
@@ -494,9 +499,9 @@ impl App {
         ib.set_size_request(36, 36);
         let ic = kit::icon(
             if s.kind == "xtream" {
-                "network-server-symbolic"
+                "madhyam-network-server-symbolic"
             } else {
-                "view-list-symbolic"
+                "madhyam-view-list-symbolic"
             },
             15,
         );
@@ -616,7 +621,7 @@ impl App {
             ));
             body.append(&filters);
             body.append(&kit::empty(
-                "system-search-symbolic",
+                "madhyam-system-search-symbolic",
                 "Type to search",
                 "Use the search box at the top. Press Enter there from any page to come here.",
             ));
@@ -666,7 +671,7 @@ impl App {
         body.append(&filters);
         if hits.is_empty() {
             body.append(&kit::empty(
-                "system-search-symbolic",
+                "madhyam-system-search-symbolic",
                 "No results",
                 "Try fewer words, or turn on more types above.",
             ));
@@ -803,7 +808,7 @@ impl App {
         body.append(&self.kind_and_source_bar());
         if items.is_empty() {
             body.append(&kit::empty(
-                "emote-love-symbolic",
+                "madhyam-emote-love-symbolic",
                 if total == 0 {
                     "No favorites yet"
                 } else {
@@ -838,7 +843,7 @@ impl App {
         let items = self.page_filter(all);
         let clear = (total > 0).then(|| {
             let me = self.clone();
-            kit::primary("Clear history", Some("edit-clear-all-symbolic"), move || {
+            kit::primary("Clear history", Some("madhyam-edit-clear-all-symbolic"), move || {
                 let me = me.clone();
                 spawn(async move {
                     if !super::dialogs::confirm(&me.window, "Remove everything from Recently viewed?\n\nFavorites and resume positions are kept.", "Clear history").await {
@@ -856,7 +861,7 @@ impl App {
         body.append(&self.kind_and_source_bar());
         if items.is_empty() {
             body.append(&kit::empty(
-                "document-open-recent-symbolic",
+                "madhyam-document-open-recent-symbolic",
                 if total == 0 {
                     "Nothing watched yet"
                 } else {
@@ -1042,7 +1047,7 @@ impl App {
             }
         }
         if !any {
-            body.append(&kit::empty("appointment-soon-symbolic", "No dates from this provider", "Recently added uses the dates an Xtream server sends. M3U playlists do not include them."));
+            body.append(&kit::empty("madhyam-appointment-soon-symbolic", "No dates from this provider", "Recently added uses the dates an Xtream server sends. M3U playlists do not include them."));
         }
         Ok(())
     }

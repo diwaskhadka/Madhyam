@@ -85,7 +85,12 @@ fn main() -> glib::ExitCode {
         .application_id(brand::APP_ID)
         .flags(gio::ApplicationFlags::NON_UNIQUE)
         .build();
+    gio::resources_register_include!("icons.gresource").expect("bundled icons");
     app.connect_activate(|app| {
+        if let Some(display) = gtk::gdk::Display::default() {
+            // Madhyam's own icons (linux/icons), found before any system theme.
+            gtk::IconTheme::for_display(&display).add_resource_path("/dev/madhyam/Madhyam/icons");
+        }
         // Icons installed next to the binary (AppImage, a build tree) before the system theme.
         if let (Ok(exe), Some(display)) = (std::env::current_exe(), gtk::gdk::Display::default()) {
             if let Some(share) = exe
