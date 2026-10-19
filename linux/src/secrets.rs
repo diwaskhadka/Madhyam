@@ -197,12 +197,19 @@ fn write_file(map: &HashMap<String, String>) {
 /// The stored secret, or None.
 pub fn lookup(key: &str) -> Option<String> {
     let _g = LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    if let Some(found) = Keyring::open().and_then(|k| k.lookup(key)) {
+    let keyring = Keyring::open();
+    if let Some(found) = keyring.as_ref().and_then(|k| k.lookup(key)) {
         if found.is_some() {
             return found;
         }
     }
-    read_file().remove(key)
+    let mut file = read_file();
+    let value = file.remove(key)?;
+    // Saved to the file while no keyring was reachable: move it to the keyring now that one is.
+    if keyring.is_some_and(|k| k.store(key, &value).is_some()) {
+        write_file(&file);
+    }
+    Some(value)
 }
 
 /// Store a secret; returns true when it went to the keyring (false: the private file).

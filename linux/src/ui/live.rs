@@ -386,6 +386,7 @@ impl App {
         };
         if !self.search.text().is_empty() || self.vod_search.borrow().is_some() {
             self.search.set_text("");
+            self.stop_search_timer();
             *self.vod_search.borrow_mut() = None;
             *self.search_hits.borrow_mut() = None;
             *self.live_search.borrow_mut() = None;
@@ -809,6 +810,7 @@ impl App {
     pub async fn go_to_live(self: &Rc<Self>, it: Item) {
         self.stop_playback();
         self.search.set_text("");
+        self.stop_search_timer();
         *self.vod_search.borrow_mut() = None;
         *self.search_hits.borrow_mut() = None;
         self.set_nav(Mode::Live);
@@ -987,7 +989,7 @@ impl App {
             let next = it.kind == "episode" && (i as usize) < self.playlist.borrow().len() - 1;
             self.controls.next_ep.set_visible(next);
             self.render_vod_page();
-            self.vod_scroll.vadjustment().set_value(0.0);
+            self.scroll_vod_top();
         }
     }
 

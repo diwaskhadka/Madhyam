@@ -331,7 +331,8 @@ impl Mpv {
             ("input-default-bindings", "no"),
             ("input-vo-keyboard", "no"),
             ("osc", "no"),
-            ("ytdl", "no"),
+            // Loads the YouTube hook (trailers); play_at turns it off per stream for IPTV URLs.
+            ("ytdl", "yes"),
             ("audio-client-name", crate::brand::NAME),
             ("title", crate::brand::NAME),
             ("sub-auto", "fuzzy"),

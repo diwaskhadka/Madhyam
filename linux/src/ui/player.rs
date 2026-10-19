@@ -448,7 +448,13 @@ impl App {
                 spawn(async move { me.on_end_reached().await });
             }
             Event::Error => {
-                if self.playing().is_some() {
+                let Some(it) = self.playing() else { return };
+                if it.id.is_empty() && it.url.contains("youtube.com/") {
+                    // YouTube often rejects an outdated yt-dlp (HTTP 403): the browser still works.
+                    self.stop_playback();
+                    self.set_status("The trailer could not play here (yt-dlp may need an update); opening it in your browser.");
+                    crate::ui::dialogs::open_uri(&self.window, &it.url);
+                } else {
                     self.set_status("Playback failed: the stream could not be opened. Try another channel or refresh the playlist.");
                 }
             }
