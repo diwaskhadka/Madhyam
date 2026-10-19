@@ -2740,6 +2740,21 @@ impl App {
         if t % 15 == 0 {
             self.save_progress();
         }
+        // MADHYAM_DEBUG=1: every 5 s, what the video pipeline is doing (for reports of a black picture).
+        if t % 5 == 0 && std::env::var_os("MADHYAM_DEBUG").is_some() && self.playing().is_some() {
+            if let (Some(m), Some(area)) = (self.mpv(), self.controls.area.borrow().as_ref()) {
+                crate::log(&format!(
+                    "debug: time-pos={:?} {} area {}x{} realized={} mapped={} fullscreen={}",
+                    m.get_f64("time-pos"),
+                    crate::mpv::stats(),
+                    area.width(),
+                    area.height(),
+                    area.is_realized(),
+                    area.is_mapped(),
+                    self.fullscreen.get()
+                ));
+            }
+        }
         if t % 60 == 0 && self.mode.get() == Mode::Live {
             let me = self.clone();
             spawn(async move {
