@@ -351,7 +351,7 @@ label { color: inherit; }
 .rail-button { min-width: 44px; min-height: 44px; border-radius: 12px; padding: 0; margin: 3px 10px;
   background: transparent; color: @Muted; border: none; box-shadow: none; }
 .rail-button:hover { background-color: @CardHover; color: @Fg; }
-.rail-button:checked { background-color: @RailActive; color: @Accent; }
+.rail-button:checked { background-color: @RailActive; color: @Accent; box-shadow: 9px 0 0 -6px @Accent; }
 .rail-button image { -gtk-icon-size: 20px; }
 .rail-sep { background-color: @Line; min-height: 1px; margin: 8px 18px; }
 .rail-mark { background-color: @Accent; min-width: 3px; border-radius: 2px; }

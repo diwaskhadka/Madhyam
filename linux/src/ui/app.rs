@@ -1318,9 +1318,16 @@ impl App {
         if s.window_startup == "Fullscreen" && screenshot.is_none() {
             self.toggle_fullscreen(true);
         }
-        if let Some(path) = screenshot {
-            self.capture_for_ci(&path).await;
-            return;
+        // Test helpers (--search, --settings, --open-first, --play-first): with --screenshot the
+        // window is saved to a PNG and closes; without it the app stays open for a person to look.
+        let scripted = ["--search", "--settings"].iter().any(|a| arg(a).is_some())
+            || flag("--open-first")
+            || flag("--play-first");
+        if screenshot.is_some() || scripted {
+            self.capture_for_ci(screenshot.as_deref()).await;
+            if screenshot.is_some() {
+                return;
+            }
         }
         if self.sources.borrow().is_empty() {
             self.open_add_source();
@@ -1371,7 +1378,7 @@ impl App {
 
     /// CI helper: render the window to a PNG with demo data, then quit.
     /// --mode M · --open-first · --search q · --settings Page · --play-first
-    async fn capture_for_ci(self: &Rc<Self>, path: &str) {
+    async fn capture_for_ci(self: &Rc<Self>, path: Option<&str>) {
         sleep_ms(1800).await;
         if let Some(q) = arg("--search") {
             self.search.set_text(&q);
@@ -1446,6 +1453,7 @@ impl App {
                 }
             }
         }
+        let Some(path) = path else { return };
         sleep_ms(400).await;
         if let Err(e) = self.save_png(path) {
             crate::log(&format!("screenshot failed: {e}"));
