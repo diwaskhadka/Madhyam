@@ -277,6 +277,7 @@ jobs:
           shot 18-custom-light '{ "Theme": "Custom", "CustomColor": "#6C4AD8", "CustomLight": true }' --mode Live
           if [ -f "$data/error.log" ]; then head -20 "$data/error.log" | sed 's/^/::warning::/'; fi
       - uses: actions/upload-artifact@v4
+        if: always() # a failed playback test is when the screenshots matter most
         with:
           name: linux-screenshots
           path: shots/*.png
