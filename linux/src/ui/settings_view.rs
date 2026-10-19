@@ -22,7 +22,7 @@ const SECTIONS: [(&str, &str, &str); 7] = [
     ),
     (
         "Guide",
-        "madhyam-appointment-soon-symbolic",
+        "madhyam-x-office-calendar-symbolic",
         "Programme guide",
     ),
     ("Data", "madhyam-folder-symbolic", "Backup & data"),

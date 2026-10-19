@@ -813,11 +813,7 @@ impl App {
             } else {
                 "Add to favorites"
             },
-            Some(if fav {
-                "madhyam-starred-symbolic"
-            } else {
-                "madhyam-non-starred-symbolic"
-            }),
+            Some("madhyam-emote-love-symbolic"),
             move || {
                 let (me, i) = (me.clone(), i2.clone());
                 spawn(async move { me.toggle_favorite(i).await });
@@ -904,11 +900,7 @@ impl App {
             } else {
                 "Add to favorites"
             },
-            Some(if fav {
-                "madhyam-starred-symbolic"
-            } else {
-                "madhyam-non-starred-symbolic"
-            }),
+            Some("madhyam-emote-love-symbolic"),
             move || {
                 let (me, i) = (me.clone(), i2.clone());
                 spawn(async move { me.toggle_favorite(i).await });
