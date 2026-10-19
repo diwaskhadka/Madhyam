@@ -133,7 +133,10 @@ pub fn info_window(owner: &impl IsA<gtk::Window>, heading: &str, rows: Vec<(Stri
     }
     root.append(&card);
     let ww = w.clone();
-    root.append(&footer(&[&button("Close", true, move || ww.close())]));
+    let close = button("Close", true, move || ww.close());
+    root.append(&footer(&[&close]));
+    // Otherwise the first selectable value takes focus and shows up selected.
+    GtkWindowExt::set_focus(&w, Some(&close));
     w.present();
 }
 
@@ -205,10 +208,12 @@ pub fn add_source(owner: &gtk::ApplicationWindow, done: impl Fn(NewSource) + 'st
     error.set_margin_top(8);
     root.append(&error);
     {
-        let (xbox, mbox, xt2) = (xbox.clone(), mbox.clone(), xt.clone());
+        let (xbox, mbox, xt2, error) = (xbox.clone(), mbox.clone(), xt.clone(), error.clone());
         xt.connect_toggled(move |_| {
             xbox.set_visible(xt2.is_active());
             mbox.set_visible(!xt2.is_active());
+            // The message was about the other kind's fields.
+            error.set_text("");
         });
     }
     {
