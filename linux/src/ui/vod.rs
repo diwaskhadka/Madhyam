@@ -324,7 +324,7 @@ impl App {
         self.layout();
         self.vod_header_title.set_text(&fresh.display_name());
         self.render_vod_page();
-        self.vod_scroll.vadjustment().set_value(0.0);
+        self.scroll_vod_top();
 
         let (repo, f2) = (self.repo.clone(), fresh.clone());
         let info = match bg(move || {
@@ -497,6 +497,8 @@ impl App {
         }
         self.stop_playback();
         self.search.set_text("");
+        // Clearing the box arms the filter-as-you-type timer, which would reload the grid over the page.
+        self.stop_search_timer();
         *self.vod_search.borrow_mut() = None;
         *self.search_hits.borrow_mut() = None;
         self.set_nav(if target.is_series() || target.kind == "episode" {
@@ -560,6 +562,13 @@ impl App {
     // ================================================================ page rendering
 
     /// (Re)build the page: hero (details) or About (while playing), plus episodes.
+    /// Back to the top of the details page, once the new content has its height.
+    pub fn scroll_vod_top(&self) {
+        let adj = self.vod_scroll.vadjustment();
+        adj.set_value(0.0);
+        gtk::glib::idle_add_local_once(move || adj.set_value(0.0));
+    }
+
     pub fn render_vod_page(self: &Rc<Self>) {
         kit::clear(&self.vod_content);
         let Some(it) = self.details.borrow().clone() else {

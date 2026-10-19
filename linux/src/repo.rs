@@ -434,7 +434,10 @@ fn parse_details(info: &Value) -> DetailsInfo {
     };
     if let Some(d) = &duration {
         if let Ok(mins) = d.trim().parse::<i32>() {
-            if mins < 600 {
+            if mins <= 0 {
+                // Providers send "0" for an unknown runtime: no chip.
+                duration = None;
+            } else if mins < 600 {
                 duration = Some(format!("{mins} min"));
             }
         }

@@ -817,6 +817,11 @@ impl App {
         kit::margins(&vod_content, 34, 14, 34, 30);
         vod_inner.append(&vod_content);
         let vod_scroll = kit::page_scroll(&vod_inner);
+        // The page is rebuilt under the focused button on every play: following focus would
+        // scroll the player card out of view.
+        if let Some(vp) = vod_scroll.child().and_downcast::<gtk::Viewport>() {
+            vp.set_scroll_to_focus(false);
+        }
         vod_col.append(&vod_scroll);
         vod_page.add_overlay(&vod_col);
 
@@ -2469,7 +2474,7 @@ impl App {
 
     // ================================================================ search pill
 
-    fn stop_search_timer(&self) {
+    pub(super) fn stop_search_timer(&self) {
         if let Some(id) = self.search_timer.borrow_mut().take() {
             id.remove();
         }
