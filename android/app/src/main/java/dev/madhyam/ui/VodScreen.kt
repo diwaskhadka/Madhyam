@@ -89,6 +89,8 @@ private fun ratingLabel(r: Int) = if (r <= 0) "Any rating" else "Rating $r+"
 @Composable
 fun VodScreen(vm: MainViewModel) {
     var dialog by remember { mutableStateOf<String?>(null) }
+    // A new sort or rating rebuilds the grid, header included: put the focus back on the button.
+    var refocus by remember { mutableStateOf<String?>(null) }
     Row(Modifier.fillMaxSize()) {
         CategoryPanel(vm, Modifier.width(230.dp))
         // A new list (section, category, sort, rating) starts with fresh scroll and focus memory.
@@ -100,6 +102,18 @@ fun VodScreen(vm: MainViewModel) {
             // Entering the grid lands on the opened poster, else the first one (not on Sort).
             val back = remember { FocusRequester() }
             val focusIndex = openedIndex.coerceAtLeast(0)
+            val sortButton = remember { FocusRequester() }
+            val ratingButton = remember { FocusRequester() }
+            LaunchedEffect(Unit) {
+                val target = refocus ?: return@LaunchedEffect
+                refocus = null
+                // Twice: when the dialog's window closes, the page's window restores its own focus.
+                val button = if (target == "rating") ratingButton else sortButton
+                delay(150)
+                runCatching { button.requestFocus() }
+                delay(350)
+                runCatching { button.requestFocus() }
+            }
             // Back from a details page: the focus returns to the poster that was opened.
             LaunchedEffect(Unit) {
                 if (openedIndex >= 0) {
@@ -123,7 +137,7 @@ fun VodScreen(vm: MainViewModel) {
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
                 item(span = { GridItemSpan(maxLineSpan) }, key = "\u0000header") {
-                    GridHeader(vm, onSort = { dialog = "sort" }, onRating = { dialog = "rating" })
+                    GridHeader(vm, sortButton, ratingButton, onSort = { dialog = "sort" }, onRating = { dialog = "rating" })
                 }
                 if (headerRows == 2) {
                     item(span = { GridItemSpan(maxLineSpan) }, key = "\u0000continue") { ContinueRow(vm) }
@@ -140,15 +154,15 @@ fun VodScreen(vm: MainViewModel) {
         }
     }
     when (dialog) {
-        "sort" -> OptionDialog("Sort by", SortOptions, vm.settings.vodSort, { vm.setVodSort(it) }) { dialog = null }
-        "rating" -> OptionDialog("Minimum rating", RatingOptions.map { it to ratingLabel(it) }, vm.settings.vodMinRating, { vm.setVodMinRating(it) }) {
+        "sort" -> OptionDialog("Sort by", SortOptions, vm.settings.vodSort, { refocus = "sort"; vm.setVodSort(it) }) { dialog = null }
+        "rating" -> OptionDialog("Minimum rating", RatingOptions.map { it to ratingLabel(it) }, vm.settings.vodMinRating, { refocus = "rating"; vm.setVodMinRating(it) }) {
             dialog = null
         }
     }
 }
 
 @Composable
-private fun GridHeader(vm: MainViewModel, onSort: () -> Unit, onRating: () -> Unit) {
+private fun GridHeader(vm: MainViewModel, sortButton: FocusRequester, ratingButton: FocusRequester, onSort: () -> Unit, onRating: () -> Unit) {
     val noun = if (vm.section == Section.Series) "series" else "movies"
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
@@ -161,10 +175,10 @@ private fun GridHeader(vm: MainViewModel, onSort: () -> Unit, onRating: () -> Un
             )
         }
         val pad = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-        OutlinedButton(onClick = onSort, contentPadding = pad) {
+        OutlinedButton(onClick = onSort, contentPadding = pad, modifier = Modifier.focusRequester(sortButton)) {
             Text(SortOptions.firstOrNull { it.first == vm.settings.vodSort }?.second ?: "Provider order", fontSize = 13.sp)
         }
-        OutlinedButton(onClick = onRating, contentPadding = pad, modifier = Modifier.padding(start = 8.dp)) {
+        OutlinedButton(onClick = onRating, contentPadding = pad, modifier = Modifier.padding(start = 8.dp).focusRequester(ratingButton)) {
             Text(ratingLabel(vm.settings.vodMinRating), fontSize = 13.sp)
         }
     }
@@ -331,6 +345,8 @@ fun <T> OptionDialog(title: String, options: List<Pair<T, String>>, current: T, 
 
 /** Poster column width for Settings › Appearance › Cover size. */
 fun coverWidth(size: String): Dp = when (size) {
+    "Tiny" -> 76.dp
+    "Extra small" -> 92.dp
     "Small" -> 112.dp
     "Large" -> 172.dp
     else -> 136.dp

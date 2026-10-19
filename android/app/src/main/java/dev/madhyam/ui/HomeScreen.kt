@@ -166,7 +166,7 @@ private fun HeroButton(label: String, icon: ImageVector, modifier: Modifier = Mo
 }
 
 @Composable
-private fun RowTitle(title: String, count: Int) {
+internal fun RowTitle(title: String, count: Int) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 10.dp)) {
         Text(title, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
         Text("  $count", color = Muted, fontSize = 13.sp)
@@ -175,12 +175,12 @@ private fun RowTitle(title: String, count: Int) {
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-private fun PosterRow(vm: MainViewModel, title: String, list: List<Item>, resume: Boolean = false) {
+internal fun PosterRow(vm: MainViewModel, title: String, list: List<Item>, resume: Boolean = false) {
     Column {
         RowTitle(title, list.size)
         LazyRow(Modifier.focusRestorer(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             items(list, key = { it.id }) { item ->
-                PosterCard(vm, item, width = 132.dp, onClick = { if (resume) vm.resume(item) else vm.open(item) })
+                PosterCard(vm, item, width = coverWidth(vm.settings.coverSize), onClick = { if (resume) vm.resume(item) else vm.open(item) })
             }
         }
     }
@@ -188,7 +188,7 @@ private fun PosterRow(vm: MainViewModel, title: String, list: List<Item>, resume
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-private fun ChannelRow(vm: MainViewModel, title: String, list: List<Item>) {
+internal fun ChannelRow(vm: MainViewModel, title: String, list: List<Item>) {
     val strip = vm.settings.stripPrefixes
     val now = System.currentTimeMillis() / 1000
     Column {

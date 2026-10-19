@@ -404,7 +404,7 @@ internal fun TextEditDialog(label: String, initial: String, type: KeyboardType, 
                 visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
                 keyboardOptions = KeyboardOptions(keyboardType = type, imeAction = ImeAction.Done),
                 keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { save() }),
-                modifier = Modifier.fillMaxWidth().focusRequester(field).tvTextField { text.isEmpty() },
+                modifier = Modifier.fillMaxWidth().focusRequester(field).tvTextField(atStart = { text.isEmpty() }),
             )
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(onClick = { save() }) { Text("Save") }
@@ -722,8 +722,8 @@ private fun LazyListScope.appearance(vm: MainViewModel) {
         }
     }
     item {
-        ChoiceRow("Cover size", "Posters in Movies and Series", st.coverSize,
-            listOf("Small" to "Small", "Medium" to "Medium", "Large" to "Large")) { vm.changeSettings { coverSize = it } }
+        ChoiceRow("Cover size", "Posters in Movies, Series, Search and Home", st.coverSize,
+            listOf("Tiny" to "Tiny", "Extra small" to "Extra small", "Small" to "Small", "Medium" to "Medium", "Large" to "Large")) { vm.changeSettings { coverSize = it } }
     }
     item {
         SwitchRow("Titles under covers", "Off shows the title only on the focused poster", st.titlesUnderCovers) {

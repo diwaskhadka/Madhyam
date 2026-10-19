@@ -1,25 +1,32 @@
 package dev.madhyam.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
@@ -52,28 +59,48 @@ fun BrowseScreen(vm: MainViewModel) {
 @Composable
 private fun Header(vm: MainViewModel) {
     if (vm.section == Section.Search) {
-        // Opening Search puts the focus on the box (not on a filter chip); OK opens the keyboard.
+        // Opening Search puts the focus on the box (not on a filter chip). Until OK is pressed the
+        // box is a plain bar, not a text field: some TVs open the keyboard as soon as a text field
+        // has the focus, and the next OK then typed the keyboard's first key. OK on the bar swaps
+        // in the text field with the keyboard; leaving the field (Down, Up) brings the bar back.
         // With results showing (back from one of them), the list keeps the focus.
         val box = remember { FocusRequester() }
+        val field = remember { FocusRequester() }
+        // Down from the box goes to the filter chips under it, not to a poster further down.
+        val chips = remember { FocusRequester() }
+        var editing by remember { mutableStateOf(false) }
+        val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
         LaunchedEffect(Unit) {
             if (vm.query.isBlank()) {
                 delay(100)
                 runCatching { box.requestFocus() }
             }
         }
-        OutlinedTextField(
-            value = vm.query,
-            onValueChange = vm::search,
-            label = { androidx.compose.material3.Text("Search channels, movies, series") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search, showKeyboardOnFocus = false),
-            modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp).focusRequester(box).tvTextField { vm.query.isEmpty() },
-        )
+        if (editing) {
+            var hadFocus by remember { mutableStateOf(false) }
+            LaunchedEffect(Unit) {
+                delay(50)
+                runCatching { field.requestFocus() }
+                keyboard?.show()
+            }
+            OutlinedTextField(
+                value = vm.query,
+                onValueChange = vm::search,
+                label = { androidx.compose.material3.Text("Search channels, movies, series") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp).focusRequester(field).focusProperties { down = chips }
+                    .onFocusChanged { if (it.hasFocus) hadFocus = true else if (hadFocus) editing = false }
+                    .tvTextField(atStart = { vm.query.isEmpty() }),
+            )
+        } else {
+            SearchBar(vm.query, Modifier.fillMaxWidth().padding(bottom = 10.dp).focusRequester(box).focusProperties { down = chips }) { editing = true }
+        }
         // Which kinds to search, and whether to look in every playlist (Windows advanced search).
         val st = vm.settings
         @Suppress("UNUSED_EXPRESSION") vm.settingsVersion
         Row(Modifier.padding(bottom = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            ToggleChip("Live TV", st.searchLive) { vm.changeSearchFilter { searchLive = !searchLive } }
+            ToggleChip("Live TV", st.searchLive, Modifier.focusRequester(chips)) { vm.changeSearchFilter { searchLive = !searchLive } }
             ToggleChip("Movies", st.searchMovies) { vm.changeSearchFilter { searchMovies = !searchMovies } }
             ToggleChip("Series", st.searchSeries) { vm.changeSearchFilter { searchSeries = !searchSeries } }
             if (vm.sources.size > 1) {
@@ -99,6 +126,39 @@ private fun Header(vm: MainViewModel) {
     }
 }
 
+/** The search box while it is not being typed in: looks like the text field, OK opens it. */
+@Composable
+private fun SearchBar(query: String, modifier: Modifier, onOpen: () -> Unit) {
+    androidx.tv.material3.Surface(
+        onClick = onOpen,
+        modifier = modifier.height(64.dp),
+        shape = androidx.tv.material3.ClickableSurfaceDefaults.shape(androidx.compose.foundation.shape.RoundedCornerShape(6.dp)),
+        colors = androidx.tv.material3.ClickableSurfaceDefaults.colors(
+            containerColor = Color.Transparent,
+            focusedContainerColor = Color.Transparent,
+            contentColor = TextColor,
+            focusedContentColor = TextColor,
+        ),
+        scale = androidx.tv.material3.ClickableSurfaceDefaults.scale(focusedScale = 1f),
+        border = androidx.tv.material3.ClickableSurfaceDefaults.border(
+            border = androidx.tv.material3.Border(androidx.compose.foundation.BorderStroke(1.dp, Muted)),
+            focusedBorder = androidx.tv.material3.Border(androidx.compose.foundation.BorderStroke(2.dp, Accent)),
+        ),
+    ) {
+        Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Search, contentDescription = null, tint = Muted, modifier = Modifier.size(22.dp))
+            Text(
+                query.ifBlank { "Search channels, movies, series" },
+                color = if (query.isBlank()) Muted else TextColor,
+                fontSize = 16.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 12.dp),
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun ItemList(vm: MainViewModel) {
@@ -115,9 +175,13 @@ private fun ItemList(vm: MainViewModel) {
         }
         return
     }
+    if (vm.section == Section.Search) {
+        SearchCards(vm)
+        return
+    }
     val now = System.currentTimeMillis() / 1000
     val strip = vm.settings.stripPrefixes
-    // Search and the "All" filter group results by kind under a heading (Windows pages do the same).
+    // The "All" filter groups results by kind under a heading (Windows pages do the same).
     val groups: List<Pair<String, List<Item>>> = listOf(
         "Live TV" to vm.items.filter { it.isLive },
         "Movies" to vm.items.filter { it.kind == "movie" },
@@ -135,6 +199,25 @@ private fun ItemList(vm: MainViewModel) {
                 ItemRow(vm, item, now, strip, onFocused = {})
             }
         }
+    }
+}
+
+/** Search results as rows of cards, like Home: channel cards, then posters for each kind. */
+@Composable
+private fun SearchCards(vm: MainViewModel) {
+    val live = vm.items.filter { it.isLive }
+    val movies = vm.items.filter { it.kind == "movie" }
+    val series = vm.items.filter { it.isSeries }
+    val episodes = vm.items.filter { it.isEpisode }
+    LazyColumn(
+        Modifier.focusRestorer(),
+        contentPadding = PaddingValues(top = 6.dp, bottom = 40.dp),
+        verticalArrangement = Arrangement.spacedBy(22.dp),
+    ) {
+        if (live.isNotEmpty()) item(key = "live") { ChannelRow(vm, "Live TV", live) }
+        if (movies.isNotEmpty()) item(key = "movies") { PosterRow(vm, "Movies", movies) }
+        if (series.isNotEmpty()) item(key = "series") { PosterRow(vm, "Series", series) }
+        if (episodes.isNotEmpty()) item(key = "episodes") { PosterRow(vm, "Episodes", episodes) }
     }
 }
 

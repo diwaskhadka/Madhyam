@@ -71,7 +71,7 @@ fun SubtitleSearchDialog(vm: MainViewModel) {
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                     keyboardActions = KeyboardActions(onSearch = { vm.searchSubtitles(query) }),
-                    modifier = Modifier.weight(1f).tvTextField { query.isEmpty() },
+                    modifier = Modifier.weight(1f).tvTextField(atStart = { query.isEmpty() }),
                 )
                 Spacer(Modifier.width(10.dp))
                 Button(onClick = { if (armed) vm.searchSubtitles(query) }) { Text("Search") }

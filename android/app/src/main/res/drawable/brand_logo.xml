@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The logo for the loading screen (Compose cannot draw the adaptive launcher icon). Geometry from branding/icon.svg. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="150dp" android:height="150dp"
+    android:viewportWidth="512" android:viewportHeight="512">
+    <path android:pathData="M112,0 H400 A112,112 0 0 1 512,112 V400 A112,112 0 0 1 400,512 H112 A112,112 0 0 1 0,400 V112 A112,112 0 0 1 112,0 Z"
+        android:fillColor="@color/brand_white" />
+    <group>
+        <path android:pathData="M141,398 L371,256" android:strokeColor="@color/brand_crimson"
+            android:strokeWidth="88" android:strokeLineCap="round" />
+        <path android:pathData="M141,114 L141,398" android:strokeColor="@color/brand_blue"
+            android:strokeWidth="88" android:strokeLineCap="round" />
+        <path android:pathData="M141,114 L371,256" android:strokeColor="@color/brand_crimson"
+            android:strokeWidth="88" android:strokeLineCap="round" />
+        <path android:pathData="M97,138.5 L185,192.8 L185,236 Z" android:fillColor="@color/brand_blue_shade" />
+        <path android:pathData="M185,319.2 L227,293 L185,422.5 Z" android:fillColor="@color/brand_crimson_shade" />
+    </group>
+</vector>
