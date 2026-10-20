@@ -14,5 +14,8 @@ renamed `madhyam-<original name>.svg` so a system theme never replaces them.
   the repository does not apply to them.
 - Source: https://gitlab.gnome.org/GNOME/adwaita-icon-theme
 
+Exception: `madhyam-coffee-symbolic.svg` (the "Buy me a coffee" cup) is drawn for Madhyam,
+since Adwaita has no cup; it is under the repository's MIT license.
+
 To add one: copy the `<name>-symbolic.svg` from adwaita-icon-theme to
 `scalable/actions/madhyam-<name>-symbolic.svg` and use `"madhyam-<name>-symbolic"` in the code.

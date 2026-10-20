@@ -362,8 +362,13 @@ impl Mpv {
     }
 
     pub fn set(&self, name: &str, value: &str) {
+        self.try_set(name, value);
+    }
+
+    /// Like `set`; false when mpv rejects the value (an option an older mpv does not have).
+    pub fn try_set(&self, name: &str, value: &str) -> bool {
         let (n, v) = (c(name), c(value));
-        unsafe { mpv_set_property_string(self.handle, n.as_ptr(), v.as_ptr()) };
+        unsafe { mpv_set_property_string(self.handle, n.as_ptr(), v.as_ptr()) >= 0 }
     }
 
     pub fn set_f64(&self, name: &str, mut value: f64) {

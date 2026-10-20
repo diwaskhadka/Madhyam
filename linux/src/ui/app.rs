@@ -158,6 +158,7 @@ pub struct App {
     pub search: gtk::Entry,
     pub search_clear: gtk::Button,
     pub status: gtk::Label,
+    pub unlock_btn: gtk::Button,
     pub body: gtk::Box,
     pub stack: gtk::Stack,
 
@@ -264,6 +265,8 @@ pub struct App {
 
     // live list
     pub live_rows: RefCell<Vec<LiveRow>>,
+    /// Channels of the loaded pages left out by parental controls (paging counts them).
+    pub live_skipped: Cell<usize>,
     pub live_total: Cell<i64>,
     pub live_loading: Cell<bool>,
     pub live_search: RefCell<Option<String>>,
@@ -454,6 +457,15 @@ impl App {
         status.set_xalign(0.0);
         status.set_hexpand(true);
         topbar.append(&status);
+        // Parental controls: shown while the PIN is remembered; clicking locks again.
+        let unlock_btn = kit::icon_button(
+            "madhyam-changes-allow-symbolic",
+            "Unlocked for this session: click to lock again",
+            || {},
+        );
+        unlock_btn.add_css_class("unlocked-button");
+        unlock_btn.set_visible(false);
+        topbar.append(&unlock_btn);
 
         // ------------------------------------------------ categories panel
         let cats_panel = kit::vbox(0);
@@ -872,6 +884,7 @@ impl App {
             search,
             search_clear,
             status,
+            unlock_btn,
             body,
             stack,
             cats_panel,
@@ -960,6 +973,7 @@ impl App {
             group_silent: Cell::new(false),
             country_tagging: Cell::new(false),
             live_rows: RefCell::new(Vec::new()),
+            live_skipped: Cell::new(0),
             live_total: Cell::new(0),
             live_loading: Cell::new(false),
             live_search: RefCell::new(None),
@@ -1004,6 +1018,7 @@ impl App {
         });
         match mpv {
             Some(m) => {
+                crate::sub_style::apply(&m);
                 let _ = app.mpv.set(m);
             }
             None => crate::log("libmpv could not be initialised"),
@@ -1076,6 +1091,7 @@ impl App {
         }
         on!(self.playlist_btn, |a: Rc<App>| a.playlist_menu());
         on!(add_btn, |a: Rc<App>| a.open_add_source());
+        on!(self.unlock_btn, |a: Rc<App>| a.lock_again());
         on!(self.search_clear, |a: Rc<App>| {
             a.search.set_text("");
             a.search.grab_focus();
@@ -2143,6 +2159,15 @@ impl App {
 
     pub fn open_add_source(self: &Rc<Self>) {
         let me = self.clone();
+        spawn(async move {
+            if me.settings_allowed().await {
+                me.open_add_source_now();
+            }
+        });
+    }
+
+    fn open_add_source_now(self: &Rc<Self>) {
+        let me = self.clone();
         super::dialogs::add_source(&self.window, move |r| {
             let me = me.clone();
             spawn(async move {
@@ -2188,6 +2213,9 @@ impl App {
     }
 
     pub async fn remove_source(self: &Rc<Self>, s: Source) {
+        if !self.settings_allowed().await {
+            return;
+        }
         let ok = super::dialogs::confirm(
             &self.window,
             &format!("Remove \"{}\" and its channels, movies and series?", s.name),
@@ -2405,6 +2433,21 @@ impl App {
     pub fn nav_checked(self: &Rc<Self>, mode: Mode) {
         if self.nav_silent.get() {
             return;
+        }
+        // Parental controls can lock Settings: stay where we are until the PIN is entered.
+        if mode == Mode::Settings && mode != self.mode.get() {
+            let s = settings::snapshot();
+            if s.parental_enabled && s.parental_lock_settings && !crate::parental::unlocked() {
+                self.set_nav(self.mode.get());
+                let me = self.clone();
+                spawn(async move {
+                    if me.settings_allowed().await {
+                        me.nav_button(Mode::Settings).set_active(true);
+                    }
+                });
+                return;
+            }
+            crate::parental::touch();
         }
         // One video surface: leaving the section that is playing stops playback.
         if self.playing().is_some() && mode != self.mode.get() {
@@ -2690,19 +2733,19 @@ impl App {
                 true
             }
             gdk::Key::Page_Up if playing.as_ref().is_some_and(|p| p.is_live()) => {
-                spawn(async move { me.play_at(me.play_index.get() - 1).await });
+                spawn(async move { me.zap(-1).await });
                 true
             }
             gdk::Key::Up if fs && playing.as_ref().is_some_and(|p| p.is_live()) => {
-                spawn(async move { me.play_at(me.play_index.get() - 1).await });
+                spawn(async move { me.zap(-1).await });
                 true
             }
             gdk::Key::Page_Down if playing.as_ref().is_some_and(|p| p.is_live()) => {
-                spawn(async move { me.play_at(me.play_index.get() + 1).await });
+                spawn(async move { me.zap(1).await });
                 true
             }
             gdk::Key::Down if fs && playing.as_ref().is_some_and(|p| p.is_live()) => {
-                spawn(async move { me.play_at(me.play_index.get() + 1).await });
+                spawn(async move { me.zap(1).await });
                 true
             }
             gdk::Key::Left if !typing && (ctrl || fs || vod) => {
@@ -2742,6 +2785,7 @@ impl App {
         let t = self.ticks.get() + 1;
         self.ticks.set(t);
         self.update_seek_bar();
+        self.update_lock_button(); // hides itself when the 10 minutes run out
         if t % 15 == 0 {
             self.save_progress();
         }

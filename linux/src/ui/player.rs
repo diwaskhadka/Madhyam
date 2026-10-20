@@ -759,9 +759,16 @@ impl App {
                 move || m.set("sid", &id.to_string()),
             )
         }));
-        let (me1, me2) = (self.clone(), self.clone());
+        let (me1, me2, me3) = (self.clone(), self.clone(), self.clone());
         let fixed = vec![
             MenuRow::sep(),
+            MenuRow::new(
+                "madhyam-preferences-system-symbolic",
+                "Subtitle style…",
+                false,
+                move || super::sub_style_view::open_window(&me3),
+            )
+            .sub("Size, colours, background, position"),
             MenuRow::new(
                 "madhyam-document-open-symbolic",
                 "Load subtitle file…",

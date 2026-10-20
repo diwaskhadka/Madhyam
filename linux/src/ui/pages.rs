@@ -118,6 +118,7 @@ impl App {
             .await?
             .into_iter()
             .filter(|i| !i.is_live() && i.duration > 0.0 && !i.is_watched())
+            .filter(|i| !crate::parental::hide_in_lists(&s, i))
             .collect();
         if version != self.load_version.get() {
             return Ok(());
@@ -172,9 +173,10 @@ impl App {
         }
         if s.dash_live_favorites {
             let repo = self.repo.clone();
-            let fav = bg(move || repo.favorites(Some("live")))
+            let mut fav = bg(move || repo.favorites(Some("live")))
                 .await
                 .unwrap_or_default();
+            fav.retain(|i| !crate::parental::hide_in_lists(&s, i));
             if !fav.is_empty() {
                 self.update_now_next(&fav).await;
                 body.append(&kit::section_header(
@@ -193,9 +195,10 @@ impl App {
         }
         if s.dash_recent_live {
             let repo = self.repo.clone();
-            let recent = bg(move || repo.recent(Some("live"), 20))
+            let mut recent = bg(move || repo.recent(Some("live"), 20))
                 .await
                 .unwrap_or_default();
+            recent.retain(|i| !crate::parental::hide_in_lists(&s, i));
             if !recent.is_empty() {
                 self.update_now_next(&recent).await;
                 body.append(&kit::section_header(
@@ -218,7 +221,7 @@ impl App {
                 .await
                 .unwrap_or_default()
                 .into_iter()
-                .filter(|i| !i.is_live())
+                .filter(|i| !i.is_live() && !crate::parental::hide_in_lists(&s, i))
                 .collect();
             if !fav.is_empty() {
                 body.append(&kit::section_header(
@@ -250,7 +253,9 @@ impl App {
                 ("movie", "Recently added movies"),
                 ("series", "Recently added series"),
             ] {
-                let (repo, id, hidden) = (self.repo.clone(), src.id, s.hidden(src.id, kind));
+                let mut hidden = s.hidden(src.id, kind);
+                hidden.extend(self.locked_groups(src.id, kind).await);
+                let (repo, id) = (self.repo.clone(), src.id);
                 let (total, items) = bg(move || {
                     repo.query(
                         kind,
@@ -658,6 +663,11 @@ impl App {
             let s = settings::snapshot();
             hits.retain(|h| !s.hidden(h.source_id, &h.kind).contains(&h.group));
         }
+        {
+            // Parental controls: locked categories and adult channels stay out of results.
+            let s = settings::snapshot();
+            hits.retain(|h| !crate::parental::hide_in_lists(&s, h));
+        }
         let sub = if hits.is_empty() {
             "Nothing found.".to_string()
         } else {
@@ -980,7 +990,9 @@ impl App {
             ("series", "Series", Mode::Series),
             ("live", "Live TV", Mode::Live),
         ] {
-            let (repo, id, hidden) = (self.repo.clone(), src.id, s.hidden(src.id, kind));
+            let mut hidden = s.hidden(src.id, kind);
+            hidden.extend(self.locked_groups(src.id, kind).await);
+            let (repo, id) = (self.repo.clone(), src.id);
             let (total, items) = bg(move || {
                 repo.query(
                     kind,

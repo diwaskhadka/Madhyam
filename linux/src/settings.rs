@@ -45,6 +45,36 @@ pub struct AppSettings {
     pub os_languages: String,
     pub omdb_api_key: String,
 
+    // ---- Subtitle style (YouTube-like caption options)
+    pub sub_font_size_pt: i32,
+    /// Sans-serif | Serif | Monospace | Casual | Small caps
+    pub sub_font: String,
+    pub sub_text_color: String,
+    pub sub_text_opacity: i32,
+    pub sub_back_color: String,
+    pub sub_back_opacity: i32,
+    pub sub_window_color: String,
+    pub sub_window_opacity: i32,
+    /// None | Drop shadow | Raised | Depressed | Outline
+    pub sub_edge: String,
+    /// Bottom | Lower third | Middle | Top
+    pub sub_position: String,
+    /// Fine position in %, positive = up.
+    pub sub_pos_offset: i32,
+
+    // ---- Parental controls
+    pub parental_enabled: bool,
+    /// SHA-256 (hex) of salt + PIN; the PIN itself is never stored.
+    pub parental_pin_hash: String,
+    pub parental_pin_salt: String,
+    pub parental_auto_adult: bool,
+    pub parental_lock_settings: bool,
+    /// 0 = any age, else 7 / 12 / 16 / 18.
+    pub parental_max_age: i32,
+    /// Locked / explicitly unlocked category names per "sourceId:kind" (like HiddenCategories).
+    pub locked_categories: HashMap<String, Vec<String>>,
+    pub unlocked_categories: HashMap<String, Vec<String>>,
+
     // ---- Guide
     /// Timeline | List
     pub guide_view: String,
@@ -106,6 +136,25 @@ impl Default for AppSettings {
             os_password: String::new(),
             os_languages: "en".into(),
             omdb_api_key: String::new(),
+            sub_font_size_pt: 24,
+            sub_font: "Sans-serif".into(),
+            sub_text_color: "White".into(),
+            sub_text_opacity: 100,
+            sub_back_color: "Black".into(),
+            sub_back_opacity: 50,
+            sub_window_color: "Black".into(),
+            sub_window_opacity: 0,
+            sub_edge: "Drop shadow".into(),
+            sub_position: "Bottom".into(),
+            sub_pos_offset: 0,
+            parental_enabled: false,
+            parental_pin_hash: String::new(),
+            parental_pin_salt: String::new(),
+            parental_auto_adult: true,
+            parental_lock_settings: false,
+            parental_max_age: 0,
+            locked_categories: HashMap::new(),
+            unlocked_categories: HashMap::new(),
             guide_view: "Timeline".into(),
             epg_offset_minutes: 0,
             epg_refresh_hours: 12,

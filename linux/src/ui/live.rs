@@ -53,6 +53,34 @@ impl App {
         }
     }
 
+    /// Groups left out of "All" lists: hidden ones, plus locked ones while parental controls
+    /// are locked.
+    pub fn excluded_now(&self) -> Vec<String> {
+        let mut out = self.hidden_now();
+        if self.group_field_now().is_none() {
+            if let Some(src) = self.source.borrow().as_ref() {
+                let s = settings::snapshot();
+                let cats = self.all_categories.borrow();
+                out.extend(crate::parental::locked_names(
+                    &s,
+                    src.id,
+                    self.kind_now(),
+                    cats.iter().filter(|r| !r.all).map(|r| r.name.as_str()),
+                ));
+            }
+        }
+        out
+    }
+
+    /// Why a category of the current section is locked (shown even while unlocked).
+    fn category_lock(&self, name: &str) -> Option<crate::parental::Lock> {
+        if self.group_field_now().is_some() {
+            return None;
+        }
+        let src = self.source.borrow().as_ref()?.id;
+        crate::parental::category_lock(&settings::snapshot(), src, self.kind_now(), name)
+    }
+
     pub fn playing(&self) -> Option<Item> {
         let i = self.play_index.get();
         if i < 0 {
@@ -194,7 +222,12 @@ impl App {
                     .map(|r| r.0)
                     .unwrap_or(0)
             }
-            _ => visible.iter().map(|g| g.count).sum(),
+            // Locked categories are left out of "All items" while locked.
+            _ => visible
+                .iter()
+                .filter(|g| crate::parental::unlocked() || self.category_lock(&g.name).is_none())
+                .map(|g| g.count)
+                .sum(),
         };
         if version != self.load_version.get() {
             return;
@@ -213,13 +246,22 @@ impl App {
         self.apply_category_filter(select, true);
     }
 
-    fn category_row(r: &CategoryRow) -> gtk::ListBoxRow {
+    fn category_row(r: &CategoryRow, lock: Option<crate::parental::Lock>) -> gtk::ListBoxRow {
         let g = kit::hbox(10);
         kit::margins(&g, 12, 9, 10, 9);
         let name = kit::text(&r.name, 13.5, "", 400, false);
         name.set_hexpand(true);
         name.set_max_width_chars(1);
         g.append(&name);
+        if let Some(lock) = lock {
+            let i = kit::icon("madhyam-changes-prevent-symbolic", 13);
+            i.add_css_class("lock-mark");
+            i.set_tooltip_text(Some(match lock {
+                crate::parental::Lock::Adult => "Adult",
+                crate::parental::Lock::Category => "Locked",
+            }));
+            g.append(&i);
+        }
         g.append(&kit::count_pill(r.count));
         let row = gtk::ListBoxRow::new();
         row.set_child(Some(&g));
@@ -238,8 +280,12 @@ impl App {
             .collect();
         self.group_silent.set(true);
         self.group_list.remove_all();
-        for r in &rows {
-            self.group_list.append(&Self::category_row(r));
+        let locks: Vec<_> = rows
+            .iter()
+            .map(|r| (!r.all).then(|| self.category_lock(&r.name)).flatten())
+            .collect();
+        for (r, lock) in rows.iter().zip(&locks) {
+            self.group_list.append(&Self::category_row(r, *lock));
         }
         *self.shown_categories.borrow_mut() = rows.clone();
         let target = select.clone().or_else(|| self.group.borrow().clone());
@@ -258,6 +304,10 @@ impl App {
             && rows.len() > 1
         {
             pick = Some(1);
+        }
+        // Never open a locked category by itself: fall back to the first open one.
+        if load && !crate::parental::unlocked() && pick.is_some_and(|i| locks[i].is_some()) {
+            pick = (1..locks.len()).find(|i| locks[*i].is_none()).or(Some(0));
         }
         if let Some(i) = pick {
             if let Some(row) = self.group_list.row_at_index(i as i32) {
@@ -384,6 +434,43 @@ impl App {
         let Some(row) = self.shown_categories.borrow().get(index as usize).cloned() else {
             return;
         };
+        // A locked category: back to the previous row until the PIN is entered.
+        if !row.all && !crate::parental::unlocked() {
+            if let Some(lock) = self.category_lock(&row.name) {
+                let prev = self.group.borrow().clone();
+                let prev_i = self
+                    .shown_categories
+                    .borrow()
+                    .iter()
+                    .position(|r| match &prev {
+                        None => r.all,
+                        Some(p) => !r.all && &r.name == p,
+                    });
+                self.group_silent.set(true);
+                match prev_i.and_then(|i| self.group_list.row_at_index(i as i32)) {
+                    Some(r) => self.group_list.select_row(Some(&r)),
+                    None => self.group_list.unselect_all(),
+                }
+                self.group_silent.set(false);
+                let why = match lock {
+                    crate::parental::Lock::Adult => {
+                        format!("“{}” is locked as adult content.", row.name)
+                    }
+                    crate::parental::Lock::Category => {
+                        format!("The category “{}” is locked.", row.name)
+                    }
+                };
+                let me = self.clone();
+                spawn(async move {
+                    if me.require_pin(&why).await {
+                        if let Some(r) = me.group_list.row_at_index(index) {
+                            me.group_list.select_row(Some(&r));
+                        }
+                    }
+                });
+                return;
+            }
+        }
         if !self.search.text().is_empty() || self.vod_search.borrow().is_some() {
             self.search.set_text("");
             self.stop_search_timer();
@@ -424,6 +511,7 @@ impl App {
         if reset {
             self.item_list.remove_all();
             self.live_rows.borrow_mut().clear();
+            self.live_skipped.set(0);
             self.live_total.set(0);
             *self.live_search.borrow_mut() = None;
             self.list_title
@@ -431,7 +519,7 @@ impl App {
         }
         let group = self.group.borrow().clone();
         let hidden = if group.is_none() {
-            self.hidden_now()
+            self.excluded_now()
         } else {
             Vec::new()
         };
@@ -440,7 +528,7 @@ impl App {
         } else {
             "provider"
         };
-        let offset = self.live_rows.borrow().len();
+        let offset = self.live_rows.borrow().len() + self.live_skipped.get();
         let field = self.group_field_now();
         let (repo, id) = (self.repo.clone(), src.id);
         let result = bg(move || {
@@ -473,7 +561,8 @@ impl App {
     pub async fn load_more_live(self: Rc<Self>) {
         if self.live_search.borrow().is_none()
             && !self.live_loading.get()
-            && (self.live_rows.borrow().len() as i64) < self.live_total.get()
+            && ((self.live_rows.borrow().len() + self.live_skipped.get()) as i64)
+                < self.live_total.get()
         {
             self.load_live(false).await;
         }
@@ -572,9 +661,15 @@ impl App {
 
     async fn append_live(self: &Rc<Self>, items: Vec<Item>) {
         let numbers = settings::get().show_numbers;
-        let first = self.live_rows.borrow().len() + 1;
+        let first = self.live_rows.borrow().len() + self.live_skipped.get() + 1;
         let mut new_rows = Vec::new();
+        let s = settings::snapshot();
         for (number, it) in (first..).zip(&items) {
+            // Locked channels (adult names, locked categories in search) are left out.
+            if crate::parental::hide_in_lists(&s, it) {
+                self.live_skipped.set(self.live_skipped.get() + 1);
+                continue;
+            }
             let r = self.live_row(it, if numbers { number } else { 0 });
             self.item_list.append(&r.row);
             new_rows.push(r);
@@ -630,6 +725,7 @@ impl App {
     fn show_live_empty(&self, t: &str) {
         self.item_list.remove_all();
         self.live_rows.borrow_mut().clear();
+        self.live_skipped.set(0);
         self.list_count.set_text("");
         self.list_empty.set_text(t);
         self.list_empty.set_visible(true);
@@ -653,6 +749,7 @@ impl App {
         }
         self.item_list.remove_all();
         self.live_rows.borrow_mut().clear();
+        self.live_skipped.set(0);
         *self.live_search.borrow_mut() = Some(q.clone());
         self.live_total.set(hits.len() as i64);
         self.list_title.set_text(&format!("Results for “{q}”"));
@@ -891,8 +988,12 @@ impl App {
             return;
         }
         let i = ((index % n) + n) % n;
-        self.play_index.set(i);
         let it = self.playlist.borrow()[i as usize].clone();
+        // Parental controls: a locked category, adult content or a rating above the limit.
+        if !it.id.is_empty() && !self.may_open(&it).await {
+            return;
+        }
+        self.play_index.set(i);
         let Some(mpv) = self.mpv().cloned() else {
             self.set_status("The video engine (libmpv) could not be started. Install mpv / libmpv2 and start Madhyam again.");
             return;

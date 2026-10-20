@@ -91,11 +91,12 @@ impl App {
                 if version != self.load_version.get() {
                     return;
                 }
-                let hidden = self.hidden_now();
+                let hidden = self.excluded_now();
                 let min = s.vod_min_rating;
                 let filtered: Vec<Item> = hits
                     .into_iter()
                     .filter(|h| h.source_id == src.id && !hidden.contains(&h.group))
+                    .filter(|h| !crate::parental::hide_in_lists(&s, h))
                     .filter(|h| {
                         min <= 0.0
                             || h.rating
@@ -113,7 +114,7 @@ impl App {
         } else {
             let group = self.group.borrow().clone();
             let hidden = if group.is_none() {
-                self.hidden_now()
+                self.excluded_now()
             } else {
                 Vec::new()
             };
@@ -310,6 +311,9 @@ impl App {
 
     /// Open a film or series page: shows at once, then fills in details and episodes.
     pub async fn show_details(self: &Rc<Self>, it: Item) {
+        if !self.may_open(&it).await {
+            return;
+        }
         if self.vod_playing.get() {
             self.stop_playback();
         }
