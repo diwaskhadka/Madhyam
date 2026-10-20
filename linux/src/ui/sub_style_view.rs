@@ -238,18 +238,20 @@ fn load_css(frame_h: f64) {
 }
 
 const PREVIEW_W: i32 = 480;
-const PREVIEW_H: i32 = 270;
 
-/// A 16:9 dark frame with a sample caption; the returned function redraws it.
-pub fn preview() -> (gtk::Widget, Rc<dyn Fn()>) {
+/// A 16:9 dark frame with a sample caption; the returned functions redraw it and give it a
+/// new width (the height follows; the sample keeps its scale to the picture).
+pub fn preview() -> (gtk::Widget, Rc<dyn Fn()>, Rc<dyn Fn(i32)>) {
     let frame = gtk::Overlay::new();
     frame.add_css_class("sub-preview-frame");
-    frame.set_size_request(PREVIEW_W, PREVIEW_H);
+    frame.set_size_request(PREVIEW_W, PREVIEW_W * 9 / 16);
     frame.set_halign(gtk::Align::Start);
+    frame.set_valign(gtk::Align::Start);
     frame.set_overflow(gtk::Overflow::Hidden);
     let bg = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    bg.set_size_request(PREVIEW_W, PREVIEW_H);
+    bg.set_size_request(PREVIEW_W, PREVIEW_W * 9 / 16);
     frame.set_child(Some(&bg));
+    let height = Rc::new(std::cell::Cell::new(PREVIEW_W * 9 / 16));
     let window = kit::vbox(0);
     window.add_css_class("sub-preview-window");
     window.set_halign(gtk::Align::Center);
@@ -260,10 +262,10 @@ pub fn preview() -> (gtk::Widget, Rc<dyn Fn()>) {
     window.append(&label);
     frame.add_overlay(&window);
     let redraw = {
-        let (label, window) = (label.clone(), window.clone());
+        let (label, window, height) = (label.clone(), window.clone(), height.clone());
         Rc::new(move || {
             let s = settings::snapshot();
-            let h = PREVIEW_H as f64;
+            let h = height.get() as f64;
             label.set_markup(&st::preview_markup(
                 &s,
                 "This is how subtitles will look.",
@@ -276,7 +278,20 @@ pub fn preview() -> (gtk::Widget, Rc<dyn Fn()>) {
         }) as Rc<dyn Fn()>
     };
     redraw();
-    (frame.upcast(), redraw)
+    let resize = {
+        let (frame, bg, redraw) = (frame.clone(), bg.clone(), redraw.clone());
+        Rc::new(move |w: i32| {
+            let h = w * 9 / 16;
+            if h == height.get() {
+                return;
+            }
+            height.set(h);
+            frame.set_size_request(w, h);
+            bg.set_size_request(w, h);
+            redraw();
+        }) as Rc<dyn Fn(i32)>
+    };
+    (frame.upcast(), redraw, resize)
 }
 
 /// The player's "Subtitle style…" window: every change shows on the playing subtitles.

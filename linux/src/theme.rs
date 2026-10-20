@@ -390,6 +390,8 @@ button.primary { background-color: @PrimaryBg; color: @PrimaryFg; border: none; 
 button.primary:hover { background-color: alpha(@PrimaryBg, 0.88); }
 button.secondary { background-color: @Secondary; color: @Fg; border: none; border-radius: 10px; padding: 9px 20px; }
 button.secondary:hover { background-color: @CardHover; }
+button.primary.danger { background-color: @LiveRed; color: white; }
+button.primary.danger:hover { background-color: alpha(@LiveRed, 0.88); }
 button.primary:disabled, button.secondary:disabled { opacity: 0.55; }
 button.chip-button { background-color: transparent; color: @Muted; border: 1px solid transparent; border-radius: 8px; padding: 5px 12px; min-height: 0; }
 button.chip-button:hover { background-color: @CardHover; color: @Fg; }

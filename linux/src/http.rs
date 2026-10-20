@@ -143,17 +143,57 @@ pub fn probe(url: &str, ua: Option<&str>) -> Res<u16> {
     Ok(r.status().as_u16())
 }
 
+/// GET a whole body, telling `received` the bytes read so far (every 256 KB and at the end).
+pub fn get_bytes_counted(url: &str, ua: Option<&str>, received: &dyn Fn(u64)) -> Res<Vec<u8>> {
+    let resp = request(&AGENT, url, ua).call()?;
+    let mut input = Counted::new(resp.into_body().into_reader(), received);
+    let mut out = Vec::new();
+    input.read_to_end(&mut out)?;
+    Ok(out)
+}
+
+/// A reader that reports how much has been read through it.
+struct Counted<'a, R: Read> {
+    inner: R,
+    received: &'a dyn Fn(u64),
+    total: u64,
+    reported: u64,
+}
+
+impl<'a, R: Read> Counted<'a, R> {
+    fn new(inner: R, received: &'a dyn Fn(u64)) -> Self {
+        Counted { inner, received, total: 0, reported: 0 }
+    }
+}
+
+impl<R: Read> Read for Counted<'_, R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        self.total += n as u64;
+        if n == 0 || self.total - self.reported >= 256 * 1024 {
+            self.reported = self.total;
+            (self.received)(self.total);
+        }
+        Ok(n)
+    }
+}
+
 /// Stream a URL (or local file) to a temp file, gunzipping .gz content (guides often are).
 pub fn download(location: &str, name: &str, ua: Option<&str>) -> Res<PathBuf> {
+    download_counted(location, name, ua, &|_| {})
+}
+
+/// `download`, telling `received` the bytes read so far.
+pub fn download_counted(location: &str, name: &str, ua: Option<&str>, received: &dyn Fn(u64)) -> Res<PathBuf> {
     let tmp = crate::paths::temp_file(name);
     let result = (|| -> Res<()> {
-        let input: Box<dyn Read> = if Path::new(location).is_file() {
-            Box::new(std::fs::File::open(location)?)
+        let input: Box<dyn Read + '_> = if Path::new(location).is_file() {
+            Box::new(Counted::new(std::fs::File::open(location)?, received))
         } else if let Some(path) = location.strip_prefix("file://") {
-            Box::new(std::fs::File::open(path)?)
+            Box::new(Counted::new(std::fs::File::open(path)?, received))
         } else {
             let resp = request(&AGENT, location, ua).call()?;
-            Box::new(resp.into_body().into_reader())
+            Box::new(Counted::new(resp.into_body().into_reader(), received))
         };
         let mut buffered = BufReader::with_capacity(64 * 1024, input);
         let gz = matches!(buffered.fill_buf()?, [0x1f, 0x8b, ..]);

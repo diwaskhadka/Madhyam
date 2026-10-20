@@ -1100,9 +1100,31 @@ impl SettingsView {
             400,
             true,
         ));
-        let (preview, redraw) = super::sub_style_view::preview();
-        preview.set_margin_top(14);
-        self.content.append(&preview);
+        // Options on the left, the preview on the right. The preview takes about half the
+        // width (so it grows with the window) and stays in view while the options scroll.
+        let (preview, redraw, resize) = super::sub_style_view::preview();
+        let pair = kit::hbox(28);
+        pair.set_margin_top(14);
+        let left = kit::vbox(0);
+        left.set_hexpand(true);
+        let right = kit::vbox(0);
+        right.set_valign(gtk::Align::Fill);
+        right.append(&preview);
+        pair.append(&left);
+        pair.append(&right);
+        self.content.append(&pair);
+        let scroll = self.scroll.clone();
+        pair.add_tick_callback(move |pair, _| {
+            let width = pair.width();
+            if width > 0 {
+                resize(((width - 28) as f64 * 0.5).clamp(320.0, 760.0) as i32);
+            }
+            if let Some(p) = pair.compute_point(&scroll, &gtk::graphene::Point::new(0.0, 0.0)) {
+                let room = (pair.height() - preview.height()).max(0);
+                preview.set_margin_top((16 - p.y() as i32).clamp(0, room));
+            }
+            gtk::glib::ControlFlow::Continue
+        });
         let w = Rc::downgrade(app);
         let changed: Rc<dyn Fn()> = Rc::new(move || {
             redraw();
@@ -1121,8 +1143,13 @@ impl SettingsView {
                 gtk::glib::idle_add_local_once(move || adj.set_value(y));
             });
         });
-        for r in super::sub_style_view::rows(changed, reset) {
-            self.row(r.title, r.desc, &r.widget, r.below);
+        for (i, r) in super::sub_style_view::rows(changed, reset).into_iter().enumerate() {
+            if i > 0 {
+                let l = kit::line();
+                kit::margins(&l, 0, 14, 0, 14);
+                left.append(&l);
+            }
+            left.append(&row_widget(r.title, r.desc, &r.widget, r.below));
         }
     }
 
@@ -1670,7 +1697,7 @@ impl SettingsView {
         let reset = btn("Reset everything…", false, move || {
             let Some(a) = w.upgrade() else { return };
             spawn(async move {
-                let ok = super::dialogs::confirm(&a.window, "This removes all playlists, favorites, watch progress, guides and settings from this computer.\n\nContinue?", "Reset").await;
+                let ok = super::dialogs::confirm(&a.window, &format!("Reset {}?", crate::brand::NAME), "This removes all playlists, favorites, watch progress, guides and settings from this computer, then restarts the app.", "Reset everything", true).await;
                 if ok {
                     a.reset_on_exit.set(true);
                     a.restart_app();

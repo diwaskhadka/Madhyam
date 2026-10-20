@@ -286,6 +286,51 @@ pub fn compact(n: i64) -> String {
     }
 }
 
+/// A step of loading a playlist, for the "Adding playlist" pop-up.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Step {
+    SignIn,
+    Live,
+    Movies,
+    Series,
+    Download,
+    Read,
+    Save,
+    Guide,
+    Pages,
+}
+
+/// Where a playlist load is: the step and a detail (the size downloaded so far). `done` marks
+/// a finished step's result, such as how many movies came in, kept on its line.
+#[derive(Clone, Debug)]
+pub struct LoadStatus {
+    pub step: Step,
+    pub detail: String,
+    pub done: bool,
+}
+
+impl LoadStatus {
+    pub fn new(step: Step, detail: &str) -> Self {
+        LoadStatus { step, detail: detail.to_string(), done: false }
+    }
+}
+
+/// Told about each step of a load; called on the worker thread.
+pub type Progress<'a> = &'a (dyn Fn(LoadStatus) + Sync);
+
+/// "12.4 MB", "640 KB".
+pub fn size(bytes: u64) -> String {
+    const MB: u64 = 1 << 20;
+    const GB: u64 = 1 << 30;
+    if bytes >= GB {
+        format!("{:.1} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else {
+        format!("{} KB", (bytes / 1024).max(1))
+    }
+}
+
 pub fn group_digits(n: i64) -> String {
     let s = n.abs().to_string();
     let mut out = String::new();
@@ -845,7 +890,7 @@ impl Repo {
         })
     }
 
-    pub fn add_m3u(&self, name: &str, url: &str) -> Res<i64> {
+    pub fn add_m3u(&self, name: &str, url: &str, progress: Progress) -> Res<i64> {
         let id = int(
             &self.call("add_m3u_source", json!({ "name": name, "location": url }))?,
             "id",
@@ -853,19 +898,19 @@ impl Repo {
         settings::update(|s| {
             s.source_added.insert(id, now_unix());
         });
-        self.refresh_or_remove(id)
+        self.refresh_or_remove(id, progress)
     }
 
-    pub fn add_xtream(&self, name: &str, server: &str, username: &str, password: &str) -> Res<i64> {
+    pub fn add_xtream(&self, name: &str, server: &str, username: &str, password: &str, progress: Progress) -> Res<i64> {
         let id = int(&self.call("add_xtream_source", json!({ "name": name, "server": server, "username": username, "password": password }))?, "id");
         settings::update(|s| {
             s.source_added.insert(id, now_unix());
         });
-        self.refresh_or_remove(id)
+        self.refresh_or_remove(id, progress)
     }
 
-    fn refresh_or_remove(&self, id: i64) -> Res<i64> {
-        match self.refresh(id) {
+    fn refresh_or_remove(&self, id: i64, progress: Progress) -> Res<i64> {
+        match self.refresh_with(id, progress) {
             Ok(()) => Ok(id),
             Err(e) => {
                 let _ = self.call("remove_source", json!({ "source": id }));
@@ -893,6 +938,11 @@ impl Repo {
 
     /// Download a source's catalog again, then (best effort) its guide.
     pub fn refresh(&self, id: i64) -> Res<()> {
+        self.refresh_with(id, &|_| {})
+    }
+
+    /// `refresh`, telling `progress` each step (the loading pop-up when a playlist is added).
+    pub fn refresh_with(&self, id: i64, progress: Progress) -> Res<()> {
         let src = self.source(id)?;
         let ua = Self::user_agent(id);
         if src.kind == "xtream" {
@@ -900,17 +950,28 @@ impl Repo {
             for r in requests.as_array().into_iter().flatten() {
                 let url = s(r, "url").unwrap_or_default();
                 let part = s(r, "part").unwrap_or_default();
-                let body = http::get_bytes(&url, ua.as_deref())?;
+                let step = match part.as_str() {
+                    "account" => Step::SignIn,
+                    "live_categories" | "live_streams" => Step::Live,
+                    "vod_categories" | "vod_streams" => Step::Movies,
+                    _ => Step::Series,
+                };
+                progress(LoadStatus::new(step, ""));
+                let body = http::get_bytes_counted(&url, ua.as_deref(), &|n| progress(LoadStatus::new(step, &size(n))))?;
                 self.core
                     .import("xtream_part", &body, json!({ "source": id, "part": part }))?;
             }
+            progress(LoadStatus::new(Step::Save, ""));
             self.call("xtream_commit", json!({ "source": id }))?;
         } else {
+            progress(LoadStatus::new(Step::Download, ""));
             let file = if freetv::is_countries(&src.location) {
                 self.download_joined(&freetv::country_urls(&src.location), ua.as_deref())?
             } else {
-                http::download(&src.location, "playlist", ua.as_deref())?
+                http::download_counted(&src.location, "playlist", ua.as_deref(), &|n| progress(LoadStatus::new(Step::Download, &size(n))))?
             };
+            let len = std::fs::metadata(&file).map(|m| m.len()).unwrap_or(0);
+            progress(LoadStatus::new(Step::Read, &size(len)));
             let result = self.call("import_m3u_file", json!({ "source": id, "path": file }));
             let _ = std::fs::remove_file(&file);
             result?;
@@ -918,14 +979,45 @@ impl Repo {
                 self.tag_countries(id);
             }
         }
+        self.report_counts(id, progress);
+        progress(LoadStatus::new(Step::Save, ""));
         self.save();
-        if let Err(e) = self.refresh_epg(id) {
+        if let Err(e) = self.refresh_epg_with(id, progress) {
             crate::log(&format!("EPG refresh failed for source {id}: {e}")); // never block watching
         }
         Ok(())
     }
 
+    /// How many live channels, movies and series the playlist brought, each on its own line of the pop-up.
+    fn report_counts(&self, id: i64, progress: Progress) {
+        for (step, kind, one, many) in [
+            (Step::Live, "live", "channel", "channels"),
+            (Step::Movies, "movie", "movie", "movies"),
+            (Step::Series, "series", "series", "series"),
+        ] {
+            let groups = self.groups(id, kind, None).unwrap_or_default();
+            let count: i64 = groups.iter().map(|g| g.count).sum();
+            let n = groups.len() as i64;
+            let detail = if count == 0 {
+                "None".to_string()
+            } else {
+                format!(
+                    "{} {} · {} {}",
+                    group_digits(count),
+                    if count == 1 { one } else { many },
+                    group_digits(n),
+                    if n == 1 { "category" } else { "categories" }
+                )
+            };
+            progress(LoadStatus { step, detail, done: true });
+        }
+    }
+
     pub fn refresh_epg(&self, id: i64) -> Res<()> {
+        self.refresh_epg_with(id, &|_| {})
+    }
+
+    fn refresh_epg_with(&self, id: i64, progress: Progress) -> Res<()> {
         let urls: Vec<String> = self
             .call("epg_fetch_urls", json!({ "source": id }))?
             .as_array()
@@ -937,8 +1029,18 @@ impl Repo {
         let _ = std::fs::create_dir_all(epg_dir());
         let ua = Self::user_agent(id);
         let mut index = 0;
-        for url in urls {
-            let file = match http::download(&url, "guide", ua.as_deref()) {
+        if urls.is_empty() {
+            progress(LoadStatus::new(Step::Guide, "None offered"));
+        }
+        let total = urls.len();
+        for (n, url) in urls.into_iter().enumerate() {
+            let which = if total > 1 { format!("Guide {} of {total}", n + 1) } else { String::new() };
+            progress(LoadStatus::new(Step::Guide, &which));
+            let report = |b: u64| {
+                let parts: Vec<String> = [which.clone(), size(b)].into_iter().filter(|s| !s.is_empty()).collect();
+                progress(LoadStatus::new(Step::Guide, &parts.join(" · ")));
+            };
+            let file = match http::download_counted(&url, "guide", ua.as_deref(), &report) {
                 Ok(f) => f,
                 Err(e) => {
                     crate::log(&format!("guide download failed: {e}"));

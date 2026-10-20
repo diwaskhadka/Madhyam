@@ -205,3 +205,40 @@ fun Modifier.fadeEdges(height: Dp): Modifier =
                 blendMode = androidx.compose.ui.graphics.BlendMode.DstIn,
             )
         }
+
+/**
+ * A yes / no question in the app's look (like the exit dialog). Focus starts on Cancel, so an
+ * extra OK never removes anything by accident; the confirm button is drawn in the error
+ * colour when [danger].
+ */
+@Composable
+fun ConfirmDialog(title: String, message: String, confirm: String, onConfirm: () -> Unit, onDismiss: () -> Unit, danger: Boolean = true) {
+    val cancel = remember { FocusRequester() }
+    // The OK that opened the dialog lifts its key inside it: only accept clicks after a key went down here.
+    var armed by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(80)
+        runCatching { cancel.requestFocus() }
+    }
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.width(460.dp).background(Panel, RoundedCornerShape(16.dp)).padding(24.dp)
+                .onPreviewKeyEvent { if (it.type == KeyEventType.KeyDown) armed = true; false },
+        ) {
+            Text(title, fontSize = 22.sp)
+            Text(message, color = Muted, fontSize = 14.sp, modifier = Modifier.padding(top = 6.dp, bottom = 18.dp))
+            androidx.compose.foundation.layout.Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) {
+                androidx.tv.material3.OutlinedButton(onClick = { if (armed) onDismiss() }, modifier = Modifier.focusRequester(cancel)) { Text("Cancel") }
+                androidx.tv.material3.Button(
+                    onClick = {
+                        if (armed) {
+                            onDismiss()
+                            onConfirm()
+                        }
+                    },
+                    colors = if (danger) androidx.tv.material3.ButtonDefaults.colors(containerColor = ErrorRed.copy(alpha = 0.85f), contentColor = Color.White) else androidx.tv.material3.ButtonDefaults.colors(),
+                ) { Text(confirm) }
+            }
+        }
+    }
+}

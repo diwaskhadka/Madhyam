@@ -624,11 +624,12 @@ public sealed class Repository : IDisposable
     /// <summary>How many live channels, movies and series the playlist brought, each on its own line of the pop-up.</summary>
     private async Task ReportCounts(int id, IProgress<LoadStatus> progress)
     {
-        foreach (var (step, kind, noun) in new[] { (LoadStatus.Step.Live, "live", "channels"), (LoadStatus.Step.Movies, "movie", "movies"), (LoadStatus.Step.Series, "series", "series") })
+        foreach (var (step, kind, one, many) in new[] { (LoadStatus.Step.Live, "live", "channel", "channels"), (LoadStatus.Step.Movies, "movie", "movie", "movies"), (LoadStatus.Step.Series, "series", "series", "series") })
         {
             var groups = await Groups(id, kind);
             var count = groups.Sum(g => g.Count);
-            progress.Report(new LoadStatus(step, count == 0 ? "None" : $"{count:N0} {noun} · {groups.Count:N0} categories", Final: true));
+            var detail = count == 0 ? "None" : $"{count:N0} {(count == 1 ? one : many)} · {groups.Count:N0} {(groups.Count == 1 ? "category" : "categories")}";
+            progress.Report(new LoadStatus(step, detail, Final: true));
         }
     }
 

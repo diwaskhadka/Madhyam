@@ -311,18 +311,20 @@ private fun SourceDetails(vm: MainViewModel, s: Source, onEdit: () -> Unit, onRe
         }
         if (!s.isFreeTv) item { ActionRow("Edit", "Name, address and login") { onEdit() } }
         item {
-            ActionRow(
-                if (confirmRemove) "Press OK again to remove ${s.name}" else "Remove playlist",
-                "Removes its channels, favorites stay for when it comes back",
-            ) {
-                if (confirmRemove) {
-                    vm.removeSource(s)
-                    onRemoved()
-                } else {
-                    confirmRemove = true
-                }
-            }
+            ActionRow("Remove playlist", "Removes its channels, favorites stay for when it comes back") { confirmRemove = true }
         }
+    }
+    if (confirmRemove) {
+        ConfirmDialog(
+            "Remove “${s.name}”?",
+            "Its channels, movies and series are removed from ${Brand.NAME}. You can add the playlist again later.",
+            "Remove",
+            onConfirm = {
+                vm.removeSource(s)
+                onRemoved()
+            },
+            onDismiss = { confirmRemove = false },
+        )
     }
 }
 
@@ -596,12 +598,13 @@ private fun LazyListScope.guide(vm: MainViewModel) {
     if (st.extraEpgUrls.isNotEmpty()) item { ActionRow("Update extra guides now") { vm.refreshExtraGuides() } }
 }
 
-/** One extra guide URL; OK twice removes it. */
+/** One extra guide URL; OK asks before removing it. */
 @Composable
 private fun ExtraEpgRow(vm: MainViewModel, url: String) {
     var confirm by remember(url) { mutableStateOf(false) }
-    ActionRow(url, if (confirm) "Press OK again to remove it" else "OK to remove") {
-        if (confirm) vm.removeExtraEpg(url) else confirm = true
+    ActionRow(url, "OK to remove") { confirm = true }
+    if (confirm) {
+        ConfirmDialog("Remove this guide?", url, "Remove", onConfirm = { vm.removeExtraEpg(url) }, onDismiss = { confirm = false })
     }
 }
 
@@ -633,16 +636,15 @@ private fun AboutRows(vm: MainViewModel) {
         SectionTitle("About ${Brand.NAME} · ${Brand.NATIVE_NAME}")
         ActionRow("Version", value = version) {}
         ActionRow("Engine (madhyam-core)", value = vm.engineVersion) {}
-        ActionRow(
-            if (confirmClear) "Press OK again to clear the watch history" else "Clear watch history",
-            "Empties the Recent list",
-        ) {
-            if (confirmClear) {
-                confirmClear = false
-                vm.clearHistory()
-            } else {
-                confirmClear = true
-            }
+        ActionRow("Clear watch history", "Empties the Recent list") { confirmClear = true }
+        if (confirmClear) {
+            ConfirmDialog(
+                "Clear watch history?",
+                "Everything is removed from Recent. Favorites and resume positions are kept.",
+                "Clear history",
+                onConfirm = { vm.clearHistory() },
+                onDismiss = { confirmClear = false },
+            )
         }
         ListItem(
             selected = false,
