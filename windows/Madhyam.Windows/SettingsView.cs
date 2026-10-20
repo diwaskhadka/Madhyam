@@ -641,7 +641,7 @@ public sealed partial class SettingsView : UserControl
         });
         // Options on the left, the preview on the right; the preview stays in view while the
         // options scroll past it.
-        var preview = SubtitleStyle.Preview(380);
+        var preview = SubtitleStyle.Preview(420);
         preview.VerticalAlignment = VerticalAlignment.Top;
         var editor = SubtitleStyle.Editor(() => SubtitleStyle.UpdatePreview(preview));
         editor.Margin = new Thickness(0, 6, 0, 0);
@@ -653,6 +653,29 @@ public sealed partial class SettingsView : UserControl
         pair.Children.Add(editor);
         pair.Children.Add(preview);
         _content.Children.Add(pair);
+        // The preview grows with the window: past the settings column's usual width it uses the
+        // free space on the right (the options keep their place under the headings).
+        void Size()
+        {
+            var column = _content.ActualWidth;
+            if (column <= 0 || _scroll.ViewportWidth <= 0) return;
+            var spare = Math.Max(0, (_scroll.ViewportWidth - column - _content.Margin.Left - _content.Margin.Right) / 2 + _content.Margin.Right - 24);
+            var extra = Math.Min(spare, 440);
+            pair.Margin = new Thickness(0, 0, -extra, 0);
+            var width = Math.Clamp(column + extra - 440 - preview.Margin.Left, 320, 780);
+            if (Math.Abs(width - preview.Width) < 2) return;
+            preview.Width = width;
+            preview.Height = width * 9 / 16;
+            SubtitleStyle.UpdatePreview(preview);
+        }
+        void Resized(object? sender, SizeChangedEventArgs e) => Size();
+        pair.Loaded += (_, _) =>
+        {
+            _scroll.SizeChanged -= Resized;
+            _scroll.SizeChanged += Resized;
+            Dispatcher.BeginInvoke(Size, System.Windows.Threading.DispatcherPriority.Loaded);
+        };
+        pair.Unloaded += (_, _) => _scroll.SizeChanged -= Resized;
         var follow = new TranslateTransform();
         preview.RenderTransform = follow;
         void Follow(object? sender, ScrollChangedEventArgs e)

@@ -314,7 +314,7 @@ public static class SubtitleStyle
 
     public static void UpdatePreview(Border frame)
     {
-        var h = frame.ActualHeight > 0 ? frame.ActualHeight : frame.Height;
+        var h = double.IsNaN(frame.Height) ? frame.ActualHeight : frame.Height;
         var window = Caption(SampleLines, h);
         window.VerticalAlignment = VerticalAlignment.Bottom;
         window.Margin = new Thickness(12, 0, 12, BottomMargin(h));
