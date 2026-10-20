@@ -453,6 +453,7 @@ public partial class MainWindow : Window
                 _settingsView?.Refresh();
                 return;
             }
+            var popup = existing.Count == 0 ? LoadingWindow.Show(this, FreeTv.Name, xtream: false) : null;
             await Run("Downloading Free TV channels…", async () =>
             {
                 if (existing.Count > 0)
@@ -463,11 +464,21 @@ public partial class MainWindow : Window
                     await ReloadSources(_source?.Id);
                     return;
                 }
-                var keep = _source?.Id;
-                S.FreeTvSourceId = await _repo.AddM3u(FreeTv.Name, FreeTv.AllUrl);
-                AppSettings.Save();
-                await ReloadSources(keep);
+                try
+                {
+                    var keep = _source?.Id;
+                    S.FreeTvSourceId = await _repo.AddM3u(FreeTv.Name, FreeTv.AllUrl, popup);
+                    AppSettings.Save();
+                    popup?.Report(new LoadStatus(LoadStatus.Step.Pages, ""));
+                    await ReloadSources(keep);
+                }
+                catch (Exception ex)
+                {
+                    popup?.Failed(Explain(ex));
+                    throw;
+                }
             });
+            if (popup != null && S.FreeTvSourceId != null) await popup.Done();
             AppSettings.Save();
             _settingsView?.Refresh();
             if (_mode == Mode.Live && IsFreeTvSource) await ShowMode();
@@ -685,16 +696,29 @@ public partial class MainWindow : Window
         if (!Parental.EnsureSettings("Adding a playlist is locked.")) return;
         var dlg = new AddSourceWindow { Owner = this };
         if (dlg.ShowDialog() != true) return;
+        var popup = LoadingWindow.Show(this, dlg.SourceName, dlg.IsXtream);
+        var ok = false;
         await Run(dlg.IsXtream ? "Logging in and downloading the catalog…" : "Downloading playlist…", async () =>
         {
-            var id = dlg.IsXtream
-                ? await _repo.AddXtream(dlg.SourceName, dlg.Server, dlg.Username, dlg.Password)
-                : await _repo.AddM3u(dlg.SourceName, dlg.PlaylistUrl);
-            AppSettings.Save();
-            await ReloadSources(id);
-            await ShowMode();
-            _settingsView?.Refresh();
+            try
+            {
+                var id = dlg.IsXtream
+                    ? await _repo.AddXtream(dlg.SourceName, dlg.Server, dlg.Username, dlg.Password, popup)
+                    : await _repo.AddM3u(dlg.SourceName, dlg.PlaylistUrl, popup);
+                AppSettings.Save();
+                popup.Report(new LoadStatus(LoadStatus.Step.Pages, ""));
+                await ReloadSources(id);
+                await ShowMode();
+                _settingsView?.Refresh();
+                ok = true;
+            }
+            catch (Exception ex)
+            {
+                popup.Failed(Explain(ex));
+                throw;
+            }
         });
+        if (ok) await popup.Done();
     }
 
     private async void Refresh_Click(object sender, RoutedEventArgs e)
@@ -716,7 +740,7 @@ public partial class MainWindow : Window
     public async Task RemoveSource(Source s)
     {
         if (!Parental.EnsureSettings("Removing a playlist is locked.")) return;
-        if (MessageBox.Show(this, $"Remove \"{s.Name}\" and its channels, movies and series?", Brand.Name, MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
+        if (!DialogKit.Confirm(this, $"Remove “{s.Name}”?", "Its channels, movies and series are removed from Madhyam. You can add the playlist again later.", "Remove", danger: true)) return;
         await Run($"Removing {s.Name}…", async () =>
         {
             StopPlayback();

@@ -639,11 +639,35 @@ public sealed partial class SettingsView : UserControl
                    "Styled subtitles (ASS/SSA) keep their own look.",
             Foreground = Brush("Muted"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12),
         });
-        var preview = SubtitleStyle.Preview();
-        _content.Children.Add(preview);
+        // Options on the left, the preview on the right; the preview stays in view while the
+        // options scroll past it.
+        var preview = SubtitleStyle.Preview(380);
+        preview.VerticalAlignment = VerticalAlignment.Top;
         var editor = SubtitleStyle.Editor(() => SubtitleStyle.UpdatePreview(preview));
-        editor.Margin = new Thickness(0, 18, 0, 0);
-        _content.Children.Add(editor);
+        editor.Margin = new Thickness(0, 6, 0, 0);
+        var pair = new Grid();
+        pair.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        pair.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(preview, 1);
+        preview.Margin = new Thickness(28, 6, 0, 0);
+        pair.Children.Add(editor);
+        pair.Children.Add(preview);
+        _content.Children.Add(pair);
+        var follow = new TranslateTransform();
+        preview.RenderTransform = follow;
+        void Follow(object? sender, ScrollChangedEventArgs e)
+        {
+            if (!pair.IsLoaded || PresentationSource.FromVisual(pair) == null) return;
+            var top = pair.TranslatePoint(new Point(0, 0), _scroll).Y; // the pair's top, relative to the visible area
+            var room = Math.Max(0, pair.ActualHeight - preview.ActualHeight - preview.Margin.Top);
+            follow.Y = Math.Clamp(16 - top, 0, room);
+        }
+        pair.Loaded += (_, _) =>
+        {
+            _scroll.ScrollChanged -= Follow;
+            _scroll.ScrollChanged += Follow;
+        };
+        pair.Unloaded += (_, _) => _scroll.ScrollChanged -= Follow;
         _content.Children.Add(new Border { Height = 1, Background = Brush("Line"), Margin = new Thickness(0, 4, 0, 0) });
 
         Row("Keyboard", "Space or click the picture: pause · ←/→ 10 s · ↑/↓ volume · M mute · J/K audio delay · G/H subtitle delay · double-click or F11 full screen",
@@ -805,9 +829,9 @@ public sealed partial class SettingsView : UserControl
         Row($"Reset {Brand.Name}", "Remove all playlists, favorites, progress, guides and settings, and start fresh.",
             Buttons(Btn("Reset everything…", () =>
             {
-                if (MessageBox.Show(Window.GetWindow(this),
-                        "This removes all playlists, favorites, watch progress, guides and settings from this PC.\n\nContinue?",
-                        $"Reset {Brand.Name}", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                if (!DialogKit.Confirm(Window.GetWindow(this), $"Reset {Brand.Name}?",
+                        "This removes all playlists, favorites, watch progress, guides and settings from this PC, then restarts the app.",
+                        "Reset everything", danger: true))
                     return Task.CompletedTask;
                 _host.ResetOnExit = true;
                 _host.RestartApp();

@@ -547,25 +547,25 @@ public sealed class Repository : IDisposable
         return await resp.Content.ReadAsByteArrayAsync();
     }
 
-    public async Task<int> AddM3u(string name, string url)
+    public async Task<int> AddM3u(string name, string url, IProgress<LoadStatus>? progress = null)
     {
         var id = await Bg(() => _core.Call("add_m3u_source", new { name, location = url }).GetProperty("id").GetInt32());
         AppSettings.Current.SourceAdded[id] = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        return await RefreshOrRemove(id);
+        return await RefreshOrRemove(id, progress);
     }
 
-    public async Task<int> AddXtream(string name, string server, string username, string password)
+    public async Task<int> AddXtream(string name, string server, string username, string password, IProgress<LoadStatus>? progress = null)
     {
         var id = await Bg(() => _core.Call("add_xtream_source", new { name, server, username, password }).GetProperty("id").GetInt32());
         AppSettings.Current.SourceAdded[id] = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        return await RefreshOrRemove(id);
+        return await RefreshOrRemove(id, progress);
     }
 
-    private async Task<int> RefreshOrRemove(int id)
+    private async Task<int> RefreshOrRemove(int id, IProgress<LoadStatus>? progress)
     {
         try
         {
-            await Refresh(id);
+            await Refresh(id, progress);
             return id;
         }
         catch
@@ -583,36 +583,68 @@ public sealed class Repository : IDisposable
     });
 
     /// <summary>Re-download a source's catalog, then (best effort) its guide.</summary>
-    public async Task Refresh(int id)
+    public async Task Refresh(int id, IProgress<LoadStatus>? progress = null)
     {
         var src = (await Sources()).First(s => s.Id == id);
         if (src.Kind == "xtream")
         {
-            await _core.SyncXtreamAsync(id, _http);
+            await _core.SyncXtreamAsync(id, _http, (part, bytes) =>
+            {
+                var step = part switch
+                {
+                    "account" => LoadStatus.Step.SignIn,
+                    "live_categories" or "live_streams" => LoadStatus.Step.Live,
+                    "vod_categories" or "vod_streams" => LoadStatus.Step.Movies,
+                    "series_categories" or "series" => LoadStatus.Step.Series,
+                    _ => LoadStatus.Step.Save,
+                };
+                progress?.Report(new LoadStatus(step, bytes > 0 ? LoadStatus.Size(bytes) : ""));
+            });
         }
         else
         {
             var location = await Bg(() => _core.Call("sources").EnumerateArray()
                 .First(s => s.GetProperty("id").GetInt32() == id).GetProperty("location").GetString() ?? "");
-            var file = FreeTv.IsCountries(location) ? await DownloadJoined(FreeTv.CountryUrls(location), id) : await Download(location, "playlist", id);
+            progress?.Report(new LoadStatus(LoadStatus.Step.Download, ""));
+            var file = FreeTv.IsCountries(location)
+                ? await DownloadJoined(FreeTv.CountryUrls(location), id)
+                : await Download(location, "playlist", id, n => progress?.Report(new LoadStatus(LoadStatus.Step.Download, LoadStatus.Size(n))));
+            progress?.Report(new LoadStatus(LoadStatus.Step.Read, LoadStatus.Size(new FileInfo(file).Length)));
             try { await Bg(() => _core.Call("import_m3u_file", new { source = id, path = file })); }
             finally { File.Delete(file); }
             if (FreeTv.IsFreeTv(location)) await TagCountries(id);
         }
+        if (progress != null) await ReportCounts(id, progress);
+        progress?.Report(new LoadStatus(LoadStatus.Step.Save, ""));
         await Bg(Save);
-        try { await RefreshEpg(id); }
+        try { await RefreshEpg(id, progress); }
         catch (Exception e) { Log($"EPG refresh failed for source {id}: {e.Message}"); } // never block watching
     }
 
-    public async Task RefreshEpg(int id)
+    /// <summary>How many live channels, movies and series the playlist brought, each on its own line of the pop-up.</summary>
+    private async Task ReportCounts(int id, IProgress<LoadStatus> progress)
+    {
+        foreach (var (step, kind, noun) in new[] { (LoadStatus.Step.Live, "live", "channels"), (LoadStatus.Step.Movies, "movie", "movies"), (LoadStatus.Step.Series, "series", "series") })
+        {
+            var groups = await Groups(id, kind);
+            var count = groups.Sum(g => g.Count);
+            progress.Report(new LoadStatus(step, count == 0 ? "None" : $"{count:N0} {noun} · {groups.Count:N0} categories", Final: true));
+        }
+    }
+
+    public async Task RefreshEpg(int id, IProgress<LoadStatus>? progress = null)
     {
         var urls = await Bg(() => _core.Call("epg_fetch_urls", new { source = id }).EnumerateArray().Select(u => u.GetString() ?? "").ToList());
         Directory.CreateDirectory(EpgDir);
         var index = 0;
-        foreach (var url in urls.Where(u => u.Length > 0))
+        var wanted = urls.Where(u => u.Length > 0).ToList();
+        if (wanted.Count == 0) progress?.Report(new LoadStatus(LoadStatus.Step.Guide, "None offered"));
+        foreach (var (url, n) in wanted.Select((u, i) => (u, i + 1)))
         {
+            var which = wanted.Count > 1 ? $"Guide {n} of {wanted.Count}" : "";
+            progress?.Report(new LoadStatus(LoadStatus.Step.Guide, which));
             string file;
-            try { file = await Download(url, "guide", id); }
+            try { file = await Download(url, "guide", id, b => progress?.Report(new LoadStatus(LoadStatus.Step.Guide, string.Join(" · ", new[] { which, LoadStatus.Size(b) }.Where(s => s.Length > 0))))); }
             catch (Exception e) { Log($"guide download failed: {e.Message}"); continue; }
             try
             {
@@ -671,7 +703,7 @@ public sealed class Repository : IDisposable
     }
 
     /// <summary>Stream a URL (or local file) to a temp file, gunzipping .gz content.</summary>
-    private async Task<string> Download(string location, string name, int? source = null)
+    private async Task<string> Download(string location, string name, int? source = null, Action<long>? received = null)
     {
         var tmp = Path.Combine(Path.GetTempPath(), $"madhyam-{name}-{Guid.NewGuid():N}.tmp");
         try
@@ -690,6 +722,7 @@ public sealed class Repository : IDisposable
                 if (!resp.IsSuccessStatusCode) throw new HttpRequestException($"HTTP {(int)resp.StatusCode} downloading {name}");
                 input = await resp.Content.ReadAsStreamAsync();
             }
+            if (received != null) input = new ProgressStream(input, received);
             using (resp)
             await using (input)
             {
@@ -1028,6 +1061,42 @@ internal sealed class ConcatStream(byte[] prefix, Stream rest) : Stream
             return n;
         }
         return rest.Read(buffer, offset, count);
+    }
+
+    public override bool CanRead => true;
+    public override bool CanSeek => false;
+    public override bool CanWrite => false;
+    public override long Length => throw new NotSupportedException();
+    public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+    public override void Flush() { }
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+    public override void SetLength(long value) => throw new NotSupportedException();
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+}
+
+/// <summary>Passes reads through and reports the bytes read so far (every 256 KB and at the end).</summary>
+internal sealed class ProgressStream(Stream inner, Action<long> received) : Stream
+{
+    private long _total, _reported;
+
+    private int Count(int n)
+    {
+        _total += n;
+        if (n == 0 || _total - _reported >= 256 * 1024)
+        {
+            _reported = _total;
+            received(_total);
+        }
+        return n;
+    }
+
+    public override int Read(byte[] buffer, int offset, int count) => Count(inner.Read(buffer, offset, count));
+    public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default) => Count(await inner.ReadAsync(buffer, ct));
+    public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken ct) => ReadAsync(buffer.AsMemory(offset, count), ct).AsTask();
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing) inner.Dispose();
+        base.Dispose(disposing);
     }
 
     public override bool CanRead => true;
