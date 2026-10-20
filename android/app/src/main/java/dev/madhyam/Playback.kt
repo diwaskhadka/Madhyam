@@ -261,11 +261,19 @@ class Playback(private val context: Context, private val settings: AppSettings) 
     }
 
     /** Next/previous channel in [playlist]; returns the new item. */
-    fun zap(delta: Int): Item? {
+    /** The next (or previous) channel of the list, passing over the ones [skip] rejects (parental locks). */
+    fun zap(delta: Int, skip: (Item) -> Boolean = { false }): Item? {
         val n = playlist.size
         if (n < 2) return null
-        index = ((index + delta) % n + n) % n
-        return playlist[index].also { load(it, 0) }
+        var i = index
+        repeat(n - 1) {
+            i = ((i + delta) % n + n) % n
+            if (!skip(playlist[i])) {
+                index = i
+                return playlist[i].also { load(it, 0) }
+            }
+        }
+        return null
     }
 
     fun retry() {

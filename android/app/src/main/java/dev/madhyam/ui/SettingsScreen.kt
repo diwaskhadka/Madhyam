@@ -29,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.Coffee
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -69,6 +70,7 @@ private enum class Page(val label: String) {
     Playback("Playback"),
     Guide("Guide"),
     Online("Online services"),
+    Parental("Parental controls"),
     About("About"),
 }
 
@@ -85,6 +87,7 @@ fun SettingsScreen(vm: MainViewModel) {
     var page by remember { mutableStateOf(Page.Playlists) }
     var openSource by remember { mutableStateOf<Source?>(null) }
     var editing by remember { mutableStateOf(false) }
+    var styling by remember { mutableStateOf(false) } // Playback › Subtitle style
     // Back from a playlist's page: focus its row again (the page that had the focus is gone).
     val returnTo = remember { FocusRequester() }
     var lastOpened by remember { mutableStateOf<Int?>(null) }
@@ -104,22 +107,29 @@ fun SettingsScreen(vm: MainViewModel) {
         kotlinx.coroutines.delay(60)
         runCatching { pageFirst.requestFocus() }
     }
-    fun open(p: Page) {
+    fun open(p: Page, fromFocus: Boolean = false) {
         if (page == p) return
+        // Parental controls need the PIN once they are on; resting the focus on it doesn't ask.
+        if (p == Page.Parental && vm.parentalActive && !vm.unlocked) {
+            if (!fromFocus) vm.withPin("Enter the PIN to open Parental controls") { open(p) }
+            return
+        }
         page = p
         openSource = null
         editing = false
+        styling = false
     }
     var resting by remember { mutableStateOf<Page?>(null) }
     LaunchedEffect(resting) {
         val p = resting ?: return@LaunchedEffect
         kotlinx.coroutines.delay(400)
-        open(p)
+        open(p, fromFocus = true)
     }
 
     BackHandler(enabled = openSource != null) {
         if (editing) editing = false else openSource = null
     }
+    BackHandler(enabled = styling) { styling = false }
 
     Row(Modifier.fillMaxSize()) {
         LazyColumn(
@@ -167,6 +177,8 @@ fun SettingsScreen(vm: MainViewModel) {
                         page == Page.Playlists && src != null && editing -> EditSource(vm, src) { editing = false }
                         page == Page.Playlists && src != null -> SourceDetails(vm, src, onEdit = { editing = true }, onRemoved = { openSource = null })
                         page == Page.Categories -> CategoriesPage(vm)
+                        page == Page.Parental -> ParentalPage(vm)
+                        page == Page.Playback && styling -> SubtitleStylePage(vm)
                         else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             when (page) {
                                 Page.Playlists -> playlists(vm, returnTo, lastOpened) { openSource = it }
@@ -174,8 +186,8 @@ fun SettingsScreen(vm: MainViewModel) {
                                 Page.Appearance -> appearance(vm)
                                 Page.Home -> home(vm)
                                 Page.Live -> live(vm)
-                                Page.Categories -> {}
-                                Page.Playback -> playback(vm)
+                                Page.Categories, Page.Parental -> {}
+                                Page.Playback -> playback(vm) { styling = true }
                                 Page.Guide -> guide(vm)
                                 Page.Online -> item { OnlinePage(vm) }
                                 Page.About -> about(vm)
@@ -191,7 +203,7 @@ fun SettingsScreen(vm: MainViewModel) {
 // ------------------------------------------------------------------- rows
 
 @Composable
-private fun SwitchRow(title: String, desc: String, on: Boolean, onToggle: (Boolean) -> Unit) {
+internal fun SwitchRow(title: String, desc: String, on: Boolean, onToggle: (Boolean) -> Unit) {
     ListItem(
         selected = false,
         onClick = { onToggle(!on) },
@@ -203,7 +215,7 @@ private fun SwitchRow(title: String, desc: String, on: Boolean, onToggle: (Boole
 
 /** OK cycles through [options] (value → label). */
 @Composable
-private fun <T> ChoiceRow(title: String, desc: String, value: T, options: List<Pair<T, String>>, onPick: (T) -> Unit) {
+internal fun <T> ChoiceRow(title: String, desc: String, value: T, options: List<Pair<T, String>>, onPick: (T) -> Unit) {
     val i = options.indexOfFirst { it.first == value }.coerceAtLeast(0)
     ListItem(
         selected = false,
@@ -215,7 +227,7 @@ private fun <T> ChoiceRow(title: String, desc: String, value: T, options: List<P
 }
 
 @Composable
-private fun ActionRow(title: String, desc: String? = null, value: String? = null, modifier: Modifier = Modifier, onClick: () -> Unit) {
+internal fun ActionRow(title: String, desc: String? = null, value: String? = null, modifier: Modifier = Modifier, onClick: () -> Unit) {
     ListItem(
         selected = false,
         onClick = onClick,
@@ -507,9 +519,13 @@ private fun CategoriesPage(vm: MainViewModel) {
     }
 }
 
-private fun LazyListScope.playback(vm: MainViewModel) {
+private fun LazyListScope.playback(vm: MainViewModel, openStyle: () -> Unit) {
     val st = vm.settings
     item { SectionTitle("Playback") }
+    item {
+        ActionRow("Subtitle style", "Size in points, font, colours, background, edges and position, with a preview",
+            "${st.subFontPt} pt · ${st.subTextColor}") { openStyle() }
+    }
     item {
         ChoiceRow(
             "Live stream format", "Xtream live channels: Auto uses what the panel lists; try the other one if channels stutter",
@@ -543,7 +559,7 @@ private fun LazyListScope.playback(vm: MainViewModel) {
     }
     item {
         Text(
-            "During playback press Menu (or OK on live TV, Down on films) for audio, subtitles, speed and picture size.",
+            "During playback press OK or Menu for audio, subtitles (and their style), speed and picture size.",
             color = Muted, fontSize = 12.sp, modifier = Modifier.padding(12.dp),
         )
     }
@@ -605,6 +621,7 @@ private fun LazyListScope.about(vm: MainViewModel) {
 private fun AboutRows(vm: MainViewModel) {
     val ctx = LocalContext.current
     var confirmClear by remember { mutableStateOf(false) }
+    var coffee by remember { mutableStateOf(false) }
     val version = remember {
         try {
             ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName ?: "?"
@@ -627,16 +644,25 @@ private fun AboutRows(vm: MainViewModel) {
                 confirmClear = true
             }
         }
+        ListItem(
+            selected = false,
+            onClick = { coffee = true },
+            leadingContent = { androidx.tv.material3.Icon(androidx.compose.material.icons.Icons.Filled.Coffee, contentDescription = null) },
+            headlineContent = { Text("Buy me a coffee") },
+            supportingContent = { Text(COFFEE_TEXT, color = RowMuted, fontSize = 12.sp) },
+            trailingContent = { Text("QR code", color = RowMuted, fontSize = 13.sp) },
+        )
         Text(
             "${Brand.NAME} plays your own playlists and ships with no channels. Free TV channels come from iptv-org.",
             color = Muted, fontSize = 12.sp, modifier = Modifier.padding(12.dp),
         )
     }
+    if (coffee) CoffeeDialog { coffee = false }
 }
 
 /** OK opens a list of [options] to pick from (for long lists such as languages). */
 @Composable
-private fun <T> PickRow(title: String, desc: String, value: T, options: List<Pair<T, String>>, onPick: (T) -> Unit) {
+internal fun <T> PickRow(title: String, desc: String, value: T, options: List<Pair<T, String>>, onPick: (T) -> Unit) {
     var open by remember { mutableStateOf(false) }
     ListItem(
         selected = false,

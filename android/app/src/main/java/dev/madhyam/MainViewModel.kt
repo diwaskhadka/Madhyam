@@ -252,7 +252,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ------------------------------------------------------------- sources
 
-    fun showSetup() {
+    fun showSetup() = withPin("Enter the PIN to add a playlist") {
         screen = Screen.Setup
     }
 
@@ -370,6 +370,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val groupField: String? get() = if (section == Section.Live && liveGroupBy == "country") FreeTv.COUNTRY_FIELD else null
 
     fun selectSection(s: Section) {
+        if (s == Section.Settings && section != Section.Settings && settings.parentalLockSettings && parentalActive && !unlocked) {
+            withPin("Enter the PIN to open Settings") { selectSection(s) }
+            return
+        }
         section = s
         if (s != Section.Live) guideOpen = false
         if (s != Section.Settings && s != Section.Search) changeSettings { lastSection = s.name }
@@ -413,12 +417,33 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun selectCategory(c: Category) {
+    /**
+     * Show a category. Moving the focus over a locked one only says it is locked; OK on it
+     * ([fromClick]) asks for the PIN.
+     */
+    fun selectCategory(c: Category, fromClick: Boolean = false) {
         val name = if (c.isAll) null else c.name
-        if (name == group && details == null && items.isNotEmpty()) return
+        if (name != null && isCategoryLocked(name)) {
+            if (fromClick) {
+                withPin("Enter the PIN to open “$name”") { selectCategory(c, fromClick = true) }
+            } else {
+                itemsJob?.cancel()
+                group = name
+                lockedGroup = true
+                items = emptyList()
+                total = 0
+                loadedRows = 0
+            }
+            return
+        }
+        if (name == group && details == null && items.isNotEmpty() && !lockedGroup) return
         itemsJob?.cancel()
         itemsJob = viewModelScope.launch { loadGroup(name) }
     }
+
+    /** The selected category is locked and shown empty until the PIN is entered. */
+    var lockedGroup by mutableStateOf(false)
+        private set
 
     fun groupLiveBy(by: String) {
         if (by == liveGroupBy) return
@@ -472,10 +497,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val kind = section.kind ?: return
         group = name
         closeDetailsSilently()
-        val hidden = if (name == null) settings.hidden(src.id, kindKey!!) else emptySet()
+        // A locked category stays empty with its note until the PIN is entered.
+        lockedGroup = name != null && isCategoryLocked(name)
+        if (lockedGroup) {
+            setItems(emptyList())
+            return
+        }
+        val hidden = if (name == null) settings.hidden(src.id, kindKey!!) + lockedCategoryNames() else emptySet()
         val page = repo.query(src.id, kind, name, hidden, sort, 0, PAGE, groupField, minRating)
         total = page.total
-        setItems(page.items, page.total)
+        setItems(page.items.filterNot { itemLocked(it) }, page.total, rows = page.items.size)
         // The info pane follows the list: drop a channel that is not in it (unless it is playing).
         if (focused != null && focused?.id != playback.current?.id && page.items.none { it.id == focused?.id }) {
             focused = null
@@ -487,13 +518,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun loadMore() {
         val src = source ?: return
         val kind = section.kind ?: return
-        if (loadingMore || items.size >= total) return
+        if (loadingMore || loadedRows >= total) return
         loadingMore = true
         viewModelScope.launch {
             try {
-                val hidden = if (group == null) settings.hidden(src.id, kindKey!!) else emptySet()
-                val page = repo.query(src.id, kind, group, hidden, sort, items.size, PAGE, groupField, minRating)
-                items = items + page.items
+                val hidden = if (group == null) settings.hidden(src.id, kindKey!!) + lockedCategoryNames() else emptySet()
+                val page = repo.query(src.id, kind, group, hidden, sort, loadedRows, PAGE, groupField, minRating)
+                loadedRows += page.items.size
+                items = items + page.items.filterNot { itemLocked(it) }
                 fetchNowNext(page.items)
                 if (guideOpen) guideData = guideData + repo.guide(page.items.filter { it.isLive }.map { it.id }, guideFrom, guideTo)
             } finally {
@@ -502,8 +534,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private suspend fun setItems(list: List<Item>, count: Int = list.size) {
+    /** [rows]: how many rows of the engine's list [list] came from (locked items are left out). */
+    private suspend fun setItems(list: List<Item>, count: Int = list.size, rows: Int = list.size) {
         items = list
+        loadedRows = rows
         total = count
         fetchNowNext(list)
     }
@@ -545,6 +579,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * episodes play full screen.
      */
     fun open(item: Item) {
+        if (itemLocked(item)) {
+            withPin("Enter the PIN to open “${item.name}”") { open(item) }
+            return
+        }
         when {
             item.isSeries || item.kind == "movie" -> showDetails(item)
             item.isEpisode -> resume(item)
@@ -565,6 +603,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Open the details page of a film or series and load its details (and episodes). */
     fun showDetails(item: Item, then: (suspend () -> Unit)? = null) {
+        if (itemLocked(item)) {
+            withPin("Enter the PIN to open “${item.name}”") { showDetails(item, then) }
+            return
+        }
         lastOpenedId = item.id
         detailsJob?.cancel()
         details = item
@@ -577,7 +619,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val fresh = repo.item(item.id) ?: item
                 details = fresh
-                detailsInfo = repo.details(fresh)
+                val info = repo.details(fresh)
+                // Above the age limit: the page closes and asks for the PIN.
+                val age = Parental.age(info?.ageRating)
+                if (age != null && settings.parentalMaxAge > 0 && age > settings.parentalMaxAge && parentalActive && !unlocked) {
+                    closeDetailsSilently()
+                    withPin("“${fresh.name}” is rated $age+. Enter the PIN to open it") { showDetails(item, then) }
+                    return@launch
+                }
+                detailsInfo = info
                 if (settings.omdbApiKey.isNotBlank()) {
                     val info = detailsInfo
                     viewModelScope.launch { ratings = repo.ratings(fresh, info).takeIf { details?.id == fresh.id } }
@@ -644,6 +694,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Continue watching / Recent: resume a film or an episode, with its details page behind the player. */
     fun resume(item: Item) {
+        if (itemLocked(item)) {
+            withPin("Enter the PIN to watch “${item.name}”") { resume(item) }
+            return
+        }
         when {
             item.isEpisode -> viewModelScope.launch {
                 val series = item.seriesId?.let { repo.item(it) }
@@ -698,7 +752,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun zap(delta: Int) {
         val prev = playback.current
         saveProgress(prev)
-        playback.zap(delta)?.let { next ->
+        playback.zap(delta) { itemLocked(it) }?.let { next ->
             focused = next
             viewModelScope.launch {
                 repo.recordPlay(next.id)
@@ -841,13 +895,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         } else {
             emptyList()
         }
+        val ok = { it: Item -> !itemLocked(it) }
         home = HomeData(
-            continueWatching = cont,
-            favoriteLive = favs.filter { it.isLive },
-            recentLive = recentLive,
-            favoriteVod = favs.filter { it.kind == "movie" || it.isSeries },
-            addedMovies = addedMovies,
-            addedSeries = addedSeries,
+            continueWatching = cont.filter(ok),
+            favoriteLive = favs.filter { it.isLive && ok(it) },
+            recentLive = recentLive.filter(ok),
+            favoriteVod = favs.filter { (it.kind == "movie" || it.isSeries) && ok(it) },
+            addedMovies = addedMovies.filter(ok),
+            addedSeries = addedSeries.filter(ok),
             loaded = true,
         )
         fetchNowNext(home.favoriteLive + home.recentLive)
@@ -879,6 +934,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val src = source
         return kinds.flatMap { repo.search(q, it) }
             .filter { settings.searchAllSources || src == null || it.sourceId == src.id }
+            .filterNot { itemLocked(it) }
     }
 
     fun changeSearchFilter(block: AppSettings.() -> Unit) {
@@ -888,6 +944,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Watch a channel full screen; Up/Down zap through [list] (a Home row, for example). */
     fun watchChannel(channel: Item, list: List<Item>) {
+        if (itemLocked(channel)) {
+            withPin("Enter the PIN to watch “${channel.name}”") { watchChannel(channel, list) }
+            return
+        }
         viewModelScope.launch {
             focused = channel
             playback.play(channel, list.filter { it.isLive })
@@ -1044,6 +1104,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** OK on a guide cell: live now plays the channel, a recorded past programme plays as catch-up. */
     fun openFromGuide(channel: Item, p: Programme?) {
+        if (itemLocked(channel)) {
+            withPin("Enter the PIN to watch “${channel.name}”") { openFromGuide(channel, p) }
+            return
+        }
         val now = System.currentTimeMillis() / 1000
         when {
             p == null || (p.start <= now && now < p.stop) -> viewModelScope.launch {
@@ -1067,6 +1131,186 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun enterFullScreen() {
         if (playback.current != null) screen = Screen.Player
     }
+
+    // ------------------------------------------------- 1.1.1: parental controls
+
+    /** The PIN dialog the screen shows; [onOk] runs once the right PIN is entered. */
+    class PinRequest(val title: String, val onOk: () -> Unit)
+
+    var pinRequest by mutableStateOf<PinRequest?>(null)
+        private set
+
+    /** The PIN was entered in this session (until the app closes or 10 idle minutes pass). */
+    var unlocked by mutableStateOf(false)
+        private set
+    private var relockJob: Job? = null
+    private var wrongPins = 0
+    private var pinWaitUntil = 0L
+
+    /** Rows of the current list already read from the engine (locked items are left out of [items]). */
+    private var loadedRows = 0
+
+    val parentalActive: Boolean get() = settings.parentalOn && settings.parentalPinHash.isNotEmpty()
+
+    /** Run [action] now, or once the PIN is entered when parental controls are on and locked. */
+    fun withPin(title: String, action: () -> Unit) {
+        if (!parentalActive || unlocked) {
+            if (unlocked) touchUnlock()
+            action()
+        } else {
+            pinRequest = PinRequest(title, action)
+        }
+    }
+
+    /** Ask for the PIN even while unlocked (turning parental controls off, changing the PIN). */
+    fun requirePin(title: String, action: () -> Unit) {
+        pinRequest = PinRequest(title, action)
+    }
+
+    fun cancelPin() {
+        pinRequest = null
+    }
+
+    sealed interface PinCheck {
+        data object Ok : PinCheck
+        data class Wrong(val triesLeft: Int) : PinCheck
+        data class Wait(val seconds: Int) : PinCheck
+    }
+
+    /** Check a PIN typed in the dialog; the right one unlocks the session and runs the request. */
+    fun checkPin(pin: String): PinCheck {
+        val now = System.currentTimeMillis()
+        if (now < pinWaitUntil) return PinCheck.Wait(((pinWaitUntil - now + 999) / 1000).toInt())
+        if (Parental.hash(settings.parentalPinSalt, pin) != settings.parentalPinHash) {
+            wrongPins++
+            if (wrongPins >= Parental.MAX_TRIES) {
+                wrongPins = 0
+                pinWaitUntil = now + Parental.WAIT_MS
+                return PinCheck.Wait((Parental.WAIT_MS / 1000).toInt())
+            }
+            return PinCheck.Wrong(Parental.MAX_TRIES - wrongPins)
+        }
+        wrongPins = 0
+        unlocked = true
+        touchUnlock()
+        val req = pinRequest
+        pinRequest = null
+        req?.onOk?.invoke()
+        return PinCheck.Ok
+    }
+
+    /** Seconds to wait before the next try (after five wrong PINs), or 0. */
+    fun pinWaitSeconds(): Int = ((pinWaitUntil - System.currentTimeMillis() + 999) / 1000).toInt().coerceAtLeast(0)
+
+    private fun touchUnlock() {
+        relockJob?.cancel()
+        relockJob = viewModelScope.launch {
+            delay(Parental.UNLOCK_MS)
+            lockNow()
+        }
+    }
+
+    /** Lock again (the open lock in the rail, or 10 idle minutes); lists drop locked items again. */
+    fun lockNow() {
+        relockJob?.cancel()
+        if (!unlocked) return
+        unlocked = false
+        if (playback.current?.let { itemLocked(it) } == true) {
+            if (screen == Screen.Player) closePlayer()
+            playback.stop()
+        }
+        if (section == Section.Settings && settings.parentalLockSettings && parentalActive) selectSection(Section.Home)
+        else reloadSection()
+    }
+
+    /** Why a category is locked ("Locked" or "Adult"), whether or not the session is unlocked. */
+    fun categoryLockReason(sourceId: Int, kind: String, name: String): String? =
+        if (parentalActive) categoryLockSetting(sourceId, kind, name) else null
+
+    /** The lock set up for a category ("Locked", "Adult" or null), even while parental controls are off. */
+    fun categoryLockSetting(sourceId: Int, kind: String, name: String): String? {
+        val key = AppSettings.hiddenKey(sourceId, Parental.kindKey(kind))
+        if (settings.lockedCategories[key]?.contains(name) == true) return "Locked"
+        if (settings.parentalAutoAdult && Parental.looksAdult(name) && settings.unlockedCategories[key]?.contains(name) != true) return "Adult"
+        return null
+    }
+
+    /** A category of the current list that needs the PIN now. */
+    fun isCategoryLocked(name: String): Boolean {
+        val src = source ?: return false
+        val kind = section.kind ?: return false
+        return !unlocked && categoryLockReason(src.id, kind, name) != null
+    }
+
+    private fun lockedCategoryNames(): Set<String> =
+        if (unlocked || !parentalActive) emptySet() else categories.filter { !it.isAll && isCategoryLocked(it.name) }.map { it.name }.toSet()
+
+    /** An item that needs the PIN now: its category is locked, or its name looks adult. */
+    fun itemLocked(item: Item): Boolean {
+        if (!parentalActive || unlocked) return false
+        if (categoryLockReason(item.sourceId, item.kind, item.group) != null) return true
+        if (!settings.parentalAutoAdult || !Parental.looksAdult(item.name)) return false
+        // An adult-looking channel in a category the user unlocked follows its category.
+        val key = AppSettings.hiddenKey(item.sourceId, Parental.kindKey(item.kind))
+        return settings.unlockedCategories[key]?.contains(item.group) != true
+    }
+
+    /** Lock or unlock a category in Settings › Parental controls › Locked categories. */
+    fun setCategoryLock(sourceId: Int, kind: String, name: String, locked: Boolean) {
+        changeSettings {
+            val key = AppSettings.hiddenKey(sourceId, kind)
+            val lockedSet = lockedCategories.getOrPut(key) { mutableSetOf() }
+            val unlockedSet = unlockedCategories.getOrPut(key) { mutableSetOf() }
+            if (locked) {
+                lockedSet += name
+                unlockedSet -= name
+            } else {
+                lockedSet -= name
+                // An adult-looking category stays open only with an explicit unlock.
+                if (Parental.looksAdult(name)) unlockedSet += name
+            }
+        }
+        if (sourceId == source?.id) reloadSection()
+    }
+
+    fun setPin(pin: String) {
+        changeSettings {
+            parentalPinSalt = Parental.newSalt()
+            parentalPinHash = Parental.hash(parentalPinSalt, pin)
+        }
+    }
+
+    fun setParentalOn(on: Boolean) {
+        changeSettings { parentalOn = on }
+        if (on) {
+            unlocked = true // the PIN was just entered: this session stays open
+            touchUnlock()
+        } else {
+            relockJob?.cancel()
+            unlocked = false
+        }
+        reloadSection()
+    }
+
+    /** Forgotten PIN: remove the PIN and every lock (after the user typed RESET). */
+    fun resetParental() {
+        android.util.Log.i(Repository.TAG, "parental controls reset: PIN and locks removed")
+        changeSettings {
+            parentalOn = false
+            parentalPinHash = ""
+            parentalPinSalt = ""
+            parentalAutoAdult = true
+            parentalLockSettings = false
+            parentalMaxAge = 0
+            lockedCategories.clear()
+            unlockedCategories.clear()
+        }
+        relockJob?.cancel()
+        unlocked = false
+        reloadSection()
+        message = "Parental controls were reset."
+    }
+
 
     private companion object {
         const val PAGE = 200
