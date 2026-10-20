@@ -100,6 +100,9 @@
                 </Border>
 
                 <Button Style="{StaticResource IconButton}" Content="&#xE710;" ToolTip="Add a playlist" Click="Add_Click" Margin="8,0,0,0" />
+                <!-- Parental controls unlocked for this session: click to lock again. -->
+                <Button x:Name="UnlockedBtn" Style="{StaticResource IconButton}" Content="&#xE785;" Foreground="{StaticResource Accent}"
+                        ToolTip="Parental controls are unlocked for this session. Click to lock again." Click="Unlocked_Click" Margin="4,0,0,0" Visibility="Collapsed" />
                 <TextBlock x:Name="Status" Foreground="{StaticResource Accent}" VerticalAlignment="Center" Margin="12,0,0,0" MaxWidth="520"
                            TextTrimming="CharacterEllipsis" FontSize="12.5" />
             </StackPanel>
@@ -146,12 +149,17 @@
                             <DataTemplate>
                                 <Grid>
                                     <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Text="{Binding Name}" FontSize="13.5" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                    <!-- Parental controls: a locked category keeps its name, with a lock in front. -->
+                                    <TextBlock Text="&#xE72E;" FontFamily="{StaticResource Icons}" FontSize="11.5" VerticalAlignment="Center" Margin="0,0,7,0"
+                                               Foreground="{StaticResource Muted}" ToolTip="{Binding LockTip}"
+                                               Visibility="{Binding Locked, Converter={StaticResource BoolVis}}" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Name}" FontSize="13.5" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
                                                Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" />
-                                    <Border Grid.Column="1" CornerRadius="9" Background="{StaticResource Chip}" Padding="7,1" Margin="10,0,0,0"
+                                    <Border Grid.Column="2" CornerRadius="9" Background="{StaticResource Chip}" Padding="7,1" Margin="10,0,0,0"
                                             VerticalAlignment="Center" MinWidth="26">
                                         <TextBlock Text="{Binding Count, StringFormat=N0}" FontSize="11" Foreground="{StaticResource Muted}" HorizontalAlignment="Center" />
                                     </Border>

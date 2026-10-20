@@ -101,6 +101,29 @@ public partial class MainWindow
         catch { return null; }
     }
 
+    /// <summary>Hidden categories plus those parental controls lock right now (Home rows, Recently added).</summary>
+    private async Task<HashSet<string>> HiddenAndLocked(int source, string kind)
+    {
+        var set = S.Hidden(source, kind);
+        if (Parental.On && !Parental.Unlocked)
+            set.UnionWith(Parental.LockedGroups(source, kind, (await _repo.Groups(source, kind)).Select(g => g.Name)));
+        return set;
+    }
+
+    /// <summary>Home rows leave locked items out; an episode follows its series' category.</summary>
+    private async Task<List<ItemVm>> WithoutLocked(List<ItemVm> items)
+    {
+        if (!Parental.On || Parental.Unlocked) return items;
+        var keep = new List<ItemVm>();
+        foreach (var i in items)
+        {
+            if (Parental.HideNow(i)) continue;
+            if (i.Kind == "episode" && i.SeriesId != null && await _repo.Item(i.SeriesId) is { } series && Parental.HideNow(series)) continue;
+            keep.Add(i);
+        }
+        return keep;
+    }
+
     private static string ProgressSubtitle(ItemVm it)
     {
         var left = it.TimeLeftText;
@@ -118,6 +141,7 @@ public partial class MainWindow
             return;
         }
         var cont = (await _repo.ContinueWatching(20)).Where(i => !i.IsLive && i.DurationSec > 0 && !i.IsWatched).ToList();
+        cont = await WithoutLocked(cont);
         if (version != _loadVersion) return;
 
         if (S.DashHero) body.Children.Add(await DashboardHero(cont.FirstOrDefault()));
@@ -137,7 +161,7 @@ public partial class MainWindow
 
         if (S.DashLiveFavorites)
         {
-            var favLive = await _repo.Favorites("live");
+            var favLive = (await _repo.Favorites("live")).Where(i => !Parental.HideNow(i)).ToList();
             if (favLive.Count > 0)
             {
                 await UpdateNowNext(favLive);
@@ -148,7 +172,7 @@ public partial class MainWindow
 
         if (S.DashRecentLive)
         {
-            var recentLive = await _repo.Recent("live", 20);
+            var recentLive = (await _repo.Recent("live", 20)).Where(i => !Parental.HideNow(i)).ToList();
             if (recentLive.Count > 0)
             {
                 await UpdateNowNext(recentLive);
@@ -159,7 +183,7 @@ public partial class MainWindow
 
         if (S.DashFavoriteVod)
         {
-            var favVod = (await _repo.Favorites(null)).Where(i => !i.IsLive).ToList();
+            var favVod = (await _repo.Favorites(null)).Where(i => !i.IsLive && !Parental.HideNow(i)).ToList();
             if (favVod.Count > 0)
             {
                 body.Children.Add(SectionHeader("Favorite movies and series", favVod.Count, () => { _pageKind = "vod"; NavButton(Mode.Favorites).IsChecked = true; }));
@@ -171,7 +195,7 @@ public partial class MainWindow
         {
             foreach (var (kind, label) in new[] { ("movie", "Recently added movies"), ("series", "Recently added series") })
             {
-                var (total, items) = await _repo.Query(kind, _source.Id, null, S.Hidden(_source.Id, kind), "added_desc", 0, 0, 20);
+                var (total, items) = await _repo.Query(kind, _source.Id, null, await HiddenAndLocked(_source.Id, kind), "added_desc", 0, 0, 20);
                 if (version != _loadVersion) return;
                 if (items.Count == 0 || items.All(i => i.AddedAt == 0)) continue;
                 body.Children.Add(SectionHeader(label, total, () => NavButton(Mode.Added).IsChecked = true, "Browse all"));
@@ -318,6 +342,7 @@ public partial class MainWindow
         if (!_searchAllSources && _source != null) hits = hits.Where(h => h.SourceId == _source.Id).ToList();
         if (_searchVisibleOnly)
             hits = hits.Where(h => !S.Hidden(h.SourceId, h.Kind).Contains(h.Group)).ToList();
+        hits = hits.Where(h => !Parental.HideNow(h)).ToList();
         foreach (var h in hits) h.IsFavorite = _favorites.Contains(h.Id);
 
         body.Children.Add(PageTitle($"Results for “{q}”", hits.Count == 0 ? "Nothing found." : $"Found {hits.Count:N0} results"));
@@ -461,7 +486,7 @@ public partial class MainWindow
         var any = false;
         foreach (var (kind, label, mode) in new[] { ("movie", "Movies", Mode.Movies), ("series", "Series", Mode.Series), ("live", "Live TV", Mode.Live) })
         {
-            var (total, items) = await _repo.Query(kind, _source.Id, null, S.Hidden(_source.Id, kind), "added_desc", 0, 0, 30);
+            var (total, items) = await _repo.Query(kind, _source.Id, null, await HiddenAndLocked(_source.Id, kind), "added_desc", 0, 0, 30);
             if (version != _loadVersion) return;
             items = items.Where(i => i.AddedAt > 0).ToList();
             if (items.Count == 0) continue;

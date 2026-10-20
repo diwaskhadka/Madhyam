@@ -77,7 +77,7 @@ public partial class MainWindow
                 var hits = await _repo.Search(_vodSearch, kind);
                 if (version != _loadVersion) return;
                 var hidden = HiddenNow;
-                _searchHits = hits.Where(h => h.SourceId == _source.Id && !hidden.Contains(h.Group)
+                _searchHits = hits.Where(h => h.SourceId == _source.Id && !hidden.Contains(h.Group) && !Parental.HideNow(h)
                                               && (S.VodMinRating <= 0 || (double.TryParse(h.Rating, System.Globalization.NumberStyles.Float,
                                                   System.Globalization.CultureInfo.InvariantCulture, out var r) && r >= S.VodMinRating))).ToList();
             }
@@ -87,7 +87,7 @@ public partial class MainWindow
         }
         else
         {
-            var (total, page) = await _repo.Query(kind, _source.Id, _group, _group == null ? HiddenNow : null,
+            var (total, page) = await _repo.Query(kind, _source.Id, _group, _group == null ? HiddenOrLockedNow : null,
                 S.VodSort, S.VodMinRating, _page * _perPage, _perPage);
             if (version != _loadVersion) return;
             _gridTotal = total;
@@ -192,6 +192,7 @@ public partial class MainWindow
         CloseTrailer();
         if (_vodPlaying) StopPlayback();
         var fresh = await _repo.Item(it.Id) ?? it;
+        if (!await ParentalAllows(fresh)) return;
         fresh.IsFavorite = _favorites.Contains(fresh.Id);
         _details = fresh;
         _detailsInfo = null;
@@ -232,6 +233,23 @@ public partial class MainWindow
         if (_details != fresh || ext == null) return;
         _ratings = ext;
         RenderVodPage();
+    }
+
+    /// <summary>
+    /// Parental controls before a film or series page opens: its category or name may be
+    /// locked, and with a rating limit its age rating (from the details) may be above it.
+    /// Titles without an age rating are allowed.
+    /// </summary>
+    private async Task<bool> ParentalAllows(ItemVm it)
+    {
+        if (!Parental.On) return true;
+        if (Parental.IsItemLocked(it) && !Parental.Ensure($"“{it.Name}” is locked.")) return false;
+        if (S.ParentalMaxAge <= 0 || Parental.Unlocked) return true;
+        DetailsInfo? info = null;
+        try { info = it.IsSeries ? await _repo.SeriesDetails(it) : await _repo.MovieDetails(it); }
+        catch (Exception ex) { Repository.Log($"age rating lookup failed for {it.Name}: {ex.Message}"); }
+        var age = Parental.AgeOf(info?.AgeRating);
+        return !Parental.AboveLimit(age) || Parental.Ensure($"“{it.Name}” is rated {age}+, above the limit of {S.ParentalMaxAge}.");
     }
 
     private void CloseDetails()
@@ -311,6 +329,7 @@ public partial class MainWindow
     /// <summary>Open a film, series or episode from anywhere (dashboard, search, favorites, recent).</summary>
     public async Task GoToVod(ItemVm it, bool play = false)
     {
+        if (Parental.IsItemLocked(it) && !Parental.Ensure($"“{it.Name}” is locked.")) return;
         ItemVm? episode = null;
         var target = it;
         if (it.Kind == "episode")

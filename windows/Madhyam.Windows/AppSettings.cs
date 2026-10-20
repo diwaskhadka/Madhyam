@@ -45,6 +45,33 @@ public sealed class AppSettings
     /// <summary>OMDb API key for IMDb and Rotten Tomatoes ratings on movie / series pages (optional).</summary>
     public string OmdbApiKey { get; set; } = "";
 
+    // ---- Subtitle style (like YouTube's caption options; see SubtitleStyle)
+    public int SubFontSizePt { get; set; } = SubtitleStyle.DefaultPt;
+    public string SubFont { get; set; } = "Sans-serif";    // Sans-serif | Serif | Monospace | Casual | Small caps
+    public string SubTextColor { get; set; } = "White";
+    public int SubTextOpacity { get; set; } = 100;
+    public string SubBackColor { get; set; } = "Black";
+    public int SubBackOpacity { get; set; } = 50;
+    public string SubWindowColor { get; set; } = "Black";
+    public int SubWindowOpacity { get; set; }
+    public string SubEdge { get; set; } = "Drop shadow";   // None | Drop shadow | Raised | Depressed | Outline
+    public string SubPosition { get; set; } = "Bottom";    // Bottom | Lower third | Middle | Top
+    /// <summary>Fine "Move up / down", in percent of the picture height (2 % steps, up is positive).</summary>
+    public int SubPosOffset { get; set; }
+
+    // ---- Parental controls (see Parental)
+    public bool ParentalEnabled { get; set; }
+    /// <summary>SHA-256 of salt + PIN (hex) and the salt; the PIN itself is never stored.</summary>
+    public string ParentalPinHash { get; set; } = "";
+    public string ParentalPinSalt { get; set; } = "";
+    public bool ParentalAutoAdult { get; set; } = true;
+    public bool ParentalLockSettings { get; set; }
+    /// <summary>"Allow up to": 0 = any age, else 7 | 12 | 16 | 18.</summary>
+    public int ParentalMaxAge { get; set; }
+    /// <summary>Locked categories per "sourceId:kind", and adult-named ones the user explicitly unlocked.</summary>
+    public Dictionary<string, List<string>> LockedCategories { get; set; } = new();
+    public Dictionary<string, List<string>> UnlockedCategories { get; set; } = new();
+
     // ---- Guide
     public string GuideView { get; set; } = "Timeline";    // Timeline | List
     public int EpgOffsetMinutes { get; set; }
