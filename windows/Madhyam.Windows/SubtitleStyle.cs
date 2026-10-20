@@ -294,11 +294,11 @@ public static class SubtitleStyle
     // ================================================================ preview
 
     /// <summary>Sample line over a dark frame (Settings), redrawn by <see cref="UpdatePreview"/>.</summary>
-    public static Border Preview()
+    public static Border Preview(double width = 640)
     {
         var frame = new Border
         {
-            Width = 640, Height = 360, HorizontalAlignment = HorizontalAlignment.Left, CornerRadius = new CornerRadius(12), ClipToBounds = true,
+            Width = width, Height = width * 9 / 16, HorizontalAlignment = HorizontalAlignment.Left, CornerRadius = new CornerRadius(12), ClipToBounds = true,
             Background = new LinearGradientBrush(Color.FromRgb(0x2A, 0x33, 0x48), Color.FromRgb(0x0B, 0x0D, 0x14), 70),
         };
         // A 16:9 picture, so the sample is true to scale for a video shown this size.

@@ -61,17 +61,46 @@ public sealed class MadhyamCore : IDisposable
     public JsonElement Import(string method, byte[] data, object? args = null) =>
         Unwrap(Native.iptv_import(Handle, method, data, (nuint)data.Length, args is null ? null : JsonSerializer.Serialize(args)));
 
-    /// <summary>Full Xtream refresh: the core lists URLs, HttpClient fetches them.</summary>
-    public async Task<JsonElement> SyncXtreamAsync(int source, HttpClient http)
+    /// <summary>
+    /// Full Xtream refresh: the core lists URLs, HttpClient fetches them. <paramref name="progress"/>,
+    /// if given, hears each part's name ("account", "live_streams", …, then "commit") with the
+    /// bytes received so far for it.
+    /// </summary>
+    public async Task<JsonElement> SyncXtreamAsync(int source, HttpClient http, Action<string, long>? progress = null)
     {
         var requests = await Task.Run(() => Call("xtream_requests", new { source }));
         foreach (var r in requests.EnumerateArray())
         {
-            var body = await http.GetByteArrayAsync(r.GetProperty("url").GetString());
-            var part = r.GetProperty("part").GetString();
+            var part = r.GetProperty("part").GetString() ?? "";
+            progress?.Invoke(part, 0);
+            var body = await GetBytes(http, r.GetProperty("url").GetString()!, n => progress?.Invoke(part, n));
             await Task.Run(() => Import("xtream_part", body, new { source, part }));
         }
+        progress?.Invoke("commit", 0);
         return await Task.Run(() => Call("xtream_commit", new { source }));
+    }
+
+    private static async Task<byte[]> GetBytes(HttpClient http, string url, Action<long> received)
+    {
+        using var resp = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+        resp.EnsureSuccessStatusCode();
+        await using var input = await resp.Content.ReadAsStreamAsync();
+        using var buffer = new System.IO.MemoryStream();
+        var chunk = new byte[81920];
+        long total = 0, reported = 0;
+        int n;
+        while ((n = await input.ReadAsync(chunk)) > 0)
+        {
+            buffer.Write(chunk, 0, n);
+            total += n;
+            if (total - reported >= 256 * 1024)
+            {
+                reported = total;
+                received(total);
+            }
+        }
+        received(total);
+        return buffer.ToArray();
     }
 
     public void Dispose()

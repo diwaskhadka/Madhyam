@@ -432,7 +432,7 @@ public partial class MainWindow
         {
             clear = Primary("Clear history", "", async () =>
             {
-                if (MessageBox.Show(this, "Remove everything from Recently viewed?\n\nFavorites and resume positions are kept.", Brand.Name, MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
+                if (!DialogKit.Confirm(this, "Clear Recently viewed?", "Everything is removed from Recently viewed. Favorites and resume positions are kept.", "Clear history", danger: true)) return;
                 await _repo.ClearHistory();
                 await ShowPage(++_loadVersion);
             }, secondary: true);

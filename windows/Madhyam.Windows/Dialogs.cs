@@ -51,6 +51,54 @@ internal static class DialogKit
     }
 
     public static TextBlock Label(string text) => new() { Text = text, Foreground = B("Muted"), Margin = new Thickness(0, 10, 0, 3), FontSize = 12.5 };
+
+    /// <summary>
+    /// A question in the app's own look (instead of the system message box): title, message and
+    /// two buttons. True when the user picks <paramref name="yes"/>; Esc or closing means no.
+    /// <paramref name="danger"/> draws the yes button in the error colour, for removals.
+    /// </summary>
+    public static bool Confirm(Window? owner, string title, string message, string yes = "Yes", string no = "Cancel", bool danger = false)
+    {
+        var result = false;
+        var w = Make(owner ?? Application.Current.MainWindow, title, 440);
+        var root = new StackPanel { Margin = new Thickness(26, 22, 26, 18) };
+        root.Children.Add(Text(title, 19, "Fg", FontWeights.SemiBold, wrap: true));
+        var body = Text(message, 13.5, "Muted", wrap: true);
+        body.Margin = new Thickness(0, 8, 0, 0);
+        body.LineHeight = 20;
+        root.Children.Add(body);
+        var noButton = Button(no, false, w.Close);
+        var yesButton = Button(yes, true, () =>
+        {
+            result = true;
+            w.Close();
+        });
+        if (danger) yesButton.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0xDC, 0x3B, 0x4B));
+        // Removals start on the safe choice; Enter then cancels.
+        (danger ? noButton : yesButton).IsDefault = true;
+        root.Children.Add(Footer(noButton, yesButton));
+        w.Content = root;
+        w.Loaded += (_, _) => (danger ? noButton : yesButton).Focus();
+        w.ShowDialog();
+        return result;
+    }
+
+    /// <summary>A message with one OK button, in the app's own look.</summary>
+    public static void Alert(Window? owner, string title, string message)
+    {
+        var w = Make(owner ?? Application.Current.MainWindow, title, 420);
+        var root = new StackPanel { Margin = new Thickness(26, 22, 26, 18) };
+        root.Children.Add(Text(title, 19, "Fg", FontWeights.SemiBold, wrap: true));
+        var body = Text(message, 13.5, "Muted", wrap: true);
+        body.Margin = new Thickness(0, 8, 0, 0);
+        root.Children.Add(body);
+        var ok = Button("OK", true, w.Close);
+        ok.IsDefault = true;
+        root.Children.Add(Footer(ok));
+        w.Content = root;
+        w.Loaded += (_, _) => ok.Focus();
+        w.ShowDialog();
+    }
 }
 
 /// <summary>Two-column read-only information (Playlist info, Account info).</summary>

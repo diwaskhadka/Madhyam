@@ -150,12 +150,12 @@ public static class SubtitleSearchWindow
         var S = AppSettings.Current;
         if (S.OsApiKey.Trim().Length == 0)
         {
-            var go = MessageBox.Show(owner,
+            var go = DialogKit.Confirm(owner, "Online subtitles need a free key",
                 "Online subtitle search uses OpenSubtitles.com, which needs a free API key.\n\n" +
                 "1. Create an account at opensubtitles.com\n2. Open “API consumers” in your profile and create a key\n" +
-                "3. Paste it in Settings → Playback → Online subtitles\n\nOpen the OpenSubtitles website now?",
-                "Online subtitles", MessageBoxButton.YesNo, MessageBoxImage.Information);
-            if (go == MessageBoxResult.Yes)
+                "3. Paste it in Settings › Playback › Online subtitles",
+                "Open OpenSubtitles", "Not now");
+            if (go)
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://www.opensubtitles.com/en/consumers") { UseShellExecute = true });
             return null;
         }

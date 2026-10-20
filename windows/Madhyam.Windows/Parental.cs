@@ -216,7 +216,7 @@ public static class Parental
                 SetPin(first);
                 return true;
             }
-            MessageBox.Show(owner, "The two PINs were different. Please try again.", "Parental controls", MessageBoxButton.OK, MessageBoxImage.Information);
+            DialogKit.Alert(owner, "The PINs didn't match", "The two PINs were different. Please try again.");
         }
     }
 
