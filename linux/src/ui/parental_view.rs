@@ -258,7 +258,12 @@ pub async fn ask_new_pin(owner: &impl IsA<gtk::Window>) -> Option<String> {
     let first = ask_pin(owner, "Set PIN", "Choose a 4-digit PIN.", false).await?;
     let second = ask_pin(owner, "Set PIN", "Type the same PIN again.", false).await?;
     if first != second {
-        dialogs::alert(owner, "The PINs didn't match", "The two PINs were different. Nothing was changed.").await;
+        dialogs::alert(
+            owner,
+            "The PINs didn't match",
+            "The two PINs were different. Nothing was changed.",
+        )
+        .await;
         return None;
     }
     Some(second)

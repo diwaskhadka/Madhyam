@@ -162,7 +162,12 @@ struct Counted<'a, R: Read> {
 
 impl<'a, R: Read> Counted<'a, R> {
     fn new(inner: R, received: &'a dyn Fn(u64)) -> Self {
-        Counted { inner, received, total: 0, reported: 0 }
+        Counted {
+            inner,
+            received,
+            total: 0,
+            reported: 0,
+        }
     }
 }
 
@@ -184,7 +189,12 @@ pub fn download(location: &str, name: &str, ua: Option<&str>) -> Res<PathBuf> {
 }
 
 /// `download`, telling `received` the bytes read so far.
-pub fn download_counted(location: &str, name: &str, ua: Option<&str>, received: &dyn Fn(u64)) -> Res<PathBuf> {
+pub fn download_counted(
+    location: &str,
+    name: &str,
+    ua: Option<&str>,
+    received: &dyn Fn(u64),
+) -> Res<PathBuf> {
     let tmp = crate::paths::temp_file(name);
     let result = (|| -> Res<()> {
         let input: Box<dyn Read + '_> = if Path::new(location).is_file() {
