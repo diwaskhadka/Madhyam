@@ -85,6 +85,46 @@ class AppSettings private constructor(private val file: File) {
     /** Kind ("live", "movie", "series") → "provider" | "name_asc" | "name_desc". */
     val categorySort = mutableMapOf<String, String>()
 
+    // ------------------------------------------------ 1.1.1: parental controls
+    var parentalOn by mutableStateOf(false)
+    /** SHA-256 of salt + PIN (hex) and the salt; never the PIN itself. "" = no PIN set. */
+    var parentalPinHash by mutableStateOf("")
+    var parentalPinSalt by mutableStateOf("")
+    var parentalAutoAdult by mutableStateOf(true)            // treat adult-looking categories and channels as locked
+    var parentalLockSettings by mutableStateOf(false)
+    var parentalMaxAge by mutableStateOf(0)                  // 0 = any; else 7 | 12 | 16 | 18
+    /** "source:kind" → categories locked by the user. */
+    val lockedCategories = mutableMapOf<String, MutableSet<String>>()
+    /** "source:kind" → categories the user unlocked although they look adult (wins over auto-lock). */
+    val unlockedCategories = mutableMapOf<String, MutableSet<String>>()
+
+    // --------------------------------------------------- 1.1.1: subtitle style
+    var subFontPt by mutableStateOf(SubtitleStyle.DEFAULT_PT)
+    var subFont by mutableStateOf("Sans-serif")
+    var subTextColor by mutableStateOf("White")
+    var subTextOpacity by mutableStateOf(100)
+    var subBackColor by mutableStateOf("Black")
+    var subBackOpacity by mutableStateOf(50)
+    var subWindowColor by mutableStateOf("Black")
+    var subWindowOpacity by mutableStateOf(0)
+    var subEdge by mutableStateOf("Drop shadow")
+    var subPosition by mutableStateOf("Bottom")
+    var subOffset by mutableStateOf(0)                       // percent of the height, + = higher, in steps of 2
+
+    fun resetSubtitleStyle() {
+        subFontPt = SubtitleStyle.DEFAULT_PT
+        subFont = "Sans-serif"
+        subTextColor = "White"
+        subTextOpacity = 100
+        subBackColor = "Black"
+        subBackOpacity = 50
+        subWindowColor = "Black"
+        subWindowOpacity = 0
+        subEdge = "Drop shadow"
+        subPosition = "Bottom"
+        subOffset = 0
+    }
+
     fun hidden(source: Int, kind: String): MutableSet<String> =
         hiddenCategories.getOrPut(hiddenKey(source, kind)) { mutableSetOf() }
 
@@ -154,6 +194,25 @@ class AppSettings private constructor(private val file: File) {
             .put("liveFormat", liveFormat)
             .put("bufferMs", bufferMs)
             .put("categorySort", JSONObject().apply { for ((k, v) in categorySort) put(k, v) })
+            .put("parentalOn", parentalOn)
+            .put("parentalPinHash", parentalPinHash)
+            .put("parentalPinSalt", parentalPinSalt)
+            .put("parentalAutoAdult", parentalAutoAdult)
+            .put("parentalLockSettings", parentalLockSettings)
+            .put("parentalMaxAge", parentalMaxAge)
+            .put("lockedCategories", setsToJson(lockedCategories))
+            .put("unlockedCategories", setsToJson(unlockedCategories))
+            .put("subFontPt", subFontPt)
+            .put("subFont", subFont)
+            .put("subTextColor", subTextColor)
+            .put("subTextOpacity", subTextOpacity)
+            .put("subBackColor", subBackColor)
+            .put("subBackOpacity", subBackOpacity)
+            .put("subWindowColor", subWindowColor)
+            .put("subWindowOpacity", subWindowOpacity)
+            .put("subEdge", subEdge)
+            .put("subPosition", subPosition)
+            .put("subOffset", subOffset)
         return o.toString(2)
     }
 
@@ -223,6 +282,25 @@ class AppSettings private constructor(private val file: File) {
             liveFormat = o.optString("liveFormat", liveFormat)
             bufferMs = o.optInt("bufferMs", bufferMs)
             o.optJSONObject("categorySort")?.let { m -> for (k in m.keys()) categorySort[k] = m.getString(k) }
+            parentalOn = o.optBoolean("parentalOn", parentalOn)
+            parentalPinHash = o.optString("parentalPinHash", parentalPinHash)
+            parentalPinSalt = o.optString("parentalPinSalt", parentalPinSalt)
+            parentalAutoAdult = o.optBoolean("parentalAutoAdult", parentalAutoAdult)
+            parentalLockSettings = o.optBoolean("parentalLockSettings", parentalLockSettings)
+            parentalMaxAge = o.optInt("parentalMaxAge", parentalMaxAge)
+            setsFromJson(o.optJSONObject("lockedCategories"), lockedCategories)
+            setsFromJson(o.optJSONObject("unlockedCategories"), unlockedCategories)
+            subFontPt = o.optInt("subFontPt", subFontPt)
+            subFont = o.optString("subFont", subFont)
+            subTextColor = o.optString("subTextColor", subTextColor)
+            subTextOpacity = o.optInt("subTextOpacity", subTextOpacity)
+            subBackColor = o.optString("subBackColor", subBackColor)
+            subBackOpacity = o.optInt("subBackOpacity", subBackOpacity)
+            subWindowColor = o.optString("subWindowColor", subWindowColor)
+            subWindowOpacity = o.optInt("subWindowOpacity", subWindowOpacity)
+            subEdge = o.optString("subEdge", subEdge)
+            subPosition = o.optString("subPosition", subPosition)
+            subOffset = o.optInt("subOffset", subOffset)
         } catch (e: Exception) {
             Log.w(Repository.TAG, "settings unreadable, using defaults", e)
         }
@@ -234,5 +312,17 @@ class AppSettings private constructor(private val file: File) {
         fun load(context: Context): AppSettings = AppSettings(File(context.filesDir, "settings.json")).apply { load() }
 
         private fun JSONObject.optIntOrNull(k: String): Int? = if (has(k) && !isNull(k)) optInt(k) else null
+
+        private fun setsToJson(m: Map<String, Set<String>>) = JSONObject().apply {
+            for ((k, v) in m) if (v.isNotEmpty()) put(k, JSONArray(v.sorted()))
+        }
+
+        private fun setsFromJson(o: JSONObject?, into: MutableMap<String, MutableSet<String>>) {
+            o ?: return
+            for (k in o.keys()) {
+                val a = o.optJSONArray(k) ?: continue
+                into[k] = (0 until a.length()).map { a.getString(it) }.toMutableSet()
+            }
+        }
     }
 }

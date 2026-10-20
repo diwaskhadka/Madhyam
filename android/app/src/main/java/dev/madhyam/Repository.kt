@@ -186,6 +186,8 @@ data class DetailsInfo(
     val trailer: String? = null,
     /** IMDb id such as "tt1234567" when the panel provides one. */
     val imdbId: String? = null,
+    /** The provider's age rating as given ("PG-13", "16+", "FSK 12"); see Parental.age. */
+    val ageRating: String? = null,
 ) {
     companion object {
         /** Parse the "info" object; values may be strings or numbers, empty means absent. */
@@ -219,6 +221,7 @@ data class DetailsInfo(
                     Regex("""(?:v=|youtu\.be/|embed/)([\w-]{11})""").find(t)?.groupValues?.get(1) ?: t.takeIf { it.length == 11 }
                 },
                 imdbId = any("imdb_id", "imdb")?.let { Regex("""tt\d{5,10}""").find(it)?.value },
+                ageRating = any("rating_mpaa", "mpaa", "mpaa_rating", "age", "certification"),
             )
         }
 

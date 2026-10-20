@@ -136,18 +136,34 @@ fun CategoryPanel(vm: MainViewModel, modifier: Modifier = Modifier) {
 private fun CategoryRow(vm: MainViewModel, c: Category, modifier: Modifier = Modifier) {
     val selected = if (c.isAll) vm.group == null else vm.group == c.name
     val focusManager = LocalFocusManager.current
+    val src = vm.source
+    val kind = vm.section.kind
+    // Parental controls: a lock (and "Adult" when it was locked for its name).
+    val lockReason = if (c.isAll || src == null || kind == null) null else vm.categoryLockReason(src.id, kind, c.name)
     DenseListItem(
         selected = selected,
-        // OK on a category goes into its channels or posters.
+        // OK on a category goes into its channels or posters (a locked one asks for the PIN first).
         onClick = {
-            vm.selectCategory(c)
-            focusManager.moveFocus(FocusDirection.Right)
+            if (lockReason != null && vm.isCategoryLocked(c.name)) {
+                vm.selectCategory(c, fromClick = true)
+            } else {
+                vm.selectCategory(c)
+                focusManager.moveFocus(FocusDirection.Right)
+            }
         },
         // Moving the focus over a category shows its contents, as on most TV apps.
         modifier = modifier.onFocusChanged { if (it.isFocused) vm.selectCategory(c) },
         headlineContent = {
-            Text(c.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp,
-                fontWeight = if (c.isAll) FontWeight.SemiBold else FontWeight.Normal)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (lockReason != null) CategoryLockIcon(!vm.unlocked, Modifier.padding(end = 6.dp))
+                Text(c.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp,
+                    fontWeight = if (c.isAll) FontWeight.SemiBold else FontWeight.Normal)
+            }
+        },
+        supportingContent = if (lockReason == "Adult") {
+            { Text("Adult", color = RowMuted, fontSize = 11.sp) }
+        } else {
+            null
         },
         trailingContent = { Text("${c.count}", color = RowMuted, fontSize = 11.sp) },
     )
@@ -192,6 +208,10 @@ private fun ChannelList(vm: MainViewModel, now: Long, modifier: Modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) { SectionTitle(title, "%,d channels · hold OK for favorite".format(vm.total), subLines = 2) }
             ToggleChip("TV guide", false) { vm.openGuide() }
+        }
+        if (vm.lockedGroup) {
+            LockedNote()
+            return@Column
         }
         if (vm.items.isEmpty()) {
             EmptyNote(if (vm.busy != null) "" else "No channels here.")
@@ -330,7 +350,7 @@ private fun Preview(vm: MainViewModel) {
     ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             if (cur != null) {
-                VideoSurface(vm.playback.player, Modifier.fillMaxSize())
+                VideoSurface(vm.playback.player, Modifier.fillMaxSize(), style = vm.settings)
                 vm.playback.error?.let {
                     Column(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)).padding(14.dp), verticalArrangement = Arrangement.Center) {
                         Text(it, color = ErrorRed, fontSize = 13.sp)
@@ -350,6 +370,7 @@ private fun Preview(vm: MainViewModel) {
 /**
  * A Media3 PlayerView showing [player]; several can exist, the newest one gets the picture.
  * [subtitleLift] raises subtitles by that fraction of the height, above an overlay at the bottom.
+ * [style]: Settings › Playback › Subtitle style, applied to every kind of subtitle.
  */
 @OptIn(UnstableApi::class)
 @Composable
@@ -358,22 +379,55 @@ fun VideoSurface(
     modifier: Modifier = Modifier,
     resizeMode: Int = AspectRatioFrameLayout.RESIZE_MODE_FIT,
     subtitleLift: Float = 0f,
+    style: dev.madhyam.AppSettings? = null,
 ) {
+    // Read here so a style change redraws the view (the settings are snapshot state).
+    val styleKey = style?.let {
+        listOf(it.subFontPt, it.subFont, it.subTextColor, it.subTextOpacity, it.subBackColor, it.subBackOpacity,
+            it.subWindowColor, it.subWindowOpacity, it.subEdge, it.subPosition, it.subOffset)
+    }
+    // Settings › Subtitle style › Position: when the user moved subtitles, streams' own cue
+    // positions (CEA-608 rows, WebVTT "line") give way. Added after the PlayerView's own listener,
+    // so these cues are the ones shown.
+    val view = remember { arrayOfNulls<PlayerView>(1) }
+    if (style != null) {
+        androidx.compose.runtime.DisposableEffect(player) {
+            val listener = object : Player.Listener {
+                override fun onCues(cueGroup: androidx.media3.common.text.CueGroup) {
+                    if (dev.madhyam.SubtitleStyle.movesCues(style)) {
+                        view[0]?.subtitleView?.setCues(dev.madhyam.SubtitleStyle.placeCues(cueGroup.cues))
+                    }
+                }
+            }
+            player.addListener(listener)
+            onDispose { player.removeListener(listener) }
+        }
+    }
     AndroidView(
         factory = { ctx ->
-            PlayerView(ctx).apply {
+            PlayerView(ctx).also { view[0] = it }.apply {
                 useController = false // our own TV-style overlay
                 keepScreenOn = true
                 this.resizeMode = resizeMode
                 isFocusable = false
                 setShutterBackgroundColor(android.graphics.Color.BLACK)
                 this.player = player
+                // The text size follows the picture's height (preview window, full screen).
+                subtitleView?.addOnLayoutChangeListener { v, _, top, _, bottom, _, oldTop, _, oldBottom ->
+                    val s = v.tag as? dev.madhyam.AppSettings ?: return@addOnLayoutChangeListener
+                    if (bottom - top != oldBottom - oldTop) dev.madhyam.SubtitleStyle.apply(v as androidx.media3.ui.SubtitleView, s, bottom - top)
+                }
             }
         },
         update = {
             it.resizeMode = resizeMode
             // Move the whole view: broadcast captions (CEA-608) place themselves and ignore padding.
             it.subtitleView?.translationY = -subtitleLift * it.height
+            @Suppress("UNUSED_EXPRESSION") styleKey
+            it.subtitleView?.let { sv ->
+                sv.tag = style
+                if (style != null) dev.madhyam.SubtitleStyle.apply(sv, style)
+            }
         },
         onRelease = { it.player = null },
         modifier = modifier,

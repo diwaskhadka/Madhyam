@@ -101,5 +101,6 @@ dependencies {
     implementation("io.coil-kt:coil-compose:2.7.0")
     implementation("net.java.dev.jna:jna:5.15.0@aar")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.google.zxing:core:3.5.3") // QR code of the Buy me a coffee link (made on the TV, offline)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 }

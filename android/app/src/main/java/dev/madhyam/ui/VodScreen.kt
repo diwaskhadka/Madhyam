@@ -94,6 +94,13 @@ fun VodScreen(vm: MainViewModel) {
     Row(Modifier.fillMaxSize()) {
         CategoryPanel(vm, Modifier.width(230.dp))
         // A new list (section, category, sort, rating) starts with fresh scroll and focus memory.
+        if (vm.lockedGroup) {
+            Column(Modifier.weight(1f).padding(start = 24.dp, top = 16.dp)) {
+                Text(vm.group ?: "", fontSize = 24.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                LockedNote()
+            }
+            return@Row
+        }
         key(vm.section, vm.group, vm.settings.vodSort, vm.settings.vodMinRating) {
             val headerRows = if (vm.continueItems.isNotEmpty() && vm.group == null) 2 else 1
             val openedIndex = vm.items.indexOfFirst { it.id == vm.lastOpenedId }

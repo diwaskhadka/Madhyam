@@ -86,6 +86,7 @@ fun PlayerScreen(vm: MainViewModel) {
     var controls by remember { mutableStateOf(false) }
     var selected by remember { mutableIntStateOf(0) }
     var picker by remember { mutableStateOf<Picker?>(null) }
+    var styling by remember { mutableStateOf(false) } // Subtitles › Subtitle style…
     var position by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
     val seekable = !item.isLive
@@ -263,7 +264,7 @@ fun PlayerScreen(vm: MainViewModel) {
             overlayVisible -> 0.14f
             else -> 0f
         }
-        VideoSurface(pb.player, Modifier.fillMaxSize(), pb.pictureSize.resizeMode, subtitleLift = lift)
+        VideoSurface(pb.player, Modifier.fillMaxSize(), pb.pictureSize.resizeMode, subtitleLift = lift, style = vm.settings)
 
         if (overlayVisible || controls || pb.error != null) {
             val strip = vm.settings.stripPrefixes
@@ -349,14 +350,19 @@ fun PlayerScreen(vm: MainViewModel) {
         Picker.Subtitles -> {
             val tracks = pb.subtitleTracks()
             val off = "off"
-            val options: List<Pair<Any, String>> = listOf<Pair<Any, String>>(off to "Off") + tracks.map { it to it.label }
+            val style = "style"
+            val options: List<Pair<Any, String>> = listOf<Pair<Any, String>>(off to "Off") + tracks.map { it to it.label } + (style to "Subtitle style…")
             val current: Any = if (pb.subtitlesOff) off else tracks.firstOrNull { it.selected } ?: off
             PickerDialog("Subtitles", options, current, { choice ->
                 when (choice) {
                     off -> pb.turnSubtitlesOff()
+                    style -> styling = true
                     is dev.madhyam.TrackChoice -> pb.select(choice)
                 }
-            }) { pickerClosed() }
+            }) {
+                pickerClosed()
+                if (styling) closeControls() // the panel shows the subtitles where they really sit
+            }
         }
         Picker.Speed -> PickerDialog("Speed", SPEEDS.map { it to speedLabel(it) }, pb.speed, { pb.changeSpeed(it) }) { pickerClosed() }
         Picker.Picture -> PickerDialog("Picture size", PictureSize.entries.map { it to it.label }, pb.pictureSize, { pb.pictureSize = it }) { pickerClosed() }
@@ -365,6 +371,13 @@ fun PlayerScreen(vm: MainViewModel) {
         null -> {}
     }
     if (searching) SubtitleSearchDialog(vm)
+    if (styling) SubtitleStyleDialog(vm) { styling = false }
+    LaunchedEffect(styling) {
+        if (!styling) {
+            delay(120)
+            runCatching { focus.requestFocus() }
+        }
+    }
 }
 
 private val SPEEDS = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)

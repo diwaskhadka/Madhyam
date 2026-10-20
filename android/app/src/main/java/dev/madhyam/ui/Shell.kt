@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
@@ -187,7 +188,20 @@ private fun Rail(vm: MainViewModel, selected: FocusRequester, onFocus: (Boolean)
         )
         Spacer(Modifier.height(10.dp))
         for (s in Section.entries) {
-            if (s == Section.Settings) Spacer(Modifier.weight(1f))
+            if (s == Section.Settings) {
+                Spacer(Modifier.weight(1f))
+                // Parental controls: the PIN was entered; OK locks again.
+                if (vm.unlocked) {
+                    RailEntry(
+                        icon = Icons.Filled.LockOpen,
+                        label = "Unlocked",
+                        sub = "OK to lock again",
+                        expanded = expanded,
+                        selected = false,
+                        onClick = { vm.lockNow() },
+                    )
+                }
+            }
             RailEntry(
                 icon = s.icon(),
                 label = s.label,

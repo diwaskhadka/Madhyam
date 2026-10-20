@@ -12,6 +12,7 @@ import dev.madhyam.ui.Background
 import dev.madhyam.ui.LoadingScreen
 import dev.madhyam.ui.MadhyamTheme
 import dev.madhyam.ui.MainShell
+import dev.madhyam.ui.PinHost
 import dev.madhyam.ui.PlayerScreen
 import dev.madhyam.ui.SetupScreen
 
@@ -29,6 +30,7 @@ class MainActivity : ComponentActivity() {
                         Screen.Main -> MainShell(vm)
                         Screen.Player -> PlayerScreen(vm)
                     }
+                    PinHost(vm) // parental controls: the PIN, over any screen
                 }
             }
         }
