@@ -525,9 +525,10 @@ public partial class MainWindow
         var tracks = _player.SpuDescription;
         var cur = _player.Spu;
         // Only the language list scrolls; file / online / delay always stay in view.
-        var rows = new List<UiKit.MenuRow> { new("\uE711", "Off", cur < 0, () => _player.SetSpu(-1)) };
+        var rows = new List<UiKit.MenuRow> { new("\uE711", "Off", cur < 0 && _appSub == null, () => SelectVlcSubtitle(-1)) };
         rows.AddRange(tracks.Where(t => t.Id >= 0)
-            .Select(t => new UiKit.MenuRow("\uE774", string.IsNullOrEmpty(t.Name) ? $"Track {t.Id}" : t.Name, t.Id == cur, () => _player.SetSpu(t.Id))));
+            .Select(t => new UiKit.MenuRow("\uE774", string.IsNullOrEmpty(t.Name) ? $"Track {t.Id}" : t.Name, t.Id == cur && _appSub == null, () => SelectVlcSubtitle(t.Id))));
+        rows.AddRange(_appSubs.Select(f => new UiKit.MenuRow("\uE8A5", f.Name, f == _appSub, () => SelectAppSubtitle(f))));
         var fixedRows = new[]
         {
             new UiKit.MenuRow("", "-", false, () => { }),
@@ -561,17 +562,137 @@ public partial class MainWindow
         UseSubtitle(dlg.FileName);
     }
 
+    /// <summary>
+    /// A subtitle file for the playing film. Text formats are drawn by the app (so style changes
+    /// show at once); others, such as VobSub pictures, are handed to VLC.
+    /// </summary>
     private void UseSubtitle(string path)
     {
         if (Playing == null) return;
+        if (SubtitleFile.TryLoad(path) is { } file)
+        {
+            _appSubs.Add(file);
+            SelectAppSubtitle(file);
+            ShowOsd($"Subtitles: {file.Name}");
+            return;
+        }
         var ok = _player.AddSlave(MediaSlaveType.Subtitle, new Uri(path).AbsoluteUri, true);
-        if (ok) _subFiles.Add(path);
+        if (ok)
+        {
+            _subFiles.Add(path);
+            _appSub = null;
+            DrawSubtitles(force: true);
+        }
         ShowOsd(ok ? $"Subtitles: {System.IO.Path.GetFileName(path)}" : "These subtitles could not be loaded.");
+    }
+
+    // ================================================================ app-drawn subtitles
+
+    /// <summary>Subtitle files the app draws itself for the current film, and the one showing (null: none).</summary>
+    private readonly List<SubtitleFile> _appSubs = new();
+    private SubtitleFile? _appSub;
+    private DispatcherTimer? _subClock;
+    private string _subDrawn = "";
+    // VLC's time moves in steps; between them the clock runs on from the last step.
+    private long _subLastVlcMs = -1;
+    private readonly System.Diagnostics.Stopwatch _subSince = new();
+
+    private void SelectAppSubtitle(SubtitleFile file)
+    {
+        _appSub = file;
+        _player.SetSpu(-1);
+        if (_subClock == null)
+        {
+            _subClock = new DispatcherTimer(DispatcherPriority.Render) { Interval = TimeSpan.FromMilliseconds(40) };
+            _subClock.Tick += (_, _) => DrawSubtitles();
+        }
+        _subClock.Start();
+        DrawSubtitles(force: true);
+    }
+
+    /// <summary>A track inside the film (VLC draws it), or -1 for none.</summary>
+    private void SelectVlcSubtitle(int id)
+    {
+        _appSub = null;
+        _subClock?.Stop();
+        DrawSubtitles(force: true);
+        _player.SetSpu(id);
+        // The style may have changed while the app drew a file: bring VLC's up to date.
+        if (id >= 0 && VlcStyleKey(_vlcHeight) != _vlcStyle)
+        {
+            ShowOsd("Applying subtitle style…");
+            Restyle();
+        }
+    }
+
+    /// <summary>New film: no subtitle files yet.</summary>
+    private void ClearAppSubtitles()
+    {
+        _appSubs.Clear();
+        _appSub = null;
+        _subClock?.Stop();
+        DrawSubtitles(force: true);
+    }
+
+    /// <summary>Playback time for the subtitles, smoothed between VLC's time updates, less the subtitle delay.</summary>
+    private long SubtitleClock()
+    {
+        var vlc = _player.Time;
+        if (vlc != _subLastVlcMs || !_player.IsPlaying)
+        {
+            _subLastVlcMs = vlc;
+            _subSince.Restart();
+            return vlc - _subDelayMs;
+        }
+        var ahead = (long)(Math.Min(_subSince.ElapsedMilliseconds, 1000) * _player.Rate);
+        return vlc + ahead - _subDelayMs;
+    }
+
+    /// <summary>The part of the video area the picture fills (it is letterboxed to keep its shape).</summary>
+    private Rect PictureRect()
+    {
+        double w = SubLayer.ActualWidth, h = SubLayer.ActualHeight;
+        uint vw = 0, vh = 0;
+        try
+        {
+            _player.Size(0, ref vw, ref vh);
+        }
+        catch { /* no video yet */ }
+        if (vw == 0 || vh == 0 || w <= 0 || h <= 0) return new Rect(0, 0, w, h);
+        var aspect = (double)vw / vh;
+        return w / h > aspect
+            ? new Rect((w - h * aspect) / 2, 0, h * aspect, h)
+            : new Rect(0, (h - w / aspect) / 2, w, w / aspect);
+    }
+
+    /// <summary>Shows the captions due now; only rebuilt when what is shown, the style or the size changes.</summary>
+    private void DrawSubtitles(bool force = false)
+    {
+        if (_appSub == null || Playing == null)
+        {
+            if (SubLayer.Children.Count > 0) SubLayer.Children.Clear();
+            _subDrawn = "";
+            return;
+        }
+        var cues = _appSub.At(SubtitleClock());
+        var pic = PictureRect();
+        // Above the controls while they show, like the other apps.
+        var lift = PlayerBar.Opacity > 0 && PlayerBar.IsVisible ? Math.Max(0, PlayerBar.ActualHeight - 30 - (SubLayer.ActualHeight - pic.Bottom)) : 0;
+        var key = $"{string.Join(",", cues.Select(c => c.StartMs))}|{pic}|{lift}|{SubtitleStyle.Signature()}";
+        if (!force && key == _subDrawn) return;
+        _subDrawn = key;
+        SubLayer.Children.Clear();
+        if (cues.Count == 0) return;
+        var caption = SubtitleStyle.Caption(cues.SelectMany(c => c.Lines), pic.Height);
+        caption.VerticalAlignment = VerticalAlignment.Bottom;
+        caption.MaxWidth = pic.Width * 0.9;
+        caption.Margin = new Thickness(0, 0, 0, SubLayer.ActualHeight - pic.Bottom + Math.Max(SubtitleStyle.BottomMargin(pic.Height), lift));
+        SubLayer.Children.Add(caption);
     }
 
     // ================================================================ subtitle style
 
-    /// <summary>Subtitle files loaded for the current film, added again when the media restarts.</summary>
+    /// <summary>Subtitle files VLC draws for the current film (formats the app can't read), added again when the media restarts.</summary>
     private readonly List<string> _subFiles = new();
     private DispatcherTimer? _styleTimer;
     private int? _videoHeight; // last picture height seen, for the subtitle margin
@@ -605,10 +726,28 @@ public partial class MainWindow
     }
 
     /// <summary>Player menu → "Subtitle style…": the dialog, with each change shown on the video.</summary>
-    private void OpenSubtitleStyle() => SubtitleStyle.ShowDialog(this, RestyleSoon);
+    private void OpenSubtitleStyle() => SubtitleStyle.ShowDialog(this, OnSubtitleStyleChanged);
 
     /// <summary>
-    /// VLC reads the subtitle style when a media starts, so a change restarts the film where it
+    /// A style change during playback. Subtitle files the app draws are simply redrawn. For a
+    /// track inside the film, which VLC draws, colours change live (from the next line); other
+    /// options are read by VLC only when a media starts, so those restart the film where it is.
+    /// With no VLC track showing nothing restarts: VLC catches up when one is chosen.
+    /// </summary>
+    private void OnSubtitleStyleChanged()
+    {
+        DrawSubtitles(force: true);
+        if (_appSub != null || _player.Spu < 0) return;
+        if (VlcStyleKey(_vlcHeight) == _vlcStyle && VlcLive.Apply(_player))
+        {
+            _styleTimer?.Stop();
+            return;
+        }
+        RestyleSoon();
+    }
+
+    /// <summary>
+    /// VLC reads most of the subtitle style when a media starts, so a change restarts the film where it
     /// is (same subtitle and audio track, same loaded subtitle files). Quick changes are batched.
     /// </summary>
     private void RestyleSoon()
@@ -633,14 +772,19 @@ public partial class MainWindow
     /// </summary>
     private void CreatePlayer(int? videoHeight = null)
     {
-        var args = new List<string> { "--no-video-title-show", "--network-caching=1500" };
-        args.AddRange(SubtitleStyle.VlcArgs(videoHeight));
+        var args = VlcArgs(videoHeight);
         var key = string.Join(" ", args);
-        if (key == _vlcStyle && _player != null) return;
+        if (key == _vlcStyle && _player != null)
+        {
+            VlcLive.Apply(_player);
+            return;
+        }
         var (oldPlayer, oldVlc) = (_player, _vlc);
         _vlc = new LibVLC(args.ToArray());
         _player = new VlcMediaPlayer(_vlc);
         _vlcStyle = key;
+        _vlcHeight = videoHeight;
+        VlcLive.Apply(_player);
         HookPlayer();
         Video.MediaPlayer = _player;
         if (VolumeBar != null) _player.Volume = (int)VolumeBar.Value;
@@ -661,6 +805,17 @@ public partial class MainWindow
             }
         });
     }
+
+    /// <summary>LibVLC instance arguments; the live colours are left out when they can be set on the player instead.</summary>
+    private static List<string> VlcArgs(int? videoHeight)
+    {
+        var args = new List<string> { "--no-video-title-show", "--network-caching=1500" };
+        args.AddRange(SubtitleStyle.VlcArgs(videoHeight, withLive: !VlcLive.Supported));
+        return args;
+    }
+
+    /// <summary>What <see cref="_vlcStyle"/> would be for the current style.</summary>
+    private static string VlcStyleKey(int? videoHeight) => string.Join(" ", VlcArgs(videoHeight));
 
     /// <summary>Before a new stream: make sure the player has the current subtitle style.</summary>
     private void EnsurePlayerStyle() => CreatePlayer(VideoHeight());
