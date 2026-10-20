@@ -6,31 +6,9 @@ so. The engine (`crates/madhyam-core`) keeps its own version, given in each sect
 
 How to cut a release and how to add a platform: [docs/RELEASING.md](docs/RELEASING.md).
 
-## Unreleased
-
-A pop-up shows each step while a playlist is added, with how many live channels, movies and series it brought; confirmations use the app's own look; the subtitle preview sits beside the options.
-
-### Windows
-
-- **Adding a playlist** (or turning on Free TV) shows a pop-up: each step ticked as it finishes, the size downloaded, a bar, and how many live channels, movies and series came in (with their categories; "None" for what the playlist doesn't have). Failures are explained on it; Hide keeps it loading in the background.
-- **Confirmations** (remove a playlist, clear history, reset, PINs that don't match, the OpenSubtitles key) use a dialog in the app's theme instead of the system message box.
-- **Settings › Playback › Subtitle style**: options on the left, preview on the right. The preview grows with the window and stays in view while the options scroll.
-
-### Android TV
-
-- **Adding a playlist** or Free TV shows the same step-by-step pop-up with live, movie and series counts.
-- **Removing a playlist, an extra guide or the watch history** asks in a themed dialog (focus on Cancel) instead of "press OK again".
-- **Subtitle style**: options on the left, preview on the right; the preview stays put while the list scrolls.
-
-### Linux
-
-- **Adding a playlist** or Free TV shows the same step-by-step pop-up with live, movie and series counts.
-- **Confirmations** use a dialog in the app's theme instead of GTK's stock alert.
-- **Subtitle style**: options on the left, preview on the right, growing with the window and staying in view while the options scroll.
-
 ## 1.1.1
 
-Parental controls, subtitle style like YouTube's and Buy me a coffee on every platform. Android TV starts in about 5 s, stops streams you leave and needs half the memory; Windows full screen is black edge to edge; Linux plays trailers in the app.
+Parental controls, subtitle style like YouTube's and Buy me a coffee on every platform. Adding a playlist shows each step and how many live channels, movies and series it brought, and confirmations use the app's own look. Android TV starts in about 5 s, stops streams you leave and needs half the memory; Windows full screen is black edge to edge; Linux plays trailers in the app.
 
 ### Android TV
 - **Parental controls** (Settings › Parental controls): a 4-digit PIN; lock any category of any playlist; adult categories and channels are locked automatically (you can unlock one); an age limit for films and series; Settings can be locked too. Locked items are left out of Search, Home and the "All" lists, and zapping passes over them. Once entered, the PIN stays for the session or 10 idle minutes; the open lock in the menu locks again. Forgot the PIN? Reset parental controls after typing RESET.
@@ -47,7 +25,9 @@ Parental controls, subtitle style like YouTube's and Buy me a coffee on every pl
 - Settings shows a section once the focus rests on it, so moving down the list no longer opens every section on the way. OK or Right opens a section at once, and entering a section puts the focus on its first row.
 - A setting shows its new value as soon as you press OK, and pressing OK again changes it again (before, the row kept the old value until you left the page, and "Start in" moved only once however often you pressed). Changing a setting no longer redraws the whole app, and settings are saved in the background.
 - The custom colour dialog fits on the screen.
-- Clear watch history asks you to press OK again, like Remove playlist.
+- **Adding a playlist** or Free TV shows a pop-up: each step ticked as it finishes, the size downloaded, a bar, and how many live channels, movies and series came in (with their categories; "None" for what the playlist doesn't have). Failures are explained on it; Hide keeps it loading in the background.
+- Removing a playlist or an extra guide, and clearing the watch history, ask in a dialog in the app's look, with the focus on Cancel.
+- Settings › Playback › Subtitle style shows the options on the left and the preview on the right, which stays put while the list scrolls.
 - OK during a film or episode shows the controls instead of pausing; OK again on Play / Pause pauses. While paused, the bar says "Paused" and stays on screen. The Play and Pause keys of the remote do what they say.
 - Trailers open the YouTube web link first, which every YouTube app and browser accepts; some apps (SmartTube) failed on the `vnd.youtube:` link Madhyam sent before.
 - Playback errors are a sentence ("Couldn't connect to this channel. The provider may be offline, or your account may be using all its connections.") with the player's code on a smaller line under it.
@@ -75,6 +55,9 @@ Parental controls, subtitle style like YouTube's and Buy me a coffee on every pl
 - **Parental controls** (Settings › Parental controls): a 4-digit PIN (stored only as a salted hash), locked categories, automatic locking of adult categories and channels, an "Allow up to" age limit for films and series, and an optional lock on Settings and playlists. Locked items stay out of Search, Home and the "All" lists. After you enter the PIN, things stay unlocked until you close the app or 10 minutes pass; the open-lock icon in the top bar locks them again.
 - **Subtitle style** like YouTube's caption options: size in points, font, text, background and window colour and opacity, edge style and position. It's in Settings › Playback with a live preview, and in the player's subtitle menu, where changes show without stopping the film. Subtitle files and OpenSubtitles downloads are drawn by the app, so every change shows at once. On subtitle tracks inside the film, text and background colour change from the next line; the other options restart the film at the same moment (VLC reads them only when playback starts).
 - **Buy me a coffee** in Settings › About.
+- **Adding a playlist** or Free TV shows a pop-up: each step ticked as it finishes, the size downloaded, a bar, and how many live channels, movies and series came in (with their categories; "None" for what the playlist doesn't have). Failures are explained on it; Hide keeps it loading in the background.
+- Confirmations (remove a playlist, clear history, reset, PINs that don't match, the OpenSubtitles key) use a dialog in the app's theme instead of the system message box.
+- Settings › Playback › Subtitle style shows the options on the left and the preview on the right. The preview grows with the window and stays in view while the options scroll.
 - Full screen is black edge to edge: a wide movie (2.39:1, like most films) showed light grey bars above and below the picture, and the controls sat on grey. The bars are now black, also while the window switches to and from full screen.
 - Uses engine 0.3.0: large playlists take less memory and load and save faster.
 
@@ -82,6 +65,9 @@ Parental controls, subtitle style like YouTube's and Buy me a coffee on every pl
 - **Parental controls** (Settings › Parental controls): a 4-digit PIN (stored only as a salted hash), locked categories per playlist, automatic locking of adult categories and channels, an optional lock on Settings and playlists, and an "Allow up to" age limit. The PIN is remembered for 10 minutes; the open-lock button in the top bar locks again. Locked channels are skipped when zapping and locked items stay out of Search, Home and the "All" lists.
 - **Subtitle style** like YouTube's caption options (size in points, font, text, background and window colours and opacity, edge style, position), in Settings › Playback with a live preview and from the player's subtitle menu; applies at once to embedded, file and downloaded subtitles.
 - **Buy me a coffee** in Settings › About.
+- **Adding a playlist** or Free TV shows a pop-up with each step, the size downloaded and how many live channels, movies and series came in.
+- Confirmations use a dialog in the app's theme instead of GTK's stock alert.
+- Settings › Playback › Subtitle style shows the options on the left and the preview on the right, growing with the window and staying in view while the options scroll.
 - Trailers play inside the app (through yt-dlp), icons are bundled with the app, and the segment highlight and overlapping chips are fixed.
 - Uses engine 0.3.0: large playlists take less memory and load and save faster.
 
