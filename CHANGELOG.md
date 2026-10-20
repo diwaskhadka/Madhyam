@@ -47,6 +47,9 @@ Android TV: a much faster start, streams stop when you leave them, large playlis
 - Filter chips keep the focus when you turn them on or off, and after choosing a sort or a minimum rating the focus returns to that button (before, it fell back to the rail).
 
 ### Windows
+- **Parental controls** (Settings › Parental controls): a 4-digit PIN (stored only as a salted hash), locked categories, automatic locking of adult categories and channels, an "Allow up to" age limit for films and series, and an optional lock on Settings and playlists. Locked items stay out of Search, Home and the "All" lists. After you enter the PIN, things stay unlocked until you close the app or 10 minutes pass; the open-lock icon in the top bar locks them again.
+- **Subtitle style** like YouTube's caption options: size in points, font, text, background and window colour and opacity, edge style and position. It's in Settings › Playback with a live preview, and in the player's subtitle menu, where a change restarts the film at the same moment (VLC can't restyle subtitles while playing). Subtitles with their own styling (ASS/SSA) keep it.
+- **Buy me a coffee** in Settings › About.
 - Full screen is black edge to edge: a wide movie (2.39:1, like most films) showed light grey bars above and below the picture, and the controls sat on grey. The bars are now black, also while the window switches to and from full screen.
 - Uses engine 0.3.0: large playlists take less memory and load and save faster.
 
