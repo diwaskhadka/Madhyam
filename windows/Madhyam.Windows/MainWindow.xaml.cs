@@ -32,6 +32,7 @@ public partial class MainWindow : Window
     private LibVLC _vlc = null!;
     private VlcMediaPlayer _player = null!;
     private string _vlcStyle = "";
+    private int? _vlcHeight; // picture height _vlcStyle was made for
     private readonly DispatcherTimer _searchDebounce = new() { Interval = TimeSpan.FromMilliseconds(300) };
     private readonly DispatcherTimer _tick = new() { Interval = TimeSpan.FromSeconds(1) };
 

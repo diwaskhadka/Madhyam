@@ -300,6 +300,8 @@
                                                 <!-- Drawn in VLC's overlay window above the video: click = pause, double-click = full screen. -->
                                                 <Grid x:Name="VideoOverlay" Visibility="Collapsed" Background="#01000000" Loaded="Overlay_Loaded" MouseWheel="Overlay_MouseWheel"
                                                       MouseLeftButtonDown="Overlay_MouseLeftButtonDown" MouseMove="Overlay_MouseMove">
+                                                    <!-- Subtitle files, drawn by the app in the user's style (see MainWindow.Player.cs). -->
+                                                    <Grid x:Name="SubLayer" IsHitTestVisible="False" />
                                                     <Border x:Name="Osd" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,22,0,0" CornerRadius="10"
                                                             Background="#CC000000" Padding="16,8" Visibility="Collapsed" IsHitTestVisible="False">
                                                         <TextBlock x:Name="OsdText" Foreground="White" FontSize="14" />

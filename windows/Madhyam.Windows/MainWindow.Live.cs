@@ -491,6 +491,7 @@ public partial class MainWindow
         double resume = 0;
         if (!it.IsLive && S.ResumePlayback) resume = await _repo.ResumeSeconds(it.Id);
         _subFiles.Clear();
+        ClearAppSubtitles();
         EnsurePlayerStyle();
         using var media = BuildMedia(it, uri, resume);
         Layout();

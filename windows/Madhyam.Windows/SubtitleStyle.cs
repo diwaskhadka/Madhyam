@@ -10,9 +10,10 @@ namespace Madhyam.Windows;
 
 /// <summary>
 /// Subtitle style like YouTube's caption options: size in points, font, text / background /
-/// window colour and opacity, edge style and position. VLC draws the subtitles with its
-/// freetype renderer, so the style becomes freetype options on the media; the player restarts
-/// the media (keeping the position) when the style changes during playback.
+/// window colour and opacity, edge style and position. Subtitle files are drawn by the app
+/// itself (<see cref="Caption"/>), so any change shows at once. Tracks inside the film are drawn
+/// by VLC's freetype renderer from LibVLC options: colours change live (<see cref="VlcLive"/>),
+/// the rest makes the player restart the media, keeping the position.
 /// Same options, names and defaults as the Android TV and Linux apps.
 /// </summary>
 public static class SubtitleStyle
@@ -88,20 +89,18 @@ public static class SubtitleStyle
     /// subtitles keep their look in a window and in full screen; the margin needs the
     /// picture's own height in pixels (1080 when not known yet).
     /// </summary>
-    public static IEnumerable<string> VlcArgs(int? videoHeight)
+    public static IEnumerable<string> VlcArgs(int? videoHeight, bool withLive)
     {
         var inv = CultureInfo.InvariantCulture;
         // freetype-rel-fontsize: the picture height divided by the text height.
         var rel = (int)Math.Round(1080.0 / Pixels(Math.Clamp(S.SubFontSizePt, 6, 120), 1080));
         yield return $"--freetype-rel-fontsize={Math.Max(1, rel)}";
         yield return $"--freetype-font={FontName(S.SubFont)}";
-        yield return $"--freetype-color={Rgb(ColorOf(S.SubTextColor))}";
         yield return $"--freetype-opacity={Byte(S.SubTextOpacity)}";
-        // VLC draws one box behind the text; the window option (a box round the whole caption)
-        // is shown with it, whichever of the two is more opaque.
-        var (box, boxOpacity) = S.SubWindowOpacity > S.SubBackOpacity ? (S.SubWindowColor, S.SubWindowOpacity) : (S.SubBackColor, S.SubBackOpacity);
-        yield return $"--freetype-background-color={Rgb(ColorOf(box))}";
-        yield return $"--freetype-background-opacity={Byte(boxOpacity)}";
+        if (withLive)
+        {
+            foreach (var (name, value) in LiveVlcValues()) yield return $"--{name}={value}";
+        }
         var edge = S.SubEdge;
         yield return $"--freetype-outline-thickness={(edge == "Outline" ? 4 : 0)}";
         yield return "--freetype-outline-color=0";
@@ -120,6 +119,25 @@ public static class SubtitleStyle
         var h = videoHeight is > 0 ? videoHeight.Value : 1080;
         yield return $"--sub-margin={(int)Math.Round(BottomFraction() * h)}";
     }
+
+    /// <summary>
+    /// The options VLC's subtitle renderer reads again for every new line, so they can change
+    /// while a film plays (see <see cref="VlcLive"/>): text colour and the box behind the text.
+    /// VLC draws one box; the window option (a box round the whole caption) is shown with it,
+    /// whichever of the two is more opaque.
+    /// </summary>
+    public static IEnumerable<(string Name, int Value)> LiveVlcValues()
+    {
+        yield return ("freetype-color", Rgb(ColorOf(S.SubTextColor)));
+        var (box, boxOpacity) = S.SubWindowOpacity > S.SubBackOpacity ? (S.SubWindowColor, S.SubWindowOpacity) : (S.SubBackColor, S.SubBackOpacity);
+        yield return ("freetype-background-color", Rgb(ColorOf(box)));
+        yield return ("freetype-background-opacity", Byte(boxOpacity));
+    }
+
+    /// <summary>All the style options in one string, to tell when a drawn caption is out of date.</summary>
+    public static string Signature() =>
+        $"{S.SubFontSizePt}/{S.SubFont}/{S.SubTextColor}/{S.SubTextOpacity}/{S.SubBackColor}/{S.SubBackOpacity}/" +
+        $"{S.SubWindowColor}/{S.SubWindowOpacity}/{S.SubEdge}/{S.SubPosition}/{S.SubPosOffset}";
 
     public static void Reset()
     {
@@ -288,9 +306,39 @@ public static class SubtitleStyle
         return frame;
     }
 
+    private static readonly IReadOnlyList<SubSpan>[] SampleLines =
+    {
+        new[] { new SubSpan("This is how subtitles", false, false, false) },
+        new[] { new SubSpan("will look while you watch.", false, false, false) },
+    };
+
     public static void UpdatePreview(Border frame)
     {
         var h = frame.ActualHeight > 0 ? frame.ActualHeight : frame.Height;
+        var window = Caption(SampleLines, h);
+        window.VerticalAlignment = VerticalAlignment.Bottom;
+        window.Margin = new Thickness(12, 0, 12, BottomMargin(h));
+        var g = new Grid();
+        g.Children.Add(new TextBlock
+        {
+            Text = "PREVIEW", FontSize = 10.5, FontWeight = FontWeights.Bold, Foreground = new SolidColorBrush(Color.FromArgb(0x99, 0xFF, 0xFF, 0xFF)),
+            Margin = new Thickness(14, 10, 0, 0),
+        });
+        g.Children.Add(window);
+        frame.Child = g;
+    }
+
+    /// <summary>Space below the caption for a picture this high: the position, at least a little off the edge.</summary>
+    public static double BottomMargin(double pictureHeight) => Math.Max(pictureHeight * 0.04, BottomFraction() * pictureHeight);
+
+    /// <summary>
+    /// A caption in the current style for a picture shown <paramref name="pictureHeight"/> high:
+    /// the window box with the lines inside, each line on its own background. Used by the
+    /// preview and by the player for subtitle files, which the app draws itself.
+    /// </summary>
+    public static Border Caption(IEnumerable<IReadOnlyList<SubSpan>> lines, double pictureHeight)
+    {
+        var h = pictureHeight;
         var px = Pixels(S.SubFontSizePt, h);
         var font = new FontFamily(FontName(S.SubFont));
         var text = new TextBlock
@@ -298,14 +346,27 @@ public static class SubtitleStyle
             FontFamily = font, FontSize = px, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap,
             LineHeight = px * 1.25, LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
         };
+        if (S.SubFont == "Small caps") Typography.SetCapitals(text, FontCapitals.SmallCaps);
         var fg = ColorOf(S.SubTextColor);
         fg.A = (byte)Byte(S.SubTextOpacity);
         var bg = ColorOf(S.SubBackColor);
         bg.A = (byte)Byte(S.SubBackOpacity);
-        foreach (var (line, last) in new[] { ("This is how subtitles", false), ("will look while you watch.", true) })
+        var (fgBrush, bgBrush) = (new SolidColorBrush(fg), new SolidColorBrush(bg));
+        var first = true;
+        foreach (var line in lines)
         {
-            text.Inlines.Add(new Run($" {line} ") { Foreground = new SolidColorBrush(fg), Background = new SolidColorBrush(bg) });
-            if (!last) text.Inlines.Add(new LineBreak());
+            if (!first) text.Inlines.Add(new LineBreak());
+            first = false;
+            text.Inlines.Add(new Run(" ") { Background = bgBrush });
+            foreach (var span in line)
+            {
+                var run = new Run(span.Text) { Foreground = fgBrush, Background = bgBrush };
+                if (span.Italic) run.FontStyle = FontStyles.Italic;
+                if (span.Bold) run.FontWeight = FontWeights.Bold;
+                if (span.Underline) run.TextDecorations = TextDecorations.Underline;
+                text.Inlines.Add(run);
+            }
+            text.Inlines.Add(new Run(" ") { Background = bgBrush });
         }
         text.Effect = S.SubEdge switch
         {
@@ -317,21 +378,12 @@ public static class SubtitleStyle
         };
         var win = ColorOf(S.SubWindowColor);
         win.A = (byte)Byte(S.SubWindowOpacity);
-        var window = new Border
+        return new Border
         {
             Background = new SolidColorBrush(win), Padding = new Thickness(px * 0.3, px * 0.15, px * 0.3, px * 0.15),
-            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Bottom,
+            HorizontalAlignment = HorizontalAlignment.Center, IsHitTestVisible = false,
             Child = text,
-            Margin = new Thickness(12, 0, 12, Math.Max(h * 0.04, BottomFraction() * h)),
         };
-        var g = new Grid();
-        g.Children.Add(new TextBlock
-        {
-            Text = "PREVIEW", FontSize = 10.5, FontWeight = FontWeights.Bold, Foreground = new SolidColorBrush(Color.FromArgb(0x99, 0xFF, 0xFF, 0xFF)),
-            Margin = new Thickness(14, 10, 0, 0),
-        });
-        g.Children.Add(window);
-        frame.Child = g;
     }
 
     /// <summary>The player's "Subtitle style…" dialog: changes apply to the playing video as they are made.</summary>
