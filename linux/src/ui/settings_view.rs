@@ -11,7 +11,9 @@ use gtk::prelude::*;
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
 
-const SECTIONS: [(&str, &str, &str); 7] = [
+const COFFEE_URL: &str = "https://buymeacoffee.com/diwaskhadka";
+
+const SECTIONS: [(&str, &str, &str); 8] = [
     ("General", "madhyam-preferences-system-symbolic", "General"),
     ("Sources", "madhyam-view-list-symbolic", "Sources"),
     ("Dashboard", "madhyam-go-home-symbolic", "Dashboard"),
@@ -24,6 +26,11 @@ const SECTIONS: [(&str, &str, &str); 7] = [
         "Guide",
         "madhyam-x-office-calendar-symbolic",
         "Programme guide",
+    ),
+    (
+        "Parental",
+        "madhyam-changes-prevent-symbolic",
+        "Parental controls",
     ),
     ("Data", "madhyam-folder-symbolic", "Backup & data"),
     ("About", "madhyam-help-about-symbolic", "About"),
@@ -38,9 +45,11 @@ pub struct SettingsView {
     current: RefCell<String>,
     src_filter: RefCell<String>,
     src_sort: RefCell<String>,
+    /// The "Subtitle style" heading on the Playback page (to scroll to it).
+    sub_anchor: RefCell<Option<gtk::Widget>>,
 }
 
-fn row_widget(
+pub fn row_widget(
     title: &str,
     desc: &str,
     control: &impl IsA<gtk::Widget>,
@@ -128,6 +137,78 @@ fn entry(text: &str, on_done: impl Fn(String) + 'static) -> gtk::Entry {
     e
 }
 
+/// One category in "Locked categories": its name, "Adult" when auto-locked, and a lock switch.
+fn category_lock_row(
+    app: &Rc<App>,
+    source: i64,
+    kind: &'static str,
+    name: &str,
+    again: Rc<dyn Fn()>,
+) -> gtk::Widget {
+    use crate::parental::{self, Lock};
+    let s = settings::snapshot();
+    let lock = parental::category_lock(&s, source, kind, name);
+    let adult = parental::is_adult(name);
+    let row = kit::hbox(10);
+    kit::margins(&row, 0, 5, 0, 5);
+    let l = kit::text(name, 13.5, "", 400, false);
+    l.set_hexpand(true);
+    l.set_max_width_chars(1);
+    row.append(&l);
+    if adult && s.parental_auto_adult {
+        row.append(&kit::text(
+            if lock == Some(Lock::Adult) {
+                "Adult"
+            } else {
+                "Adult · unlocked"
+            },
+            12.0,
+            "muted",
+            400,
+            false,
+        ));
+    }
+    let sw = gtk::Switch::new();
+    sw.set_active(lock.is_some());
+    sw.set_valign(gtk::Align::Center);
+    sw.set_tooltip_text(Some("Locked"));
+    let (w, name) = (Rc::downgrade(app), name.to_string());
+    sw.connect_state_set(move |sw, want| {
+        let (w, name, ag, sw) = (w.clone(), name.clone(), again.clone(), sw.clone());
+        spawn(async move {
+            let Some(a) = w.upgrade() else { return };
+            if !a
+                .require_pin("Enter the PIN to change parental controls.")
+                .await
+            {
+                sw.set_state(!want);
+                sw.set_active(!want);
+                return;
+            }
+            let key = parental::key(source, kind);
+            settings::update(|s| {
+                let locked = s.locked_categories.entry(key.clone()).or_default();
+                locked.retain(|g| g != &name);
+                if want {
+                    locked.push(name.clone());
+                }
+                let unlocked = s.unlocked_categories.entry(key.clone()).or_default();
+                unlocked.retain(|g| g != &name);
+                // Unlocking an adult category by hand beats the auto-lock.
+                if !want && s.parental_auto_adult && parental::is_adult(&name) {
+                    unlocked.push(name.clone());
+                }
+            });
+            sw.set_state(want);
+            a.refresh_lists();
+            let _ = &ag; // the row updates itself; no page rebuild needed
+        });
+        gtk::glib::Propagation::Stop
+    });
+    row.append(&sw);
+    row.upcast()
+}
+
 impl SettingsView {
     pub fn new(app: &Rc<App>) -> Rc<SettingsView> {
         let root = kit::hbox(14);
@@ -167,6 +248,7 @@ impl SettingsView {
             current: RefCell::new("General".into()),
             src_filter: RefCell::new("all".into()),
             src_sort: RefCell::new("added".into()),
+            sub_anchor: RefCell::new(None),
         });
         let w = Rc::downgrade(&sv);
         sv.nav.connect_row_selected(move |_, r| {
@@ -190,6 +272,20 @@ impl SettingsView {
 
     /// Open a section by key (General, Sources, Dashboard, Playback, Guide, Data, About).
     pub fn open(self: &Rc<Self>, key: &str) {
+        // "Subtitles": Playback, scrolled to Subtitle style.
+        if key.eq_ignore_ascii_case("Subtitles") {
+            self.open("Playback");
+            let me = self.clone();
+            gtk::glib::timeout_add_local_once(std::time::Duration::from_millis(150), move || {
+                let anchor = me.sub_anchor.borrow().clone();
+                if let Some(p) = anchor.and_then(|a| {
+                    a.compute_point(&me.content, &gtk::graphene::Point::new(0.0, 0.0))
+                }) {
+                    me.scroll.vadjustment().set_value(p.y() as f64 - 12.0);
+                }
+            });
+            return;
+        }
         if let Some(i) = SECTIONS.iter().position(|s| s.0.eq_ignore_ascii_case(key)) {
             if let Some(r) = self.nav.row_at_index(i as i32) {
                 self.nav.select_row(Some(&r));
@@ -230,6 +326,7 @@ impl SettingsView {
             "Dashboard" => self.dashboard_page(),
             "Playback" => self.playback(&app),
             "Guide" => self.guide(&app),
+            "Parental" => self.parental(&app),
             "Data" => self.data(&app),
             _ => self.about(&app),
         }
@@ -674,6 +771,9 @@ impl SettingsView {
             Rc::new(move |a, say| {
                 let (s, sv) = (s1.clone(), sv1.clone());
                 Box::pin(async move {
+                    if !a.settings_allowed().await {
+                        return Ok(());
+                    }
                     let ua = settings::get()
                         .source_user_agent
                         .get(&s.id)
@@ -980,10 +1080,309 @@ impl SettingsView {
             }
         })]));
         self.row("IMDb and Rotten Tomatoes ratings", "Shown on movie and series pages when found. Uses OMDb (free key, 1,000 look-ups a day). Leave empty to hide them.", &ob, true);
+        self.subtitle_style(app);
         self.row("Keyboard", "Space or click the picture: pause · ←/→ 10 s · ↑/↓ volume · M mute · J/K audio delay · G/H subtitle delay · double-click or F11 full screen", &gtk::Box::new(gtk::Orientation::Horizontal, 0), false);
         self.content.append(&note(
             "Playback changes apply to the next channel or film you open.",
         ));
+    }
+
+    /// Settings › Playback › Subtitle style: a live preview, then one row per option.
+    fn subtitle_style(self: &Rc<Self>, app: &Rc<App>) {
+        let t = kit::text("Subtitle style", 18.0, "", 600, false);
+        kit::margins(&t, 0, 28, 0, 4);
+        self.content.append(&t);
+        *self.sub_anchor.borrow_mut() = Some(t.clone().upcast());
+        self.content.append(&kit::text(
+            "Like YouTube's caption options. Applies to embedded subtitles, subtitle files and downloads; changes show at once, also from the player's subtitle menu.",
+            13.0,
+            "muted",
+            400,
+            true,
+        ));
+        let (preview, redraw) = super::sub_style_view::preview();
+        preview.set_margin_top(14);
+        self.content.append(&preview);
+        let w = Rc::downgrade(app);
+        let changed: Rc<dyn Fn()> = Rc::new(move || {
+            redraw();
+            if let Some(m) = w.upgrade().and_then(|a| a.mpv().cloned()) {
+                crate::sub_style::apply(&m);
+            }
+        });
+        let me = Rc::downgrade(self);
+        let reset: Rc<dyn Fn()> = Rc::new(move || {
+            let Some(sv) = me.upgrade() else { return };
+            // Rebuild the page with the defaults, keeping the scroll position.
+            gtk::glib::idle_add_local_once(move || {
+                let adj = sv.scroll.vadjustment();
+                let y = adj.value();
+                sv.show("Playback");
+                gtk::glib::idle_add_local_once(move || adj.set_value(y));
+            });
+        });
+        for r in super::sub_style_view::rows(changed, reset) {
+            self.row(r.title, r.desc, &r.widget, r.below);
+        }
+    }
+
+    // ================================================================ parental controls
+
+    fn parental(self: &Rc<Self>, app: &Rc<App>) {
+        use super::parental_view::{ask_new_pin, ask_pin, confirm_reset};
+        use crate::parental;
+        self.header(
+            "Parental controls",
+            "Keep categories, adult content, Settings and films above an age rating behind a 4-digit PIN.",
+        );
+        let s = settings::snapshot();
+        let has_pin = parental::has_pin(&s);
+        let me = Rc::downgrade(self);
+        // Rebuild this page after a change (switches then show the real state).
+        let again = move || {
+            if let Some(sv) = me.upgrade() {
+                let adj = sv.scroll.vadjustment();
+                let y = adj.value();
+                sv.show("Parental");
+                gtk::glib::idle_add_local_once(move || adj.set_value(y));
+            }
+        };
+        let again = Rc::new(again);
+
+        // On / off
+        let (w, ag) = (Rc::downgrade(app), again.clone());
+        let on = gtk::Switch::new();
+        on.set_active(s.parental_enabled);
+        on.set_valign(gtk::Align::Center);
+        on.connect_state_set(move |_, want| {
+            let (w, ag) = (w.clone(), ag.clone());
+            gtk::glib::spawn_future_local(async move {
+                let Some(a) = w.upgrade() else { return };
+                if want {
+                    if !parental::has_pin(&settings::snapshot()) {
+                        match ask_new_pin(&a.window).await {
+                            Some(pin) => parental::set_pin(&pin),
+                            None => return ag(),
+                        }
+                    }
+                    settings::update(|s| s.parental_enabled = true);
+                    parental::unlock(); // whoever just set it up is in charge
+                } else if a
+                    .require_pin("Enter the PIN to turn parental controls off.")
+                    .await
+                {
+                    settings::update(|s| s.parental_enabled = false);
+                    parental::lock_now();
+                }
+                a.update_lock_button();
+                a.refresh_lists();
+                ag();
+            });
+            gtk::glib::Propagation::Stop
+        });
+        self.row(
+            "Parental controls",
+            if has_pin {
+                "When on, locked content and settings ask for the PIN. Turning it off asks for the PIN."
+            } else {
+                "Turning it on asks you to choose a 4-digit PIN first."
+            },
+            &on,
+            false,
+        );
+
+        // PIN
+        let (w, ag) = (Rc::downgrade(app), again.clone());
+        let pin_btn = btn(
+            if has_pin { "Change PIN" } else { "Set PIN" },
+            false,
+            move || {
+                let (w, ag) = (w.clone(), ag.clone());
+                spawn(async move {
+                    let Some(a) = w.upgrade() else { return };
+                    if parental::has_pin(&settings::snapshot())
+                        && ask_pin(
+                            &a.window,
+                            "Change PIN",
+                            "Enter the current PIN first.",
+                            true,
+                        )
+                        .await
+                        .is_none()
+                    {
+                        return;
+                    }
+                    if let Some(pin) = ask_new_pin(&a.window).await {
+                        parental::set_pin(&pin);
+                        a.set_status("PIN saved.");
+                    }
+                    ag();
+                });
+            },
+        );
+        self.row(
+            "PIN",
+            "Four digits. Once entered it is remembered until Madhyam closes or 10 minutes pass without a PIN-locked action; the open-lock button in the top bar locks again at once.",
+            &pin_btn,
+            false,
+        );
+
+        if s.parental_enabled {
+            // A change here needs the PIN (asked once, then remembered for the session).
+            let gated = |app: &Rc<App>, f: Rc<dyn Fn()>, ag: Rc<dyn Fn()>| {
+                let w = Rc::downgrade(app);
+                move || {
+                    let (w, f, ag) = (w.clone(), f.clone(), ag.clone());
+                    spawn(async move {
+                        let Some(a) = w.upgrade() else { return };
+                        if a.require_pin("Enter the PIN to change parental controls.")
+                            .await
+                        {
+                            f();
+                            a.refresh_lists();
+                        }
+                        ag();
+                    });
+                }
+            };
+            let switch = |value: bool, set: fn(&mut settings::AppSettings, bool)| {
+                let sw = gtk::Switch::new();
+                sw.set_active(value);
+                sw.set_valign(gtk::Align::Center);
+                let go = gated(
+                    app,
+                    Rc::new(move || settings::update(|s| set(s, !value))),
+                    again.clone(),
+                );
+                sw.connect_state_set(move |_, _| {
+                    go();
+                    gtk::glib::Propagation::Stop
+                });
+                sw
+            };
+            self.row(
+                "Auto-lock adult content",
+                "Categories and channels whose names contain words like XXX, Adult, 18+ or Porn are locked. You can still unlock such a category below.",
+                &switch(s.parental_auto_adult, |s, v| s.parental_auto_adult = v),
+                false,
+            );
+            self.row(
+                "Lock Settings",
+                "Settings, adding, editing or removing a playlist, and these parental controls need the PIN.",
+                &switch(s.parental_lock_settings, |s, v| s.parental_lock_settings = v),
+                false,
+            );
+            let ages = kit::hbox(0);
+            let cur = s.parental_max_age.to_string();
+            let opts = [
+                ("0", "Any"),
+                ("7", "7"),
+                ("12", "12"),
+                ("16", "16"),
+                ("18", "18"),
+            ];
+            let w = Rc::downgrade(app);
+            let ag = again.clone();
+            ages.append(&choice(&opts, &cur, move |v| {
+                let age: i32 = v.parse().unwrap_or(0);
+                if age == settings::get().parental_max_age {
+                    return;
+                }
+                let (w, ag) = (w.clone(), ag.clone());
+                spawn(async move {
+                    let Some(a) = w.upgrade() else { return };
+                    if a.require_pin("Enter the PIN to change parental controls.")
+                        .await
+                    {
+                        settings::update(|s| s.parental_max_age = age);
+                    }
+                    ag();
+                });
+            }));
+            self.row(
+                "Allow up to",
+                "Films and series rated above this age need the PIN to open or play. Uses the provider's age rating (MPAA, age or certification). Items with no age rating are allowed.",
+                &ages,
+                true,
+            );
+            self.locked_categories(app, again.clone());
+        }
+
+        // Forgotten PIN
+        let (w, ag) = (Rc::downgrade(app), again.clone());
+        let reset = btn("Reset parental controls…", false, move || {
+            let (w, ag) = (w.clone(), ag.clone());
+            spawn(async move {
+                let Some(a) = w.upgrade() else { return };
+                if confirm_reset(&a.window).await {
+                    a.update_lock_button();
+                    a.refresh_lists();
+                    a.set_status("Parental controls were reset.");
+                }
+                ag();
+            });
+        });
+        self.row(
+            "Forgot the PIN?",
+            "Reset removes the PIN and every lock. You type RESET to confirm.",
+            &reset,
+            false,
+        );
+    }
+
+    /// Every category of every playlist (Live TV, Movies, Series) with a lock switch.
+    fn locked_categories(self: &Rc<Self>, app: &Rc<App>, again: Rc<dyn Fn()>) {
+        let list = kit::vbox(8);
+        for src in app.sources.borrow().iter() {
+            for (kind, label) in [
+                ("live", "Live TV"),
+                ("movie", "Movies"),
+                ("series", "Series"),
+            ] {
+                let exp = gtk::Expander::new(Some(&format!("{} · {label}", src.name)));
+                exp.add_css_class("panel");
+                let body = kit::vbox(0);
+                kit::margins(&body, 12, 6, 12, 10);
+                exp.set_child(Some(&body));
+                let loaded = Rc::new(std::cell::Cell::new(false));
+                let (w, src_id, ag) = (Rc::downgrade(app), src.id, again.clone());
+                exp.connect_expanded_notify(move |e| {
+                    if !e.is_expanded() || loaded.replace(true) {
+                        return;
+                    }
+                    let (w, body, ag) = (w.clone(), body.clone(), ag.clone());
+                    spawn(async move {
+                        let Some(a) = w.upgrade() else { return };
+                        let repo = a.repo.clone();
+                        let groups = bg(move || repo.groups(src_id, kind, None))
+                            .await
+                            .unwrap_or_default();
+                        if groups.is_empty() {
+                            body.append(&kit::text("No categories.", 13.0, "muted", 400, false));
+                        }
+                        for g in groups {
+                            body.append(&category_lock_row(&a, src_id, kind, &g.name, ag.clone()));
+                        }
+                    });
+                });
+                list.append(&exp);
+            }
+        }
+        if app.sources.borrow().is_empty() {
+            list.append(&kit::text(
+                "Add a playlist first.",
+                13.0,
+                "muted",
+                400,
+                false,
+            ));
+        }
+        self.row(
+            "Locked categories",
+            "Opening a locked category, or playing anything in it from Search, Home, Favorites, Recent or the guide, needs the PIN. Its items are left out of Search, Home and “All” lists while locked.",
+            &list,
+            true,
+        );
     }
 
     // ================================================================ guide
@@ -1321,6 +1720,25 @@ impl SettingsView {
                     );
                 }
             })]),
+            false,
+        );
+        let w = Rc::downgrade(app);
+        let coffee = gtk::Button::new();
+        coffee.add_css_class("primary");
+        let inner = kit::hbox(8);
+        inner.append(&kit::icon("madhyam-coffee-symbolic", 16));
+        inner.append(&gtk::Label::new(Some("Buy me a coffee")));
+        coffee.set_child(Some(&inner));
+        coffee.set_tooltip_text(Some(COFFEE_URL));
+        coffee.connect_clicked(move |_| {
+            if let Some(a) = w.upgrade() {
+                super::dialogs::open_uri(&a.window, COFFEE_URL);
+            }
+        });
+        self.row(
+            "Buy me a coffee",
+            &format!("{b} is free. If you enjoy it, you can buy me a coffee."),
+            &coffee,
             false,
         );
         self.row("Content", &format!("{b} ships with no channels of its own. It plays the Xtream Codes or M3U playlists you add from a provider you are entitled to use, and the optional Free TV list of public streams."), &empty(), false);

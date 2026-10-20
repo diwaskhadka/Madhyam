@@ -7,9 +7,11 @@ pub mod dialogs;
 pub mod kit;
 pub mod live;
 pub mod pages;
+pub mod parental_view;
 pub mod player;
 pub mod ratio;
 pub mod settings_view;
+pub mod sub_style_view;
 pub mod vod;
 
 use crate::http::{AppError, Res};

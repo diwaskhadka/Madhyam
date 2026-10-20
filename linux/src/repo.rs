@@ -67,6 +67,8 @@ pub struct DetailsInfo {
     /// YouTube video id.
     pub trailer: Option<String>,
     pub imdb_id: Option<String>,
+    /// Age rating from the provider (MPAA / age / certification), for parental controls.
+    pub age: Option<i32>,
 }
 
 #[derive(Clone, Debug)]
@@ -462,6 +464,8 @@ fn parse_details(info: &Value) -> DetailsInfo {
         trailer,
         imdb_id: any(&["imdb_id", "imdb"])
             .and_then(|i| IMDB.find(&i).map(|m| m.as_str().to_string())),
+        age: any(&["rating_mpaa", "mpaa_rating", "mpaa", "age", "certification"])
+            .and_then(|r| crate::parental::parse_age(&r)),
     }
 }
 

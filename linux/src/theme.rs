@@ -527,4 +527,19 @@ scrolledwindow undershoot, scrolledwindow overshoot { background: none; }
 .in-use { background-color: @RailActive; color: @Accent; border-radius: 6px; padding: 1px 7px; font-size: 0.7em; font-weight: 700; }
 .swatch { border-radius: 16px; min-width: 30px; min-height: 30px; border: 1px solid @Line; }
 .swatch-sm { border-radius: 7px; min-width: 14px; min-height: 14px; }
+
+/* parental controls */
+entry.pin-box { min-width: 46px; min-height: 54px; font-size: 1.6em; font-weight: 700; border-radius: 10px; }
+entry.pin-box text { padding: 0; }
+@keyframes shake {
+  0% { margin-left: 0; margin-right: 0; } 20% { margin-left: 14px; margin-right: 0; }
+  40% { margin-left: 0; margin-right: 14px; } 60% { margin-left: 10px; margin-right: 0; }
+  80% { margin-left: 0; margin-right: 6px; } 100% { margin-left: 0; margin-right: 0; }
+}
+.shake { animation: shake 360ms ease-out; }
+.lock-mark { color: @Muted; }
+.unlocked-button { color: @Accent; }
+
+/* subtitle style preview */
+.sub-preview-frame { background-color: #0b0d12; background-image: linear-gradient(160deg, #2a3446, #0b0d12 70%); border-radius: 10px; }
 "#;
