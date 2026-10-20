@@ -12,9 +12,14 @@ namespace Madhyam.Windows;
 public partial class MainWindow
 {
     /// <summary>Category list row. <see cref="IsAll"/> is the synthetic "All items" entry.</summary>
-    public sealed record CategoryRow(string Name, int Count, bool IsAll = false);
+    public sealed record CategoryRow(string Name, int Count, bool IsAll = false, bool Locked = false, bool Adult = false)
+    {
+        /// <summary>Tooltip of the 🔒: "Adult" when locked by the adult-name rule.</summary>
+        public string LockTip => Adult ? "Adult" : "Locked";
+    }
 
     private List<CategoryRow> _allCategories = new();
+    private List<string> _groupNames = new(); // every category of the section, for the parental "All" filter
     private string? _group;           // null = All items
     private bool _groupSilent;        // suppress SelectionChanged while filling the list
     private bool _countryTagging;     // Free TV country tags being fetched
@@ -31,6 +36,7 @@ public partial class MainWindow
     private int _playIndex = -1;
     private ItemVm? Playing => _playIndex >= 0 && _playIndex < _playlist.Count ? _playlist[_playIndex] : null;
     private bool _vodPlaying;
+    private string? _playingId;       // the item actually playing (Playing can change with the list)
     private DateTime _guideDay = DateTime.Today;
     private ItemVm? _guideItem;
 
@@ -85,6 +91,7 @@ public partial class MainWindow
             if (version != _loadVersion) return;
             CatsTitle.Text = "Countries";
         }
+        _groupNames = field == null ? groups.Select(g => g.Name).ToList() : new List<string>();
         // Countries keep their own hidden list (key "live:country"), separate from hidden categories.
         var hidden = _source == null ? new HashSet<string>() : S.Hidden(_source.Id, HiddenKind);
         var visible = groups.Where(g => !hidden.Contains(g.Name)).ToList();
@@ -103,7 +110,11 @@ public partial class MainWindow
             : visible.Sum(g => g.Count);
         if (version != _loadVersion) return;
         _allCategories = new List<CategoryRow> { new("All items", allCount, true) };
-        _allCategories.AddRange(visible.Select(g => new CategoryRow(g.Name, g.Count)));
+        _allCategories.AddRange(visible.Select(g =>
+        {
+            var (locked, adult) = field == null && _source != null ? Parental.CategoryState(_source.Id, kind, g.Name) : (false, false);
+            return new CategoryRow(g.Name, g.Count, Locked: locked, Adult: adult);
+        }));
         ApplyCategoryFilter(select);
     }
 
@@ -117,7 +128,8 @@ public partial class MainWindow
         var target = select ?? _group;
         var pick = rows.FirstOrDefault(r => target == null ? r.IsAll : !r.IsAll && r.Name == target) ?? rows.FirstOrDefault();
         // Live opens on the first real category (a smaller list); grids open on All items.
-        if (select == null && _group == null && _mode == Mode.Live && rows.Count > 1) pick = rows[1];
+        // (not a locked one, which would ask for the PIN straight away).
+        if (select == null && _group == null && _mode == Mode.Live && rows.Count > 1) pick = rows.Skip(1).FirstOrDefault(r => !r.Locked) ?? rows[0];
         GroupList.SelectedItem = pick; // → GroupList_SelectionChanged loads items
         if (pick == null) _ = ShowGroup(null);
     }
@@ -176,6 +188,14 @@ public partial class MainWindow
     private async void GroupList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (_groupSilent || GroupList.SelectedItem is not CategoryRow row) return;
+        // A locked category opens with the PIN; saying no keeps the one that was open.
+        if (row.Locked && !Parental.Ensure($"“{row.Name}” is locked."))
+        {
+            _groupSilent = true;
+            GroupList.SelectedItem = (GroupList.ItemsSource as IEnumerable<CategoryRow>)?.FirstOrDefault(r => _group == null ? r.IsAll : r.Name == _group);
+            _groupSilent = false;
+            return;
+        }
         if (SearchBox.Text.Length > 0 || _vodSearch != null)
         {
             SearchBox.Text = "";
@@ -201,6 +221,17 @@ public partial class MainWindow
 
     private HashSet<string> HiddenNow => _source == null ? new HashSet<string>() : S.Hidden(_source.Id, HiddenKind);
 
+    /// <summary>For "All items": hidden categories plus the ones parental controls lock right now.</summary>
+    private HashSet<string> HiddenOrLockedNow
+    {
+        get
+        {
+            var set = HiddenNow;
+            if (_source != null && GroupFieldNow == null) set.UnionWith(Parental.LockedGroups(_source.Id, KindNow, _groupNames));
+            return set;
+        }
+    }
+
     // ================================================================ live list
 
     private async Task LoadLive(bool reset)
@@ -223,7 +254,7 @@ public partial class MainWindow
                 ItemList.ItemsSource = _liveItems;
                 ListTitle.Text = _group ?? "All channels";
             }
-            var (total, items) = await _repo.Query("live", _source.Id, _group, _group == null ? HiddenNow : null,
+            var (total, items) = await _repo.Query("live", _source.Id, _group, _group == null ? HiddenOrLockedNow : null,
                 S.LiveSortAz ? "name_asc" : "provider", 0, _liveItems.Count, LivePage, GroupFieldNow);
             if (version != _loadVersion) return;
             _liveTotal = total;
@@ -283,7 +314,7 @@ public partial class MainWindow
         var version = ++_loadVersion;
         var hits = await _repo.Search(q, "live");
         if (version != _loadVersion) return;
-        if (_source != null) hits = hits.Where(h => h.SourceId == _source.Id).ToList();
+        if (_source != null) hits = hits.Where(h => h.SourceId == _source.Id && !Parental.HideNow(h)).ToList();
         _liveItems.Clear();
         _liveSearch = q;
         _liveTotal = hits.Count;
@@ -369,6 +400,7 @@ public partial class MainWindow
 
     private async Task PlayLive(ItemVm it)
     {
+        if (Parental.IsItemLocked(it) && !Parental.Ensure($"“{it.DisplayName}” is locked.")) return;
         _playlist = _liveItems.ToList();
         var i = _playlist.FindIndex(x => x.Id == it.Id);
         if (i < 0)
@@ -382,6 +414,7 @@ public partial class MainWindow
     /// <summary>Open a live channel from anywhere (dashboard, search, favorites…): go to Live TV, its category, and play it.</summary>
     public async Task GoToLive(ItemVm it)
     {
+        if (Parental.IsItemLocked(it) && !Parental.Ensure($"“{it.DisplayName}” is locked.")) return;
         StopPlayback();
         SearchBox.Text = "";
         _searchDebounce.Stop();
@@ -420,8 +453,17 @@ public partial class MainWindow
     {
         SaveProgress();
         if (_playlist.Count == 0) return;
-        _playIndex = (index % _playlist.Count + _playlist.Count) % _playlist.Count;
-        var it = _playlist[_playIndex];
+        var next = (index % _playlist.Count + _playlist.Count) % _playlist.Count;
+        var it = _playlist[next];
+        // Locked category or adult name: the PIN first (also when zapping onto it). Saying no
+        // keeps the current stream; if the list was already replaced, playback stops.
+        if (Parental.IsItemLocked(it) && !Parental.Ensure($"“{it.DisplayName}” is locked."))
+        {
+            if (Playing?.Id != _playingId) StopPlayback();
+            return;
+        }
+        _playIndex = next;
+        _playingId = it.Id;
 
         var url = it.Url;
         if (it.IsLive && S.LiveFormat != "Auto")
@@ -446,20 +488,11 @@ public partial class MainWindow
         VodTuckedHint.Visibility = Visibility.Collapsed;
         VideoHint.Visibility = it.IsLive ? Visibility.Collapsed : Visibility.Visible;
 
-        using var media = new Media(_vlc, uri);
-        var ua = it.UserAgent ?? (S.SourceUserAgent.TryGetValue(it.SourceId, out var sua) && sua.Length > 0 ? sua : Repository.UserAgent);
-        media.AddOption($":http-user-agent={ua}");
-        if (it.Referrer != null) media.AddOption($":http-referrer={it.Referrer}");
-        media.AddOption($":network-caching={S.NetworkCachingMs}");
-        media.AddOption($":live-caching={S.NetworkCachingMs}");
-        media.AddOption(S.HardwareDecoding ? ":avcodec-hw=any" : ":avcodec-hw=none");
-        if (S.AudioLanguage.Length > 0) media.AddOption($":audio-language={S.AudioLanguage}");
-        if (S.SubtitleLanguage.Length > 0) media.AddOption($":sub-language={S.SubtitleLanguage}");
-        if (!it.IsLive && S.ResumePlayback)
-        {
-            var resume = await _repo.ResumeSeconds(it.Id);
-            if (resume > 0) media.AddOption($":start-time={resume:0}");
-        }
+        double resume = 0;
+        if (!it.IsLive && S.ResumePlayback) resume = await _repo.ResumeSeconds(it.Id);
+        _subFiles.Clear();
+        EnsurePlayerStyle();
+        using var media = BuildMedia(it, uri, resume);
         Layout();
         _player.Play(media);
         _player.SetRate(1);
@@ -499,6 +532,7 @@ public partial class MainWindow
         SaveProgress();
         _player.Stop();
         _playIndex = -1;
+        _playingId = null;
         var wasVod = _vodPlaying;
         _vodPlaying = false;
         Video.Visibility = Visibility.Collapsed;

@@ -38,6 +38,8 @@ public sealed class DetailsInfo
     public string? Trailer { get; set; }
     /// <summary>IMDb id such as "tt1234567" when the panel provides one.</summary>
     public string? ImdbId { get; set; }
+    /// <summary>The provider's age rating ("PG-13", "16+", "FSK 12"…), for the parental rating limit.</summary>
+    public string? AgeRating { get; set; }
 }
 
 public sealed record Group(string Name, int Count)
@@ -862,6 +864,7 @@ public sealed class Repository : IDisposable
             Poster = Any("movie_image", "cover_big", "cover"),
             Backdrop = backdrop,
             Trailer = trailer,
+            AgeRating = Any("mpaa_rating", "rating_mpaa", "mpaa", "certification", "age_rating", "age"),
             ImdbId = Any("imdb_id", "imdb") is { } imdb && System.Text.RegularExpressions.Regex.Match(imdb, @"tt\d{5,10}") is { Success: true } m2 ? m2.Value : null,
         };
     }

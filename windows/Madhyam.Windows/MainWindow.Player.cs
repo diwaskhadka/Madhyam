@@ -5,6 +5,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using LibVLCSharp.Shared;
+using VlcMediaPlayer = LibVLCSharp.Shared.MediaPlayer;
 using Microsoft.Win32;
 
 namespace Madhyam.Windows;
@@ -532,6 +533,7 @@ public partial class MainWindow
             new UiKit.MenuRow("", "-", false, () => { }),
             new UiKit.MenuRow("\uE8E5", "Load subtitle file…", false, LoadSubtitleFile),
             new UiKit.MenuRow("\uE721", "Search subtitles online…", false, SearchSubtitlesOnline, "OpenSubtitles.com"),
+            new UiKit.MenuRow("\uE8D2", "Subtitle style…", false, OpenSubtitleStyle, $"{SubtitleStyle.PtLabel(S.SubFontSizePt)} · {S.SubFont}"),
         };
         var extra = new UIElement[]
         {
@@ -563,7 +565,131 @@ public partial class MainWindow
     {
         if (Playing == null) return;
         var ok = _player.AddSlave(MediaSlaveType.Subtitle, new Uri(path).AbsoluteUri, true);
+        if (ok) _subFiles.Add(path);
         ShowOsd(ok ? $"Subtitles: {System.IO.Path.GetFileName(path)}" : "These subtitles could not be loaded.");
+    }
+
+    // ================================================================ subtitle style
+
+    /// <summary>Subtitle files loaded for the current film, added again when the media restarts.</summary>
+    private readonly List<string> _subFiles = new();
+    private DispatcherTimer? _styleTimer;
+    private int? _videoHeight; // last picture height seen, for the subtitle margin
+
+    /// <summary>The media for an item, with the user's network, decoding, language and subtitle style options.</summary>
+    private Media BuildMedia(ItemVm it, Uri uri, double startSec)
+    {
+        var media = new Media(_vlc, uri);
+        var ua = it.UserAgent ?? (S.SourceUserAgent.TryGetValue(it.SourceId, out var sua) && sua.Length > 0 ? sua : Repository.UserAgent);
+        media.AddOption($":http-user-agent={ua}");
+        if (it.Referrer != null) media.AddOption($":http-referrer={it.Referrer}");
+        media.AddOption($":network-caching={S.NetworkCachingMs}");
+        media.AddOption($":live-caching={S.NetworkCachingMs}");
+        media.AddOption(S.HardwareDecoding ? ":avcodec-hw=any" : ":avcodec-hw=none");
+        if (S.AudioLanguage.Length > 0) media.AddOption($":audio-language={S.AudioLanguage}");
+        if (S.SubtitleLanguage.Length > 0) media.AddOption($":sub-language={S.SubtitleLanguage}");
+        if (startSec > 0) media.AddOption($":start-time={startSec.ToString("0", System.Globalization.CultureInfo.InvariantCulture)}");
+        return media;
+    }
+
+    /// <summary>Height of the picture now playing, for the subtitle margin (null before the first frame).</summary>
+    private int? VideoHeight()
+    {
+        uint w = 0, h = 0;
+        try
+        {
+            if (_player.Size(0, ref w, ref h) && h > 0) _videoHeight = (int)h;
+        }
+        catch { /* no video yet */ }
+        return _videoHeight;
+    }
+
+    /// <summary>Player menu → "Subtitle style…": the dialog, with each change shown on the video.</summary>
+    private void OpenSubtitleStyle() => SubtitleStyle.ShowDialog(this, RestyleSoon);
+
+    /// <summary>
+    /// VLC reads the subtitle style when a media starts, so a change restarts the film where it
+    /// is (same subtitle and audio track, same loaded subtitle files). Quick changes are batched.
+    /// </summary>
+    private void RestyleSoon()
+    {
+        if (_styleTimer == null)
+        {
+            _styleTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(450) };
+            _styleTimer.Tick += (_, _) =>
+            {
+                _styleTimer.Stop();
+                Restyle();
+            };
+        }
+        _styleTimer.Stop();
+        _styleTimer.Start();
+    }
+
+    /// <summary>
+    /// A LibVLC instance and player with the current subtitle style. VLC's subtitle renderer
+    /// takes its options from the instance only (options on a media never reach it), so a
+    /// style change needs a new instance; the video view simply gets the new player.
+    /// </summary>
+    private void CreatePlayer(int? videoHeight = null)
+    {
+        var args = new List<string> { "--no-video-title-show", "--network-caching=1500" };
+        args.AddRange(SubtitleStyle.VlcArgs(videoHeight));
+        var key = string.Join(" ", args);
+        if (key == _vlcStyle && _player != null) return;
+        var (oldPlayer, oldVlc) = (_player, _vlc);
+        _vlc = new LibVLC(args.ToArray());
+        _player = new VlcMediaPlayer(_vlc);
+        _vlcStyle = key;
+        HookPlayer();
+        Video.MediaPlayer = _player;
+        if (VolumeBar != null) _player.Volume = (int)VolumeBar.Value;
+        _player.Mute = _muted;
+        if (oldPlayer == null) return;
+        // Stopping and freeing the old one can take a moment: off the UI thread.
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                oldPlayer.Stop();
+                oldPlayer.Dispose();
+                oldVlc.Dispose();
+            }
+            catch (Exception ex)
+            {
+                Repository.Log($"old player not freed: {ex.Message}");
+            }
+        });
+    }
+
+    /// <summary>Before a new stream: make sure the player has the current subtitle style.</summary>
+    private void EnsurePlayerStyle() => CreatePlayer(VideoHeight());
+
+    private void Restyle()
+    {
+        if (Playing is not { } it || !Uri.TryCreate(_player.Media?.Mrl ?? "", UriKind.Absolute, out var uri)) return;
+        var time = it.IsLive ? 0 : Math.Max(0, _player.Time) / 1000.0;
+        var spu = _player.Spu;
+        var audio = _player.AudioTrack;
+        var paused = _player.State == VLCState.Paused;
+        var files = _subFiles.ToList();
+        CreatePlayer(VideoHeight());
+        using var media = BuildMedia(it, uri, time);
+        foreach (var f in files) media.AddSlave(MediaSlaveType.Subtitle, 4, new Uri(f).AbsoluteUri);
+        void Restore(object? sender, EventArgs e)
+        {
+            _player.Playing -= Restore;
+            Dispatcher.BeginInvoke(async () =>
+            {
+                // Tracks appear a moment after playback starts.
+                for (var n = 0; n < 20 && _player.SpuCount == 0 && spu >= 0; n++) await Task.Delay(100);
+                if (audio >= 0) _player.SetAudioTrack(audio);
+                _player.SetSpu(spu);
+                if (paused) _player.SetPause(true);
+            });
+        }
+        _player.Playing += Restore;
+        _player.Play(media);
     }
 
     private void SearchSubtitlesOnline()

@@ -15,4 +15,7 @@ public static class Brand
 
     /// Both names, for places with room for them (About, the sidebar logo's tooltip).
     public static string FullName => NativeName.Length > 0 ? $"{Name} · {NativeName}" : Name;
+
+    /// Settings › About › Buy me a coffee.
+    public const string CoffeeUrl = "https://buymeacoffee.com/diwaskhadka";
 }

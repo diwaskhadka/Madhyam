@@ -14,7 +14,7 @@ namespace Madhyam.Windows;
 /// "title + description … control" on the right. Built in code so each row is
 /// one line here and adding a setting stays cheap.
 /// </summary>
-public sealed class SettingsView : UserControl
+public sealed partial class SettingsView : UserControl
 {
     private readonly MainWindow _host;
     private readonly Repository _repo;
@@ -30,6 +30,7 @@ public sealed class SettingsView : UserControl
         ("Dashboard", "\uE80F", "Dashboard"),
         ("Playback", "\uE768", "Playback"),
         ("Guide", "\uE787", "Programme guide"),
+        ("Parental", "\uE72E", "Parental controls"),
         ("Data", "\uE8F1", "Backup & data"),
         ("About", "\uE946", "About"),
     };
@@ -56,7 +57,20 @@ public sealed class SettingsView : UserControl
             row.Children.Add(new TextBlock { Text = label, FontSize = 14, VerticalAlignment = VerticalAlignment.Center });
             _nav.Items.Add(new ListBoxItem { Content = row });
         }
-        _nav.SelectionChanged += (_, _) => Show(Sections[Math.Max(0, _nav.SelectedIndex)].Key);
+        _nav.SelectionChanged += (_, _) =>
+        {
+            if (_navSilent) return;
+            var key = Sections[Math.Max(0, _nav.SelectedIndex)].Key;
+            // Parental controls itself always needs the PIN once it is on.
+            if (key == "Parental" && key != _current && !Parental.Ensure("Parental controls are locked."))
+            {
+                _navSilent = true;
+                _nav.SelectedIndex = Array.FindIndex(Sections, x => x.Key == _current);
+                _navSilent = false;
+                return;
+            }
+            Show(key);
+        };
         left.Children.Add(_nav);
         grid.Children.Add(left);
 
@@ -72,10 +86,17 @@ public sealed class SettingsView : UserControl
     }
 
     private string _current = "General";
+    private bool _navSilent;
 
     /// <summary>Rebuild the visible section (after sources changed).</summary>
     public void Refresh()
     {
+        // Coming back to Settings on the Parental controls page: it needs the PIN again once locked.
+        if (_current == "Parental" && Parental.On && !Parental.Unlocked)
+        {
+            _nav.SelectedIndex = 0;
+            return;
+        }
         if (_current is "Sources" or "About") Show(_current);
     }
 
@@ -210,6 +231,7 @@ public sealed class SettingsView : UserControl
             case "Dashboard": DashboardPage(); break;
             case "Playback": Playback(); break;
             case "Guide": Guide(); break;
+            case "Parental": ParentalPage(); break;
             case "Data": Data(); break;
             default: About(); break;
         }
@@ -483,6 +505,7 @@ public sealed class SettingsView : UserControl
         }));
         actions.Children.Add(Icon("\uE70F", "Edit", async () =>
         {
+            if (!Parental.EnsureSettings("Editing a playlist is locked.")) return;
             var ua = S.SourceUserAgent.TryGetValue(src.Id, out var u) ? u : "";
             var pw = src.Kind == "xtream" ? await _repo.SourcePassword(src.Id) : "";
             var r = EditSourceWindow.Show(Window.GetWindow(this)!, src, ua, pw);
@@ -608,6 +631,20 @@ public sealed class SettingsView : UserControl
         Row("IMDb and Rotten Tomatoes ratings",
             "Shown on movie and series pages when found. Uses OMDb (free key, 1,000 look-ups a day). Leave empty to hide them.",
             omdbBox, controlBelow: true);
+
+        SubHeader("Subtitle style");
+        _content.Children.Add(new TextBlock
+        {
+            Text = "Like YouTube's caption options. Also in the player's subtitle menu, where changes show on the film itself. " +
+                   "Styled subtitles (ASS/SSA) keep their own look.",
+            Foreground = Brush("Muted"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12),
+        });
+        var preview = SubtitleStyle.Preview();
+        _content.Children.Add(preview);
+        var editor = SubtitleStyle.Editor(() => SubtitleStyle.UpdatePreview(preview));
+        editor.Margin = new Thickness(0, 18, 0, 0);
+        _content.Children.Add(editor);
+        _content.Children.Add(new Border { Height = 1, Background = Brush("Line"), Margin = new Thickness(0, 4, 0, 0) });
 
         Row("Keyboard", "Space or click the picture: pause · ←/→ 10 s · ↑/↓ volume · M mute · J/K audio delay · G/H subtitle delay · double-click or F11 full screen",
             new TextBlock());
@@ -791,6 +828,7 @@ public sealed class SettingsView : UserControl
                 Process.Start(new ProcessStartInfo("https://github.com/diwaskhadka/Madhyam/releases") { UseShellExecute = true });
                 return Task.CompletedTask;
             })));
+        Row("Buy me a coffee", $"{Brand.Name} is free. If you enjoy it, you can buy me a coffee.", CoffeeButton());
         Row("Content", $"{Brand.Name} ships with no channels. It plays the Xtream Codes or M3U playlists you add from a provider you are entitled to use.", new TextBlock());
         Row("Keyboard", "Ctrl+K search · F11 full screen · Space pause · PgUp/PgDn change channel · ←/→ seek 10 s · ↑/↓ volume · J/K audio delay · G/H subtitle delay · Esc back", new TextBlock());
     }

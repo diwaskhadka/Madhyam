@@ -28,8 +28,10 @@ public partial class MainWindow : Window
     public enum Mode { Dashboard, Search, Favorites, Recent, Movies, Live, Series, Added, Settings }
 
     private readonly Repository _repo = new();
-    private readonly LibVLC _vlc = new("--no-video-title-show", "--network-caching=1500");
-    private readonly VlcMediaPlayer _player;
+    // Rebuilt when the subtitle style changes: VLC only reads its text-renderer options at start.
+    private LibVLC _vlc = null!;
+    private VlcMediaPlayer _player = null!;
+    private string _vlcStyle = "";
     private readonly DispatcherTimer _searchDebounce = new() { Interval = TimeSpan.FromMilliseconds(300) };
     private readonly DispatcherTimer _tick = new() { Interval = TimeSpan.FromSeconds(1) };
 
@@ -57,18 +59,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        _player = new VlcMediaPlayer(_vlc);
-        Video.MediaPlayer = _player;
-        _player.EncounteredError += (_, _) => Dispatcher.Invoke(() =>
-            SetStatus("Playback failed: the stream could not be opened. Try another channel or refresh the playlist."));
-        _player.Playing += (_, _) => Dispatcher.InvokeAsync(() =>
-        {
-            PlayPause.Content = "";
-            if (!S.ShowSubtitles) _player.SetSpu(-1);
-            _player.Mute = _muted; // a new audio output starts unmuted
-        });
-        _player.Paused += (_, _) => Dispatcher.InvokeAsync(() => PlayPause.Content = "");
-        _player.EndReached += (_, _) => Dispatcher.InvokeAsync(OnEndReached);
+        CreatePlayer();
 
         _searchDebounce.Tick += async (_, _) =>
         {
@@ -76,6 +67,7 @@ public partial class MainWindow : Window
             await ApplySearch();
         };
         _tick.Tick += (_, _) => OnTick();
+        Parental.Changed += OnParentalChanged;
         // Smooth, elastic scrolling in the category, channel and guide lists and the grids.
         ElasticScroll.Attach(GroupList);
         ElasticScroll.Attach(ItemList);
@@ -93,6 +85,21 @@ public partial class MainWindow : Window
         _perPage = S.PerPage is 25 or 50 or 100 ? S.PerPage : 50;
         HighlightPerPage();
         RestoreWindowPlacement();
+    }
+
+    /// <summary>Player events (hooked again on every new player).</summary>
+    private void HookPlayer()
+    {
+        _player.EncounteredError += (_, _) => Dispatcher.Invoke(() =>
+            SetStatus("Playback failed: the stream could not be opened. Try another channel or refresh the playlist."));
+        _player.Playing += (_, _) => Dispatcher.InvokeAsync(() =>
+        {
+            PlayPause.Content = "";
+            if (!S.ShowSubtitles) _player.SetSpu(-1);
+            _player.Mute = _muted; // a new audio output starts unmuted
+        });
+        _player.Paused += (_, _) => Dispatcher.InvokeAsync(() => PlayPause.Content = "");
+        _player.EndReached += (_, _) => Dispatcher.InvokeAsync(OnEndReached);
     }
 
     // ================================================================ window placement
@@ -674,6 +681,7 @@ public partial class MainWindow : Window
 
     public async void OpenAddSource()
     {
+        if (!Parental.EnsureSettings("Adding a playlist is locked.")) return;
         var dlg = new AddSourceWindow { Owner = this };
         if (dlg.ShowDialog() != true) return;
         await Run(dlg.IsXtream ? "Logging in and downloading the catalog…" : "Downloading playlist…", async () =>
@@ -706,6 +714,7 @@ public partial class MainWindow : Window
 
     public async Task RemoveSource(Source s)
     {
+        if (!Parental.EnsureSettings("Removing a playlist is locked.")) return;
         if (MessageBox.Show(this, $"Remove \"{s.Name}\" and its channels, movies and series?", Brand.Name, MessageBoxButton.YesNo) != MessageBoxResult.Yes) return;
         await Run($"Removing {s.Name}…", async () =>
         {
@@ -807,6 +816,11 @@ public partial class MainWindow : Window
     {
         if (_navSilent || sender is not RadioButton { Tag: string tag }) return;
         var mode = Enum.Parse<Mode>(tag);
+        if (mode == Mode.Settings && mode != _mode && !Parental.EnsureSettings("Settings are locked."))
+        {
+            SetNav(_mode); // stay where we were
+            return;
+        }
         // One video surface: leaving the section that is playing stops playback.
         if (Playing != null && mode != _mode) StopPlayback();
         CloseTrailer();
@@ -1040,12 +1054,12 @@ public partial class MainWindow : Window
                 break;
             case Key.PageUp when Playing is { IsLive: true }:
             case Key.Up when _fullscreen && Playing is { IsLive: true }:
-                await PlayAt(_playIndex - 1);
+                await Zap(-1);
                 e.Handled = true;
                 break;
             case Key.PageDown when Playing is { IsLive: true }:
             case Key.Down when _fullscreen && Playing is { IsLive: true }:
-                await PlayAt(_playIndex + 1);
+                await Zap(1);
                 e.Handled = true;
                 break;
             case Key.Left when !typing && (ctrl || _fullscreen || _vodPlaying):
@@ -1167,9 +1181,44 @@ public partial class MainWindow : Window
         return new Rect(r.Left / dpi.DpiScaleX, r.Top / dpi.DpiScaleY, (r.Right - r.Left) / dpi.DpiScaleX, (r.Bottom - r.Top) / dpi.DpiScaleY);
     }
 
+    /// <summary>Next / previous channel, skipping locked ones as if they were not there (unless unlocked).</summary>
+    private async Task Zap(int dir)
+    {
+        var n = _playlist.Count;
+        for (var step = 1; step < n; step++)
+        {
+            var i = ((_playIndex + dir * step) % n + n) % n;
+            if (Parental.HideNow(_playlist[i])) continue;
+            await PlayAt(i);
+            return;
+        }
+    }
+
+    private void Unlocked_Click(object sender, RoutedEventArgs e) => Parental.Lock();
+
+    /// <summary>Settings › Parental controls changed (on / off, PIN, reset): update the open-lock icon.</summary>
+    public void ParentalSettingsChanged() => UnlockedBtn.Visibility = Parental.Unlocked ? Visibility.Visible : Visibility.Collapsed;
+
+    /// <summary>Unlocked or locked again: the open-lock icon, and locked things leave the screen.</summary>
+    private void OnParentalChanged()
+    {
+        UnlockedBtn.Visibility = Parental.Unlocked ? Visibility.Visible : Visibility.Collapsed;
+        if (Parental.Unlocked) return;
+        if (Playing is { } p && Parental.IsItemLocked(p)) StopPlayback();
+        if (_details != null && Parental.IsItemLocked(_details)) CloseDetails();
+        if (IsSection && _source != null)
+        {
+            if (_group != null && Parental.CategoryState(_source.Id, KindNow, _group).Locked) _group = null;
+            _ = LoadCategories(++_loadVersion, _group);
+        }
+        else if (_mode is Mode.Dashboard or Mode.Search or Mode.Added) _ = ShowPage(++_loadVersion);
+        else if (_mode == Mode.Settings) _settingsView?.Refresh();
+    }
+
     private void OnTick()
     {
         _ticks++;
+        Parental.CheckExpiry();
         if (_vodPlaying && _player.Length > 0 && !SeekBar.IsMouseCaptureWithin)
         {
             SeekBar.Value = Math.Clamp((double)_player.Time / _player.Length, 0, 1);
