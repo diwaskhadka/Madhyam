@@ -11,6 +11,9 @@ How to cut a release and how to add a platform: [docs/RELEASING.md](docs/RELEASI
 Android TV: a much faster start, streams stop when you leave them, large playlists need half the memory, and fixes from a test on a TV.
 
 ### Android TV
+- **Parental controls** (Settings › Parental controls): a 4-digit PIN; lock any category of any playlist; adult categories and channels are locked automatically (you can unlock one); an age limit for films and series; Settings can be locked too. Locked items are left out of Search, Home and the "All" lists, and zapping passes over them. Once entered, the PIN stays for the session or 10 idle minutes; the open lock in the menu locks again. Forgot the PIN? Reset parental controls after typing RESET.
+- **Buy me a coffee:** Settings › About shows a QR code to scan with your phone.
+- **Subtitle style** (Settings › Playback, or Subtitles › Subtitle style… while watching): size in points, font, text, background and window colours and opacity, edge style and position, with a live preview. It applies to every kind of subtitle.
 - Leaving the player from Search, Favorites, Recent or Home, or leaving Live TV for another section, now stops the stream. Before, it kept playing hidden: the sound, the data and the provider's only connection stayed in use, so the next channel could fail with a network error.
 - Home button, another app or the screen saver: the stream stops and frees the connection, then starts again when you come back (live at the live edge, films where they were). Resume points are saved as before.
 - About half the memory with a large playlist: on a TCL TV with 1.8 GB of RAM and a playlist of 53 000 channels, 161 000 films and 38 000 series, 194 MB instead of 426 MB after start. Android no longer closes Madhyam a few seconds after you press Home, so you come back to where you were.
