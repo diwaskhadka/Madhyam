@@ -50,7 +50,11 @@ Android TV: a much faster start, streams stop when you leave them, large playlis
 - No functional changes. Uses engine 0.3.0: large playlists take less memory and load and save faster.
 
 ### Linux
-- No functional changes. Uses engine 0.3.0: large playlists take less memory and load and save faster.
+- **Parental controls** (Settings › Parental controls): a 4-digit PIN (stored only as a salted hash), locked categories per playlist, automatic locking of adult categories and channels, an optional lock on Settings and playlists, and an "Allow up to" age limit. The PIN is remembered for 10 minutes; the open-lock button in the top bar locks again. Locked channels are skipped when zapping and locked items stay out of Search, Home and the "All" lists.
+- **Subtitle style** like YouTube's caption options (size in points, font, text, background and window colours and opacity, edge style, position), in Settings › Playback with a live preview and from the player's subtitle menu; applies at once to embedded, file and downloaded subtitles.
+- **Buy me a coffee** in Settings › About.
+- Trailers play inside the app (through yt-dlp), icons are bundled with the app, and the segment highlight and overlapping chips are fixed.
+- Uses engine 0.3.0: large playlists take less memory and load and save faster.
 
 ### Engine
 - madhyam-core 0.3.0.
