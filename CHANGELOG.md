@@ -8,7 +8,7 @@ How to cut a release and how to add a platform: [docs/RELEASING.md](docs/RELEASI
 
 ## 1.1.1
 
-Android TV: a much faster start, streams stop when you leave them, large playlists need half the memory, and fixes from a test on a TV.
+Parental controls, subtitle style like YouTube's and Buy me a coffee on every platform. Android TV starts in about 5 s, stops streams you leave and needs half the memory; Windows full screen is black edge to edge; Linux plays trailers in the app.
 
 ### Android TV
 - **Parental controls** (Settings › Parental controls): a 4-digit PIN; lock any category of any playlist; adult categories and channels are locked automatically (you can unlock one); an age limit for films and series; Settings can be locked too. Locked items are left out of Search, Home and the "All" lists, and zapping passes over them. Once entered, the PIN stays for the session or 10 idle minutes; the open lock in the menu locks again. Forgot the PIN? Reset parental controls after typing RESET.
