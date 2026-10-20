@@ -1731,9 +1731,24 @@ impl App {
             }
             let keep = me.source.borrow().as_ref().map(|s| s.id);
             let repo = me.repo.clone();
-            let id = bg(move || repo.add_m3u(freetv::NAME, freetv::ALL_URL)).await?;
+            let popup = super::loading::Loading::show(&me.window, freetv::NAME, false);
+            let sink = popup.sink();
+            let added = bg(move || {
+                let report = move |s| sink.lock().unwrap_or_else(|e| e.into_inner()).push(s);
+                repo.add_m3u(freetv::NAME, freetv::ALL_URL, &report)
+            })
+            .await;
+            let id = match added {
+                Ok(id) => id,
+                Err(e) => {
+                    popup.failed(&e.to_string());
+                    return Err(e);
+                }
+            };
             settings::update(|s| s.free_tv_source_id = Some(id));
+            popup.report(crate::repo::LoadStatus::new(crate::repo::Step::Pages, ""));
             me.reload_sources(keep.or(Some(id))).await;
+            popup.done();
             Ok(())
         })
         .await;
@@ -2177,22 +2192,39 @@ impl App {
                     "Downloading playlist…"
                 };
                 let me2 = me.clone();
+                let popup = super::loading::Loading::show(&me.window, &r.name, r.xtream);
+                let ok = Rc::new(Cell::new(false));
+                let (p, ok2) = (popup.clone(), ok.clone());
                 me.run(label, || async move {
                     let repo = me2.repo.clone();
-                    let id = bg(move || {
+                    let sink = p.sink();
+                    let added = bg(move || {
+                        let report = move |s| sink.lock().unwrap_or_else(|e| e.into_inner()).push(s);
                         if r.xtream {
-                            repo.add_xtream(&r.name, &r.server, &r.username, &r.password)
+                            repo.add_xtream(&r.name, &r.server, &r.username, &r.password, &report)
                         } else {
-                            repo.add_m3u(&r.name, &r.url)
+                            repo.add_m3u(&r.name, &r.url, &report)
                         }
                     })
-                    .await?;
+                    .await;
+                    let id = match added {
+                        Ok(id) => id,
+                        Err(e) => {
+                            p.failed(&e.to_string());
+                            return Err(e);
+                        }
+                    };
+                    p.report(crate::repo::LoadStatus::new(crate::repo::Step::Pages, ""));
                     me2.reload_sources(Some(id)).await;
                     me2.show_mode().await;
                     me2.refresh_settings();
+                    ok2.set(true);
                     Ok(())
                 })
                 .await;
+                if ok.get() {
+                    popup.done();
+                }
             });
         });
     }
@@ -2218,8 +2250,10 @@ impl App {
         }
         let ok = super::dialogs::confirm(
             &self.window,
-            &format!("Remove \"{}\" and its channels, movies and series?", s.name),
+            &format!("Remove “{}”?", s.name),
+            &format!("Its channels, movies and series are removed from {}. You can add the playlist again later.", crate::brand::NAME),
             "Remove",
+            true,
         )
         .await;
         if !ok {

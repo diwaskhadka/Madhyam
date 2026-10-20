@@ -6,6 +6,28 @@ so. The engine (`crates/madhyam-core`) keeps its own version, given in each sect
 
 How to cut a release and how to add a platform: [docs/RELEASING.md](docs/RELEASING.md).
 
+## Unreleased
+
+A pop-up shows each step while a playlist is added, with how many live channels, movies and series it brought; confirmations use the app's own look; the subtitle preview sits beside the options.
+
+### Windows
+
+- **Adding a playlist** (or turning on Free TV) shows a pop-up: each step ticked as it finishes, the size downloaded, a bar, and how many live channels, movies and series came in (with their categories; "None" for what the playlist doesn't have). Failures are explained on it; Hide keeps it loading in the background.
+- **Confirmations** (remove a playlist, clear history, reset, PINs that don't match, the OpenSubtitles key) use a dialog in the app's theme instead of the system message box.
+- **Settings › Playback › Subtitle style**: options on the left, preview on the right. The preview grows with the window and stays in view while the options scroll.
+
+### Android TV
+
+- **Adding a playlist** or Free TV shows the same step-by-step pop-up with live, movie and series counts.
+- **Removing a playlist, an extra guide or the watch history** asks in a themed dialog (focus on Cancel) instead of "press OK again".
+- **Subtitle style**: options on the left, preview on the right; the preview stays put while the list scrolls.
+
+### Linux
+
+- **Adding a playlist** or Free TV shows the same step-by-step pop-up with live, movie and series counts.
+- **Confirmations** use a dialog in the app's theme instead of GTK's stock alert.
+- **Subtitle style**: options on the left, preview on the right, growing with the window and staying in view while the options scroll.
+
 ## 1.1.1
 
 Parental controls, subtitle style like YouTube's and Buy me a coffee on every platform. Android TV starts in about 5 s, stops streams you leave and needs half the memory; Windows full screen is black edge to edge; Linux plays trailers in the app.

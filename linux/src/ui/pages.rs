@@ -856,7 +856,7 @@ impl App {
             kit::primary("Clear history", Some("madhyam-edit-clear-all-symbolic"), move || {
                 let me = me.clone();
                 spawn(async move {
-                    if !super::dialogs::confirm(&me.window, "Remove everything from Recently viewed?\n\nFavorites and resume positions are kept.", "Clear history").await {
+                    if !super::dialogs::confirm(&me.window, "Clear Recently viewed?", "Everything is removed from Recently viewed. Favorites and resume positions are kept.", "Clear history", true).await {
                         return;
                     }
                     let repo = me.repo.clone();

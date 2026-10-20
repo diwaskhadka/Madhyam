@@ -15,6 +15,7 @@ import dev.madhyam.core.IptvException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 /** Top-level pages of the app. */
@@ -260,18 +261,51 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (sources.isNotEmpty()) screen = Screen.Main
     }
 
-    fun addM3u(name: String, url: String) = task("Downloading playlist…") {
-        afterAdd(repo.addM3u(name.ifBlank { "Playlist" }, url.trim()))
+    /** The "Adding playlist" pop-up while a playlist loads (null: none). */
+    var loading by mutableStateOf<LoadState?>(null)
+        private set
+
+    fun closeLoading() {
+        loading = null
     }
 
-    fun addXtream(name: String, server: String, user: String, pass: String) = task("Logging in and downloading the catalog…") {
-        afterAdd(repo.addXtream(name.ifBlank { "Provider" }, server.trim(), user.trim(), pass))
+    /**
+     * Add a playlist with the loading pop-up: each step ticked as it finishes, the size
+     * downloaded and how many channels, movies and series came in. A failure stays on the
+     * pop-up until it is closed.
+     */
+    private fun addWithProgress(label: String, name: String, xtream: Boolean, add: suspend ((LoadStatus) -> Unit) -> Int) {
+        val state = LoadState(name, xtream)
+        loading = state
+        val report: (LoadStatus) -> Unit = { s -> viewModelScope.launch(Dispatchers.Main) { state.report(s) } }
+        task(label) {
+            try {
+                val id = add(report)
+                state.report(LoadStatus(LoadStatus.Step.Pages))
+                afterAdd(id)
+                state.done()
+                // Long enough to read the counts (the status line is already gone).
+                viewModelScope.launch {
+                    delay(4000)
+                    if (loading === state) loading = null
+                }
+            } catch (e: Exception) {
+                state.failed(explain(e))
+                throw e
+            }
+        }
     }
 
-    fun addFreeTv() = task("Downloading Free TV channels…") {
-        val id = repo.addFreeTv()
-        changeSettings { freeTvSourceId = id }
-        afterAdd(id)
+    fun addM3u(name: String, url: String) = name.ifBlank { "Playlist" }.let { n ->
+        addWithProgress("Downloading playlist…", n, xtream = false) { repo.addM3u(n, url.trim(), it) }
+    }
+
+    fun addXtream(name: String, server: String, user: String, pass: String) = name.ifBlank { "Provider" }.let { n ->
+        addWithProgress("Logging in and downloading the catalog…", n, xtream = true) { repo.addXtream(n, server.trim(), user.trim(), pass, it) }
+    }
+
+    fun addFreeTv() = addWithProgress("Downloading Free TV channels…", FreeTv.NAME, xtream = false) { report ->
+        repo.addFreeTv(report).also { id -> changeSettings { freeTvSourceId = id } }
     }
 
     /** First start: Free TV comes preinstalled, so there is something to watch at once. Tried again on the next start if it fails (offline). */

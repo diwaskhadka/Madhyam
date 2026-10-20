@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import dev.madhyam.ui.Background
+import dev.madhyam.ui.LoadingDialog
 import dev.madhyam.ui.LoadingScreen
 import dev.madhyam.ui.MadhyamTheme
 import dev.madhyam.ui.MainShell
@@ -31,6 +32,7 @@ class MainActivity : ComponentActivity() {
                         Screen.Player -> PlayerScreen(vm)
                     }
                     PinHost(vm) // parental controls: the PIN, over any screen
+                    vm.loading?.let { LoadingDialog(it, vm::closeLoading) } // adding a playlist
                 }
             }
         }

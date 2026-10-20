@@ -434,30 +434,30 @@ class Repository(context: Context) {
         }
     }
 
-    suspend fun addM3u(name: String, url: String): Int {
+    suspend fun addM3u(name: String, url: String, progress: ((LoadStatus) -> Unit)? = null): Int {
         val id = io { core.obj("add_m3u_source", args("name" to name, "location" to url)).getInt("id") }
-        return refreshOrRemove(id)
+        return refreshOrRemove(id, progress)
     }
 
-    suspend fun addXtream(name: String, server: String, user: String, pass: String): Int {
+    suspend fun addXtream(name: String, server: String, user: String, pass: String, progress: ((LoadStatus) -> Unit)? = null): Int {
         val id = io {
             core.obj(
                 "add_xtream_source",
                 args("name" to name, "server" to server, "username" to user, "password" to pass),
             ).getInt("id")
         }
-        return refreshOrRemove(id)
+        return refreshOrRemove(id, progress)
     }
 
     /** Add iptv-org's Free TV playlist (or return the one already added). */
-    suspend fun addFreeTv(): Int {
+    suspend fun addFreeTv(progress: ((LoadStatus) -> Unit)? = null): Int {
         sources().firstOrNull { it.isFreeTv }?.let { return it.id }
-        return addM3u(FreeTv.NAME, FreeTv.ALL_URL)
+        return addM3u(FreeTv.NAME, FreeTv.ALL_URL, progress)
     }
 
-    private suspend fun refreshOrRemove(id: Int): Int {
+    private suspend fun refreshOrRemove(id: Int, progress: ((LoadStatus) -> Unit)?): Int {
         try {
-            refresh(id)
+            refresh(id, progress)
         } catch (e: Exception) {
             io { core.call("remove_source", args("source" to id)) }
             throw e
@@ -495,16 +495,27 @@ class Repository(context: Context) {
     }
 
     /** Re-download a source's catalog, then (best effort) its guide. */
-    suspend fun refresh(id: Int) {
+    suspend fun refresh(id: Int, progress: ((LoadStatus) -> Unit)? = null) {
         io {
             val src = core.arr("sources").let { a ->
                 (0 until a.length()).map { a.getJSONObject(it) }.first { it.getInt("id") == id }
             }
             when (src.optString("kind")) {
-                "xtream" -> core.syncXtream(id, clientFor(id))
+                "xtream" -> core.syncXtream(id, clientFor(id)) { part, bytes ->
+                    val step = when (part) {
+                        "account" -> LoadStatus.Step.SignIn
+                        "live_categories", "live_streams" -> LoadStatus.Step.Live
+                        "vod_categories", "vod_streams" -> LoadStatus.Step.Movies
+                        "series_categories", "series" -> LoadStatus.Step.Series
+                        else -> LoadStatus.Step.Save
+                    }
+                    progress?.invoke(LoadStatus(step, if (bytes > 0) LoadStatus.size(bytes) else ""))
+                }
                 else -> {
                     val location = src.getString("location")
-                    val file = download(location, "playlist", id)
+                    progress?.invoke(LoadStatus(LoadStatus.Step.Download))
+                    val file = download(location, "playlist", id) { n -> progress?.invoke(LoadStatus(LoadStatus.Step.Download, LoadStatus.size(n))) }
+                    progress?.invoke(LoadStatus(LoadStatus.Step.Read, LoadStatus.size(file.length())))
                     try {
                         core.call("import_m3u_file", args("source" to id, "path" to file.path))
                     } finally {
@@ -513,10 +524,12 @@ class Repository(context: Context) {
                     if (FreeTv.isFreeTv(location)) tagCountries(id)
                 }
             }
+            if (progress != null) reportCounts(id, progress)
+            progress?.invoke(LoadStatus(LoadStatus.Step.Save))
             save()
         }
         try {
-            refreshEpg(id)
+            refreshEpg(id, progress)
         } catch (e: Exception) {
             // A missing guide must never block watching TV.
             Log.w(TAG, "EPG refresh failed for source $id", e)
@@ -541,13 +554,34 @@ class Repository(context: Context) {
         }
     }
 
-    suspend fun refreshEpg(id: Int) = io {
+    /** How many live channels, movies and series the playlist brought, each on its own line of the pop-up. */
+    private fun reportCounts(id: Int, progress: (LoadStatus) -> Unit) {
+        for ((step, kind, nouns) in listOf(
+            Triple(LoadStatus.Step.Live, "live", "channel" to "channels"),
+            Triple(LoadStatus.Step.Movies, "movie", "movie" to "movies"),
+            Triple(LoadStatus.Step.Series, "series", "series" to "series"),
+        )) {
+            val a = core.arr("groups", args("source" to id, "kind" to kind))
+            val count = (0 until a.length()).sumOf { a.getJSONObject(it).optInt("count") }
+            val groups = a.length()
+            val detail = if (count == 0) "None" else
+                "%,d %s · %,d %s".format(count, if (count == 1) nouns.first else nouns.second, groups, if (groups == 1) "category" else "categories")
+            progress(LoadStatus(step, detail, final = true))
+        }
+    }
+
+    suspend fun refreshEpg(id: Int, progress: ((LoadStatus) -> Unit)? = null) = io {
         val urls = core.arr("epg_fetch_urls", args("source" to id))
         epgDir.mkdirs()
         var index = 0
+        if (urls.length() == 0) progress?.invoke(LoadStatus(LoadStatus.Step.Guide, "None offered"))
         for (i in 0 until urls.length()) {
+            val which = if (urls.length() > 1) "Guide ${i + 1} of ${urls.length()}" else ""
+            progress?.invoke(LoadStatus(LoadStatus.Step.Guide, which))
             val file = try {
-                download(urls.getString(i), "guide", id)
+                download(urls.getString(i), "guide", id) { n ->
+                    progress?.invoke(LoadStatus(LoadStatus.Step.Guide, listOf(which, LoadStatus.size(n)).filter { it.isNotEmpty() }.joinToString(" · ")))
+                }
             } catch (e: IOException) {
                 Log.w(TAG, "guide download failed", e)
                 continue
@@ -655,22 +689,43 @@ class Repository(context: Context) {
      * Stream a URL (or local path) to a cache file, transparently gunzipping
      * `.gz` guides. Streaming keeps a 200 MB guide from ever sitting in RAM.
      */
-    private fun download(location: String, name: String, source: Int? = null): File {
+    private fun download(location: String, name: String, source: Int? = null, received: ((Long) -> Unit)? = null): File {
         val out = File.createTempFile(name, ".tmp", cache)
         try {
             if (location.startsWith("/") || location.startsWith("file://")) {
-                File(location.removePrefix("file://")).inputStream().use { copyMaybeGzip(it, out) }
+                File(location.removePrefix("file://")).inputStream().use { copyMaybeGzip(counting(it, received), out) }
                 return out
             }
             clientFor(source).newCall(Request.Builder().url(location).build()).execute().use { resp ->
                 if (!resp.isSuccessful) throw IOException("HTTP ${resp.code} for $name")
                 val body = resp.body ?: throw IOException("empty response for $name")
-                body.byteStream().use { copyMaybeGzip(it, out) }
+                body.byteStream().use { copyMaybeGzip(counting(it, received), out) }
             }
             return out
         } catch (e: Exception) {
             out.delete()
             throw e
+        }
+    }
+
+    /** [input], reporting the bytes read so far to [received] (every 256 KB and at the end). */
+    private fun counting(input: InputStream, received: ((Long) -> Unit)?): InputStream {
+        received ?: return input
+        return object : java.io.FilterInputStream(input) {
+            var total = 0L
+            var reported = 0L
+
+            private fun count(n: Int): Int {
+                if (n > 0) total += n
+                if (n < 0 || total - reported >= 256 * 1024) {
+                    reported = total
+                    received(total)
+                }
+                return n
+            }
+
+            override fun read(): Int = super.read().also { if (it >= 0) count(1) else count(-1) }
+            override fun read(b: ByteArray, off: Int, len: Int): Int = count(super.read(b, off, len))
         }
     }
 

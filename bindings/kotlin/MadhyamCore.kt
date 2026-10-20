@@ -84,17 +84,35 @@ class MadhyamCore : AutoCloseable {
      * Full Xtream refresh. The core lists the URLs; OkHttp downloads them.
      * Returns `{"items": n, "account": {...}, "warnings": [...]}`. Blocking.
      */
-    fun syncXtream(source: Int, http: OkHttpClient): JSONObject {
+    fun syncXtream(source: Int, http: OkHttpClient, progress: ((part: String, bytes: Long) -> Unit)? = null): JSONObject {
         val reqs = arr("xtream_requests", args("source" to source))
         for (i in 0 until reqs.length()) {
             val r = reqs.getJSONObject(i)
             val part = r.getString("part")
+            progress?.invoke(part, 0)
             val body = http.newCall(Request.Builder().url(r.getString("url")).build()).execute().use { resp ->
                 if (!resp.isSuccessful) throw IptvException("api", "HTTP ${resp.code} while downloading $part")
-                resp.body?.bytes() ?: ByteArray(0)
+                val input = resp.body?.byteStream() ?: return@use ByteArray(0)
+                val out = java.io.ByteArrayOutputStream()
+                val chunk = ByteArray(64 * 1024)
+                var total = 0L
+                var reported = 0L
+                while (true) {
+                    val n = input.read(chunk)
+                    if (n < 0) break
+                    out.write(chunk, 0, n)
+                    total += n
+                    if (total - reported >= 256 * 1024) {
+                        reported = total
+                        progress?.invoke(part, total)
+                    }
+                }
+                progress?.invoke(part, total)
+                out.toByteArray()
             }
             importBytes("xtream_part", body, args("source" to source, "part" to part))
         }
+        progress?.invoke("commit", 0)
         return obj("xtream_commit", args("source" to source))
     }
 

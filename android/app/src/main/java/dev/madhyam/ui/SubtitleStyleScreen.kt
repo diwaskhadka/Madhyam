@@ -80,7 +80,11 @@ internal fun LazyListScope.subtitleStyleRows(vm: MainViewModel, first: FocusRequ
     item { ActionRow("Reset to defaults", "32 pt, Sans-serif, white on 50% black, drop shadow, at the bottom") { vm.changeSettings { resetSubtitleStyle() } } }
 }
 
-/** Settings › Playback › Subtitle style: a live preview over a dark frame, then the options. */
+/**
+ * Settings › Playback › Subtitle style: the options on the left, a live preview over a dark
+ * frame on the right. The preview takes a share of the page width and stays put while the
+ * options scroll.
+ */
 @Composable
 internal fun SubtitleStylePage(vm: MainViewModel) {
     // The row that opened the page is gone: put the focus on the first option.
@@ -90,10 +94,12 @@ internal fun SubtitleStylePage(vm: MainViewModel) {
         runCatching { first.requestFocus() }
     }
     Column {
-        SectionTitle("Subtitle style", "Every change shows at once below and in the player. Back returns to Playback")
-        StylePreview(vm, Modifier.width(480.dp).aspectRatio(16f / 9f).clip(RoundedCornerShape(10.dp)))
-        LazyColumn(Modifier.padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            subtitleStyleRows(vm, first)
+        SectionTitle("Subtitle style", "Every change shows at once in the preview and in the player. Back returns to Playback")
+        androidx.compose.foundation.layout.Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(24.dp)) {
+            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                subtitleStyleRows(vm, first)
+            }
+            StylePreview(vm, Modifier.weight(1.15f).aspectRatio(16f / 9f).clip(RoundedCornerShape(10.dp)))
         }
     }
 }

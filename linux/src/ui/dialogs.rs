@@ -72,17 +72,71 @@ fn title(t: &str) -> gtk::Label {
     kit::text(t, 21.0, "", 600, false)
 }
 
-/// Yes / no question; true when the user picked `yes`.
-pub async fn confirm(owner: &impl IsA<gtk::Window>, message: &str, yes: &str) -> bool {
-    let d = gtk::AlertDialog::builder()
-        .message(crate::brand::NAME)
-        .detail(message)
-        .buttons(["Cancel", yes])
-        .cancel_button(0)
-        .default_button(1)
-        .modal(true)
-        .build();
-    matches!(d.choose_future(Some(owner)).await, Ok(1))
+/// A question in the app's own look (instead of GTK's stock alert): heading, message and two
+/// buttons. True when the user picks `yes`; Esc or closing means no. `danger` draws the yes
+/// button in the error colour and starts on Cancel, for removals.
+pub async fn confirm(owner: &impl IsA<gtk::Window>, heading: &str, message: &str, yes: &str, danger: bool) -> bool {
+    let answer = Rc::new(Cell::new(false));
+    let (w, root) = make(owner, heading, 440);
+    root.append(&kit::text(heading, 19.0, "", 600, true));
+    let body = kit::text(message, 13.5, "muted", 400, true);
+    body.set_margin_top(8);
+    root.append(&body);
+    let ww = w.downgrade();
+    let no = button("Cancel", false, move || {
+        if let Some(w) = ww.upgrade() {
+            w.close();
+        }
+    });
+    let (ww, a) = (w.downgrade(), answer.clone());
+    let ok = button(yes, true, move || {
+        a.set(true);
+        if let Some(w) = ww.upgrade() {
+            w.close();
+        }
+    });
+    if danger {
+        ok.add_css_class("danger");
+    }
+    root.append(&footer(&[&no, &ok]));
+    w.set_default_widget(Some(if danger { &no } else { &ok }));
+    w.present();
+    if danger { no.grab_focus() } else { ok.grab_focus() };
+    wait_closed(&w).await;
+    answer.get()
+}
+
+/// A message with one OK button, in the app's own look.
+pub async fn alert(owner: &impl IsA<gtk::Window>, heading: &str, message: &str) {
+    let (w, root) = make(owner, heading, 420);
+    root.append(&kit::text(heading, 19.0, "", 600, true));
+    let body = kit::text(message, 13.5, "muted", 400, true);
+    body.set_margin_top(8);
+    root.append(&body);
+    let ww = w.downgrade();
+    let ok = button("OK", true, move || {
+        if let Some(w) = ww.upgrade() {
+            w.close();
+        }
+    });
+    root.append(&footer(&[&ok]));
+    w.set_default_widget(Some(&ok));
+    w.present();
+    ok.grab_focus();
+    wait_closed(&w).await;
+}
+
+/// Wait (without blocking the main loop) until a dialog window is closed.
+async fn wait_closed(w: &gtk::Window) {
+    let closed = Rc::new(Cell::new(false));
+    let c = closed.clone();
+    w.connect_close_request(move |_| {
+        c.set(true);
+        glib::Propagation::Proceed
+    });
+    while !closed.get() && w.is_visible() {
+        super::sleep_ms(50).await;
+    }
 }
 
 /// Open a web page in the default browser.
@@ -720,8 +774,10 @@ pub fn subtitle_search(
         spawn(async move {
             let open = confirm(
                 &owner,
-                "Online subtitle search uses OpenSubtitles.com, which needs a free API key.\n\n1. Create an account at opensubtitles.com\n2. Open “API consumers” in your profile and create a key\n3. Paste it in Settings › Playback › Online subtitles\n\nOpen the OpenSubtitles website now?",
-                "Open website",
+                "Online subtitles need a free key",
+                "Online subtitle search uses OpenSubtitles.com, which needs a free API key.\n\n1. Create an account at opensubtitles.com\n2. Open “API consumers” in your profile and create a key\n3. Paste it in Settings › Playback › Online subtitles",
+                "Open OpenSubtitles",
+                false,
             )
             .await;
             if open {
