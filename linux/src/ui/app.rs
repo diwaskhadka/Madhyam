@@ -2199,7 +2199,8 @@ impl App {
                     let repo = me2.repo.clone();
                     let sink = p.sink();
                     let added = bg(move || {
-                        let report = move |s| sink.lock().unwrap_or_else(|e| e.into_inner()).push(s);
+                        let report =
+                            move |s| sink.lock().unwrap_or_else(|e| e.into_inner()).push(s);
                         if r.xtream {
                             repo.add_xtream(&r.name, &r.server, &r.username, &r.password, &report)
                         } else {

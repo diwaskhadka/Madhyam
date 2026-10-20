@@ -1143,7 +1143,10 @@ impl SettingsView {
                 gtk::glib::idle_add_local_once(move || adj.set_value(y));
             });
         });
-        for (i, r) in super::sub_style_view::rows(changed, reset).into_iter().enumerate() {
+        for (i, r) in super::sub_style_view::rows(changed, reset)
+            .into_iter()
+            .enumerate()
+        {
             if i > 0 {
                 let l = kit::line();
                 kit::margins(&l, 0, 14, 0, 14);

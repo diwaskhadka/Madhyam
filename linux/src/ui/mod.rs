@@ -5,8 +5,8 @@
 pub mod app;
 pub mod dialogs;
 pub mod kit;
-pub mod loading;
 pub mod live;
+pub mod loading;
 pub mod pages;
 pub mod parental_view;
 pub mod player;

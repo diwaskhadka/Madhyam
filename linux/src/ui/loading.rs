@@ -66,7 +66,13 @@ impl Loading {
         let title = kit::text(&format!("Adding “{name}”"), 19.0, "", 600, false);
         title.set_ellipsize(gtk::pango::EllipsizeMode::End);
         root.append(&title);
-        let sub = kit::text("This can take a minute for a large playlist.", 13.0, "muted", 400, true);
+        let sub = kit::text(
+            "This can take a minute for a large playlist.",
+            13.0,
+            "muted",
+            400,
+            true,
+        );
         sub.set_margin_top(4);
         sub.set_margin_bottom(14);
         root.append(&sub);
@@ -84,7 +90,13 @@ impl Loading {
             row.append(&label);
             row.append(&detail);
             root.append(&row);
-            lines.push(Line { step: *step, mark, label, detail, done: Cell::new(false) });
+            lines.push(Line {
+                step: *step,
+                mark,
+                label,
+                detail,
+                done: Cell::new(false),
+            });
         }
         let bar = kit::progress(0.0);
         bar.set_margin_top(8);
@@ -139,8 +151,11 @@ impl Loading {
         // creeps forward so it never looks stuck).
         let weak = Rc::downgrade(&me);
         glib::timeout_add_local(std::time::Duration::from_millis(120), move || {
-            let Some(me) = weak.upgrade() else { return glib::ControlFlow::Break };
-            let pending: Vec<LoadStatus> = std::mem::take(&mut *me.queue.lock().unwrap_or_else(|p| p.into_inner()));
+            let Some(me) = weak.upgrade() else {
+                return glib::ControlFlow::Break;
+            };
+            let pending: Vec<LoadStatus> =
+                std::mem::take(&mut *me.queue.lock().unwrap_or_else(|p| p.into_inner()));
             for s in pending {
                 me.report(s);
             }
@@ -185,9 +200,11 @@ impl Loading {
         if self.finished.get() {
             return;
         }
-        let Some(i) = self.lines.iter().position(|l| l.step == s.step) else { return };
+        let Some(i) = self.lines.iter().position(|l| l.step == s.step) else {
+            return;
+        };
         let cur = self.current.get();
-        if cur.map_or(true, |c| i > c) {
+        if cur.is_none_or(|c| i > c) {
             for j in cur.unwrap_or(0)..i {
                 self.mark(j, true);
             }
@@ -221,7 +238,9 @@ impl Loading {
         line.label.set_attributes(None);
         if !done {
             let attrs = gtk::pango::AttrList::new();
-            attrs.insert(gtk::pango::AttrInt::new_weight(gtk::pango::Weight::Semibold));
+            attrs.insert(gtk::pango::AttrInt::new_weight(
+                gtk::pango::Weight::Semibold,
+            ));
             line.label.set_attributes(Some(&attrs));
         }
     }
@@ -236,7 +255,11 @@ impl Loading {
         self.finished.set(true);
         self.bar.set_fraction(1.0);
         let took = self.started.elapsed().as_secs();
-        self.title.set_text(&if took >= 1 { format!("Ready in {took} s") } else { "Ready".into() });
+        self.title.set_text(&if took >= 1 {
+            format!("Ready in {took} s")
+        } else {
+            "Ready".into()
+        });
         self.sub.set_text("Here's what the playlist has.");
         self.button.set_label("Done");
         self.button.set_tooltip_text(None);

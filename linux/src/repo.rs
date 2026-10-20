@@ -311,7 +311,11 @@ pub struct LoadStatus {
 
 impl LoadStatus {
     pub fn new(step: Step, detail: &str) -> Self {
-        LoadStatus { step, detail: detail.to_string(), done: false }
+        LoadStatus {
+            step,
+            detail: detail.to_string(),
+            done: false,
+        }
     }
 }
 
@@ -901,7 +905,14 @@ impl Repo {
         self.refresh_or_remove(id, progress)
     }
 
-    pub fn add_xtream(&self, name: &str, server: &str, username: &str, password: &str, progress: Progress) -> Res<i64> {
+    pub fn add_xtream(
+        &self,
+        name: &str,
+        server: &str,
+        username: &str,
+        password: &str,
+        progress: Progress,
+    ) -> Res<i64> {
         let id = int(&self.call("add_xtream_source", json!({ "name": name, "server": server, "username": username, "password": password }))?, "id");
         settings::update(|s| {
             s.source_added.insert(id, now_unix());
@@ -957,7 +968,9 @@ impl Repo {
                     _ => Step::Series,
                 };
                 progress(LoadStatus::new(step, ""));
-                let body = http::get_bytes_counted(&url, ua.as_deref(), &|n| progress(LoadStatus::new(step, &size(n))))?;
+                let body = http::get_bytes_counted(&url, ua.as_deref(), &|n| {
+                    progress(LoadStatus::new(step, &size(n)))
+                })?;
                 self.core
                     .import("xtream_part", &body, json!({ "source": id, "part": part }))?;
             }
@@ -968,7 +981,9 @@ impl Repo {
             let file = if freetv::is_countries(&src.location) {
                 self.download_joined(&freetv::country_urls(&src.location), ua.as_deref())?
             } else {
-                http::download_counted(&src.location, "playlist", ua.as_deref(), &|n| progress(LoadStatus::new(Step::Download, &size(n))))?
+                http::download_counted(&src.location, "playlist", ua.as_deref(), &|n| {
+                    progress(LoadStatus::new(Step::Download, &size(n)))
+                })?
             };
             let len = std::fs::metadata(&file).map(|m| m.len()).unwrap_or(0);
             progress(LoadStatus::new(Step::Read, &size(len)));
@@ -1009,7 +1024,11 @@ impl Repo {
                     if n == 1 { "category" } else { "categories" }
                 )
             };
-            progress(LoadStatus { step, detail, done: true });
+            progress(LoadStatus {
+                step,
+                detail,
+                done: true,
+            });
         }
     }
 
@@ -1034,10 +1053,17 @@ impl Repo {
         }
         let total = urls.len();
         for (n, url) in urls.into_iter().enumerate() {
-            let which = if total > 1 { format!("Guide {} of {total}", n + 1) } else { String::new() };
+            let which = if total > 1 {
+                format!("Guide {} of {total}", n + 1)
+            } else {
+                String::new()
+            };
             progress(LoadStatus::new(Step::Guide, &which));
             let report = |b: u64| {
-                let parts: Vec<String> = [which.clone(), size(b)].into_iter().filter(|s| !s.is_empty()).collect();
+                let parts: Vec<String> = [which.clone(), size(b)]
+                    .into_iter()
+                    .filter(|s| !s.is_empty())
+                    .collect();
                 progress(LoadStatus::new(Step::Guide, &parts.join(" · ")));
             };
             let file = match http::download_counted(&url, "guide", ua.as_deref(), &report) {

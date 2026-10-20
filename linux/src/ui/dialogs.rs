@@ -75,7 +75,13 @@ fn title(t: &str) -> gtk::Label {
 /// A question in the app's own look (instead of GTK's stock alert): heading, message and two
 /// buttons. True when the user picks `yes`; Esc or closing means no. `danger` draws the yes
 /// button in the error colour and starts on Cancel, for removals.
-pub async fn confirm(owner: &impl IsA<gtk::Window>, heading: &str, message: &str, yes: &str, danger: bool) -> bool {
+pub async fn confirm(
+    owner: &impl IsA<gtk::Window>,
+    heading: &str,
+    message: &str,
+    yes: &str,
+    danger: bool,
+) -> bool {
     let answer = Rc::new(Cell::new(false));
     let (w, root) = make(owner, heading, 440);
     root.append(&kit::text(heading, 19.0, "", 600, true));
@@ -101,7 +107,11 @@ pub async fn confirm(owner: &impl IsA<gtk::Window>, heading: &str, message: &str
     root.append(&footer(&[&no, &ok]));
     w.set_default_widget(Some(if danger { &no } else { &ok }));
     w.present();
-    if danger { no.grab_focus() } else { ok.grab_focus() };
+    if danger {
+        no.grab_focus()
+    } else {
+        ok.grab_focus()
+    };
     wait_closed(&w).await;
     answer.get()
 }
