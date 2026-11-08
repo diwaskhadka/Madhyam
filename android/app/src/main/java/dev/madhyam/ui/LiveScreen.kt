@@ -103,8 +103,9 @@ fun LiveScreen(vm: MainViewModel) {
         // Coming in from the side lands in the channels, not on the button at the same height.
         val channels = remember { FocusRequester() }
         Row(Modifier.fillMaxSize().sectionContent(vm) { if (vm.items.isNotEmpty() && !vm.lockedGroup && !vm.searchEditing) channels else FocusRequester.Default }) {
-            ChannelList(vm, now, channels, Modifier.weight(1f))
-            InfoPane(vm, now, Modifier.width(380.dp))
+            // On the preview the channels shrink to their logos and the picture gets the room.
+            ChannelList(vm, now, channels, if (vm.previewFocused) Modifier.width(88.dp) else Modifier.weight(1f))
+            InfoPane(vm, now, if (vm.previewFocused) Modifier.weight(1f) else Modifier.width(380.dp))
         }
     }
 }
@@ -277,7 +278,6 @@ private fun CategoryRow(vm: MainViewModel, c: Category, modifier: Modifier = Mod
         } else {
             null
         },
-        trailingContent = { Text("${c.count}", color = RowMuted, fontSize = 11.sp) },
     )
 }
 
@@ -315,10 +315,11 @@ fun ToggleChip(label: String, on: Boolean, modifier: Modifier = Modifier, onClic
 @Composable
 private fun ChannelList(vm: MainViewModel, now: Long, channels: FocusRequester, modifier: Modifier) {
     val strip = vm.settings.stripPrefixes
-    Column(modifier.fillMaxHeight().padding(horizontal = 12.dp, vertical = 16.dp)) {
+    val compact = vm.previewFocused
+    Column(modifier.fillMaxHeight().padding(horizontal = if (compact) 4.dp else 12.dp, vertical = 16.dp)) {
         val title = vm.group ?: vm.categories.firstOrNull()?.name ?: "Live TV"
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) { SectionTitle(title, "%,d channels · hold OK for favorite".format(vm.total), subLines = 2) }
+        if (!compact) Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) { SectionTitle(title, "%,d channels".format(vm.total), subLines = 2) }
             if (!vm.lockedGroup) SectionSearchBox(vm, Modifier.padding(end = 8.dp))
             ToggleChip("TV guide", false) { vm.openGuide() }
         }
@@ -366,6 +367,7 @@ private fun ChannelList(vm: MainViewModel, now: Long, channels: FocusRequester, 
                     item = item,
                     now = now,
                     strip = strip,
+                    compact = compact,
                     onFocused = {
                         vm.focus(item)
                         if (i > vm.items.size - 30) vm.loadMore()
@@ -377,7 +379,7 @@ private fun ChannelList(vm: MainViewModel, now: Long, channels: FocusRequester, 
 }
 
 @Composable
-private fun ChannelRow(modifier: Modifier, vm: MainViewModel, number: Int, item: Item, now: Long, strip: Boolean, onFocused: () -> Unit) {
+private fun ChannelRow(modifier: Modifier, vm: MainViewModel, number: Int, item: Item, now: Long, strip: Boolean, compact: Boolean, onFocused: () -> Unit) {
     val nn = vm.nowNext[item.id]
     val playing = vm.playback.current?.id == item.id
     var focused by remember { mutableStateOf(false) }
@@ -385,20 +387,20 @@ private fun ChannelRow(modifier: Modifier, vm: MainViewModel, number: Int, item:
         selected = playing,
         onClick = { vm.open(item) },
         onLongClick = { vm.toggleFavorite(item) },
-        modifier = modifier.onFocusChanged {
+        modifier = modifier.height(if (nn?.now != null && !compact) 58.dp else 46.dp).onFocusChanged {
             focused = it.isFocused
             if (it.isFocused) onFocused()
         },
         leadingContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (vm.settings.showNumbers) {
+                if (vm.settings.showNumbers && !compact) {
                     Text("$number", color = RowMuted, fontSize = 12.sp, modifier = Modifier.width(34.dp))
                 }
-                Logo(item, 56.dp, 34.dp, strip)
+                if (compact) Logo(item, 40.dp, 26.dp, strip) else Logo(item, 44.dp, 28.dp, strip)
             }
         },
         headlineContent = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            if (!compact) Row(verticalAlignment = Alignment.CenterVertically) {
                 if (playing) Icon(Icons.Filled.PlayArrow, null, tint = RowAccent, modifier = Modifier.size(16.dp).padding(end = 2.dp))
                 // The column is narrow: the focused name scrolls to show all of it.
                 Text(
@@ -413,7 +415,7 @@ private fun ChannelRow(modifier: Modifier, vm: MainViewModel, number: Int, item:
                 if (vm.isFavorite(item)) Icon(Icons.Filled.Star, null, tint = Color(0xFFFFC94D), modifier = Modifier.padding(start = 4.dp).size(14.dp))
             }
         },
-        supportingContent = nn?.now?.let { cur ->
+        supportingContent = if (compact) null else nn?.now?.let { cur ->
             {
                 Column {
                     Text(cur.title, color = RowMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -470,7 +472,10 @@ private fun Preview(vm: MainViewModel) {
         // On the preview, the info below is about what plays in it, not the last row focused
         // (which may be a separator row the focus passed on the way).
         modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)
-            .onFocusChanged { f -> if (f.isFocused) cur?.let { vm.focus(it) } },
+            .onFocusChanged { f ->
+                vm.previewFocused = f.isFocused
+                if (f.isFocused) cur?.let { vm.focus(it) }
+            },
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
         colors = ClickableSurfaceDefaults.colors(containerColor = Color.Black, focusedContainerColor = Color.Black),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),

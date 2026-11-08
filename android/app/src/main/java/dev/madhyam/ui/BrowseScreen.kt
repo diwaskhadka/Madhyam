@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.OutlinedTextField
@@ -68,6 +69,11 @@ private fun Header(vm: MainViewModel) {
         // in the text field with the keyboard; leaving the field (Down, Up) brings the bar back.
         // With results showing (back from one of them), the list keeps the focus.
         val box = remember { FocusRequester() }
+        val mic = remember { FocusRequester() }
+        val voice = rememberVoiceSearch { vm.search(it); vm.addSearchHistory(it) }
+        LaunchedEffect(vm.refocusSearch) {
+            if (vm.refocusSearch) runCatching { mic.requestFocus() }
+        }
         val field = remember { FocusRequester() }
         // Down from the box goes to the filter chips under it, not to a poster further down.
         val chips = remember { FocusRequester() }
@@ -76,9 +82,11 @@ private fun Header(vm: MainViewModel) {
         LaunchedEffect(Unit) {
             if (vm.query.isBlank()) {
                 delay(100)
-                runCatching { box.requestFocus() }
+                runCatching { mic.requestFocus() }
             }
         }
+        Row(verticalAlignment = Alignment.Top) {
+        SearchIcon("", "Voice search", Modifier.padding(end = 12.dp, top = 12.dp).focusRequester(mic), Icons.Filled.Mic, voice)
         if (editing) {
             var hadFocus by remember { mutableStateOf(false) }
             LaunchedEffect(Unit) {
@@ -92,12 +100,14 @@ private fun Header(vm: MainViewModel) {
                 label = { androidx.compose.material3.Text("Search channels, movies, series") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp).focusRequester(field).focusProperties { down = chips }
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { vm.addSearchHistory(vm.query); keyboard?.hide() }),
+                modifier = Modifier.weight(1f).padding(bottom = 10.dp).focusRequester(field).focusProperties { down = chips }
                     .onFocusChanged { if (it.hasFocus) hadFocus = true else if (hadFocus) editing = false }
                     .tvTextField(atStart = { vm.query.isEmpty() }),
             )
         } else {
-            SearchBar(vm.query, Modifier.fillMaxWidth().padding(bottom = 10.dp).focusRequester(box).focusProperties { down = chips }) { editing = true }
+            SearchBar(vm.query, Modifier.weight(1f).padding(bottom = 10.dp).focusRequester(box).focusProperties { down = chips }) { editing = true }
+        }
         }
         // Which kinds to search, and whether to look in every playlist (Windows advanced search).
         val st = vm.settings
@@ -117,7 +127,7 @@ private fun Header(vm: MainViewModel) {
         Column(Modifier.weight(1f)) {
             SectionTitle(
                 vm.section.label,
-                if (recent) "${vm.items.size} items · hold OK to remove one" else "${vm.items.size} items · hold OK to remove a favorite",
+                "${vm.items.size} items",
             )
         }
         if (recent && vm.items.isNotEmpty()) ToggleChip("Clear history", false) { vm.clearHistoryHere() }
@@ -209,20 +219,62 @@ fun SectionSearchBox(vm: MainViewModel, modifier: Modifier) {
                 .tvTextField(atStart = { vm.sectionQuery.isEmpty() }),
         )
     } else {
+        val voice = rememberVoiceSearch(vm::searchSection)
+        SearchIcon("", "Voice search", Modifier.padding(end = 8.dp), Icons.Filled.Mic, voice)
         val bar = remember { FocusRequester() }
         LaunchedEffect(vm.refocusSearch) {
             if (vm.refocusSearch) runCatching { bar.requestFocus() }
         }
-        SearchIcon(vm.sectionQuery, "Search in $where", modifier.focusRequester(bar)) {
+        SearchIcon(vm.sectionQuery, "Search in $where", modifier.focusRequester(bar), Icons.Filled.Search) {
             vm.searchEditing = true
             editing = true
         }
     }
 }
 
+/** Returns what starts the TV's own voice input; [onText] gets what was said. */
+@Composable
+private fun rememberVoiceSearch(onText: (String) -> Unit): () -> Unit {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        result.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.takeIf { it.isNotBlank() }?.let(onText)
+    }
+    return {
+        val intent = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+            .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+        try {
+            launcher.launch(intent)
+        } catch (_: android.content.ActivityNotFoundException) {
+            android.widget.Toast.makeText(context, "Voice search isn't available on this TV", android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+}
+
+/** Earlier searches under the Search page's box; OK searches again. */
+@Composable
+private fun SearchHistory(vm: MainViewModel) {
+    @Suppress("UNUSED_EXPRESSION") vm.settingsVersion
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.width(520.dp)) {
+            Text("Search history", color = Muted, fontSize = 13.sp, modifier = Modifier.weight(1f))
+            ToggleChip("Clear", false) { vm.clearSearchHistory() }
+        }
+        for (pair in vm.settings.searchHistory.chunked(2)) {
+            Row(Modifier.width(520.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                for (q in pair) {
+                    androidx.compose.foundation.layout.Box(Modifier.weight(1f)) { ToggleChip(q, false) { vm.searchFromHistory(q) } }
+                }
+                if (pair.size == 1) androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+            }
+        }
+    }
+}
+
 /** A magnifier in a round button; with a search running, the text beside it. */
 @Composable
-private fun SearchIcon(query: String, label: String, modifier: Modifier, onOpen: () -> Unit) {
+private fun SearchIcon(query: String, label: String, modifier: Modifier, icon: androidx.compose.ui.graphics.vector.ImageVector, onOpen: () -> Unit) {
     val round = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
     androidx.tv.material3.Surface(
         onClick = onOpen,
@@ -243,7 +295,7 @@ private fun SearchIcon(query: String, label: String, modifier: Modifier, onOpen:
             Modifier.fillMaxHeight().padding(horizontal = if (query.isEmpty()) 10.dp else 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(Icons.Filled.Search, contentDescription = label, modifier = Modifier.size(20.dp))
+            Icon(icon, contentDescription = label, modifier = Modifier.size(20.dp))
             if (query.isNotEmpty()) {
                 Text(query, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 6.dp))
             }
@@ -254,6 +306,10 @@ private fun SearchIcon(query: String, label: String, modifier: Modifier, onOpen:
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun ItemList(vm: MainViewModel) {
+    if (vm.section == Section.Search && vm.query.isBlank() && vm.settings.searchHistory.isNotEmpty()) {
+        SearchHistory(vm)
+        return
+    }
     if (vm.items.isEmpty()) {
         if (vm.busy == null) {
             EmptyNote(

@@ -178,7 +178,7 @@ private fun GridHeader(vm: MainViewModel, sortButton: FocusRequester, ratingButt
             Text(vm.group ?: vm.categories.firstOrNull()?.name ?: vm.section.label, fontSize = 24.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
                 if (vm.total == 0 && vm.busy == null) "Nothing here${if (vm.settings.vodMinRating > 0) " with this rating" else ""}."
-                else "%,d %s · hold OK for favorite".format(vm.total, noun),
+                else "%,d %s".format(vm.total, noun),
                 color = Muted,
                 fontSize = 12.sp,
             )

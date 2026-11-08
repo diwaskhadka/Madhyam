@@ -422,6 +422,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             sectionQuery = ""
             searchEditing = false
             categoriesOpen = true
+            previewFocused = false
         }
         sectionLoading = true
         section = s
@@ -487,6 +488,32 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Text filter of the current section and category; blank shows everything. */
     var sectionQuery by mutableStateOf("")
         private set
+
+    /** Live TV: the preview has the focus, so the channels shrink to their logos. */
+    var previewFocused by mutableStateOf(false)
+
+    /** Remember a search for the list under the Search page's box (newest first). */
+    fun addSearchHistory(q: String) {
+        val text = q.trim()
+        if (text.isEmpty()) return
+        changeSettings {
+            searchHistory.removeAll { it.equals(text, ignoreCase = true) }
+            searchHistory.add(0, text)
+            while (searchHistory.size > 14) searchHistory.removeAt(searchHistory.lastIndex)
+        }
+    }
+
+    /** OK on a history entry: the list goes away, so the focus first moves up to the microphone. */
+    fun searchFromHistory(q: String) {
+        refocusSearch = true
+        search(q)
+        viewModelScope.launch {
+            delay(1000)
+            refocusSearch = false
+        }
+    }
+
+    fun clearSearchHistory() = changeSettings { searchHistory.clear() }
 
     /** Back cleared the search: the box takes the focus before the focused result goes away. */
     var refocusSearch by mutableStateOf(false)
@@ -682,6 +709,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * episodes play full screen.
      */
     fun open(item: Item) {
+        if (section == Section.Search) addSearchHistory(query)
         if (itemLocked(item)) {
             withPin("Enter the PIN to open “${item.name}”") { open(item) }
             return
