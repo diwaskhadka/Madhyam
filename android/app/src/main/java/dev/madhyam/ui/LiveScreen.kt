@@ -46,6 +46,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -86,7 +87,9 @@ fun LiveScreen(vm: MainViewModel) {
         return
     }
     SectionSearchBack(vm)
-    Row(
+    SectionLayout(
+        vm,
+        210.dp,
         Modifier.fillMaxSize().onPreviewKeyEvent { ev ->
             // Menu opens the TV guide from anywhere in Live TV.
             if (ev.type == KeyEventType.KeyDown && ev.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_MENU) {
@@ -97,10 +100,9 @@ fun LiveScreen(vm: MainViewModel) {
             }
         },
     ) {
-        if (vm.categoriesOpen) CategoryPanel(vm, Modifier.width(210.dp))
         // Coming in from the side lands in the channels, not on the button at the same height.
         val channels = remember { FocusRequester() }
-        Row(Modifier.weight(1f).sectionContent(vm) { if (vm.items.isNotEmpty() && !vm.lockedGroup && !vm.searchEditing) channels else FocusRequester.Default }) {
+        Row(Modifier.fillMaxSize().sectionContent(vm) { if (vm.items.isNotEmpty() && !vm.lockedGroup && !vm.searchEditing) channels else FocusRequester.Default }) {
             ChannelList(vm, now, channels, Modifier.weight(1f))
             InfoPane(vm, now, Modifier.width(380.dp))
         }
@@ -127,6 +129,80 @@ fun Modifier.sectionContent(vm: MainViewModel, entry: () -> FocusRequester = { F
     }
     .onFocusChanged { if (it.hasFocus) vm.categoriesOpen = false }
     .focusGroup()
+
+private val StripWidth = 56.dp
+
+/**
+ * Category column over [content]. Opening it slides the column in and pushes the content aside at
+ * its own size, past the right edge: moved as layers, so nothing is laid out again per frame.
+ */
+@Composable
+fun SectionLayout(vm: MainViewModel, panelWidth: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val open = androidx.compose.animation.core.animateFloatAsState(if (vm.categoriesOpen) 1f else 0f, panelMotion(), label = "categories")
+    val showPanel by remember { androidx.compose.runtime.derivedStateOf { vm.categoriesOpen || open.value > 0.01f } }
+    val showStrip by remember { androidx.compose.runtime.derivedStateOf { !vm.categoriesOpen || open.value < 0.99f } }
+    Box(modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().padding(start = StripWidth).graphicsLayer { translationX = open.value * (panelWidth - StripWidth).toPx() }) {
+            content()
+        }
+        if (showStrip) CategoryStrip(vm, Modifier.graphicsLayer { alpha = 1f - open.value })
+        if (showPanel) {
+            CategoryPanel(
+                vm,
+                Modifier.width(panelWidth).graphicsLayer {
+                    translationX = -(1f - open.value) * (panelWidth - StripWidth).toPx()
+                    alpha = open.value
+                }.background(Background),
+            )
+        }
+    }
+}
+
+/** Short label for the slim column: the prefix before "|", else the initials of two words. */
+private fun categoryShort(c: Category): String {
+    if (c.isAll) return "All"
+    val prefix = c.name.substringBefore('|', "").trim()
+    if (prefix.isNotEmpty()) return prefix.take(3).uppercase()
+    val words = c.name.split(' ', '-', '_', '/').map { w -> w.filter { it.isLetterOrDigit() } }.filter { it.isNotEmpty() }
+    return when {
+        words.isEmpty() -> "•"
+        words.size == 1 -> words[0].take(2).uppercase()
+        else -> "${words[0][0]}${words[1][0]}".uppercase()
+    }
+}
+
+/**
+ * The category column while closed, as the rail is: narrow, the same categories in short, the
+ * chosen one marked. Not focusable: Left from the content opens the full column.
+ */
+@Composable
+fun CategoryStrip(vm: MainViewModel, modifier: Modifier = Modifier) {
+    val selectedIndex = vm.categories.indexOfFirst { if (it.isAll) vm.group == null else vm.group == it.name }.coerceAtLeast(0)
+    LazyColumn(
+        modifier = modifier.width(StripWidth).fillMaxHeight().background(Panel.copy(alpha = 0.55f)),
+        state = rememberLazyListState(initialFirstVisibleItemIndex = (selectedIndex - 3).coerceAtLeast(0)),
+        userScrollEnabled = false,
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 16.dp, horizontal = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        itemsIndexed(vm.categories, key = { _, c -> if (c.isAll) "\u0000all" else c.name }) { i, c ->
+            val on = i == selectedIndex
+            Box(
+                Modifier.fillMaxWidth().height(40.dp)
+                    .background(if (on) TextColor.copy(alpha = 0.16f) else Color.Transparent, RoundedCornerShape(8.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    categoryShort(c),
+                    fontSize = 12.sp,
+                    fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (on) TextColor else Muted,
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
 
 /** Category column shared by Live TV, Movies and Series. */
 @Suppress("DEPRECATION") // FocusProperties.enter, as in the rail
@@ -243,9 +319,9 @@ private fun ChannelList(vm: MainViewModel, now: Long, channels: FocusRequester, 
         val title = vm.group ?: vm.categories.firstOrNull()?.name ?: "Live TV"
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) { SectionTitle(title, "%,d channels · hold OK for favorite".format(vm.total), subLines = 2) }
+            if (!vm.lockedGroup) SectionSearchBox(vm, Modifier.padding(end = 8.dp))
             ToggleChip("TV guide", false) { vm.openGuide() }
         }
-        if (!vm.lockedGroup) SectionSearchBox(vm, Modifier.fillMaxWidth().padding(bottom = 4.dp))
         if (vm.lockedGroup) {
             LockedNote()
             return@Column

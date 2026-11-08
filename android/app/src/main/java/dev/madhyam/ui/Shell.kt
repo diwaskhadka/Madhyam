@@ -51,6 +51,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -71,6 +72,10 @@ import kotlinx.coroutines.launch
 
 private val RailCollapsed = 72.dp
 private val RailExpanded = 230.dp
+
+/** The rail and the category column open and close with the same quick, settled motion. */
+fun <T> panelMotion() = androidx.compose.animation.core.tween<T>(200, easing = androidx.compose.animation.core.FastOutSlowInEasing)
+private val PanelMotion = panelMotion<Float>()
 
 fun Section.icon(): ImageVector = when (this) {
     Section.Home -> Icons.Filled.Home
@@ -105,7 +110,13 @@ fun MainShell(vm: MainViewModel) {
     }
 
     Box(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().padding(start = RailCollapsed)) {
+        // The open rail pushes the page aside at its own size, past the right edge: moved as a
+        // layer, so a big grid is not laid out again on every frame.
+        val railOpen = androidx.compose.animation.core.animateFloatAsState(if (railFocused) 1f else 0f, PanelMotion, label = "page")
+        Box(
+            Modifier.fillMaxSize().padding(start = RailCollapsed)
+                .graphicsLayer { translationX = railOpen.value * (RailExpanded - RailCollapsed).toPx() },
+        ) {
             CompositionLocalProvider(LocalRailFocus provides railFocus) {
             when (vm.section) {
                 Section.Home -> if (vm.details != null) DetailsScreen(vm) else HomeScreen(vm)
@@ -115,10 +126,6 @@ fun MainShell(vm: MainViewModel) {
             }
             }
         }
-        // The open rail covers the left of the page: dim the page so the cut-off bits of it
-        // (category names, counts) don't show beside the rail.
-        val scrim by androidx.compose.animation.core.animateFloatAsState(if (railFocused) 0.82f else 0f, label = "scrim")
-        if (scrim > 0f) Box(Modifier.fillMaxSize().background(Background.copy(alpha = scrim)))
         Rail(vm, railFocus, onFocus = { railFocused = it }, expanded = railFocused, onPlaylists = { pickPlaylist = true })
 
         // Status line (busy / messages), bottom right, over everything.
@@ -169,7 +176,7 @@ private fun ExitDialog(onDismiss: () -> Unit) {
 private fun Rail(vm: MainViewModel, selected: FocusRequester, onFocus: (Boolean) -> Unit, expanded: Boolean, onPlaylists: () -> Unit) {
     val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
-    val width by animateDpAsState(if (expanded) RailExpanded else RailCollapsed, label = "rail")
+    val width by animateDpAsState(if (expanded) RailExpanded else RailCollapsed, panelMotion(), label = "rail")
     Column(
         Modifier
             .width(width)

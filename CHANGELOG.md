@@ -9,8 +9,9 @@ How to cut a release and how to add a platform: [docs/RELEASING.md](docs/RELEASI
 ## Unreleased
 
 ### Android TV
-- **Search inside Live TV, Movies and Series:** a search box at the top of each section looks only in that section and the chosen category. Back clears it.
-- Choosing a category closes the category column so the channels or posters get the room. Left from the left edge brings it back.
+- **Search inside Live TV, Movies and Series:** the magnifier at the top of each section looks only in that section and the chosen category. Back clears it.
+- Choosing a category narrows the category column to a slim strip, as the menu does, so the channels or posters get the room. Left from the left edge opens it again.
+- The menu and the category column slide open and push the page aside, instead of dimming it and rearranging the posters.
 - OK on a section in the menu goes straight in: the previous section's list no longer flashes in the new page, and the menu closes once the page is ready.
 
 ## 1.1.1

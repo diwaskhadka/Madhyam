@@ -4,11 +4,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
@@ -33,7 +36,6 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Icon
@@ -129,10 +131,10 @@ private fun Header(vm: MainViewModel) {
 
 /** The search box while it is not being typed in: looks like the text field, OK opens it. */
 @Composable
-private fun SearchBar(query: String, modifier: Modifier, hint: String = "Search channels, movies, series", height: Dp = 64.dp, onOpen: () -> Unit) {
+private fun SearchBar(query: String, modifier: Modifier, onOpen: () -> Unit) {
     androidx.tv.material3.Surface(
         onClick = onOpen,
-        modifier = modifier.height(height),
+        modifier = modifier.height(64.dp),
         shape = androidx.tv.material3.ClickableSurfaceDefaults.shape(androidx.compose.foundation.shape.RoundedCornerShape(6.dp)),
         colors = androidx.tv.material3.ClickableSurfaceDefaults.colors(
             containerColor = Color.Transparent,
@@ -149,7 +151,7 @@ private fun SearchBar(query: String, modifier: Modifier, hint: String = "Search 
         Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.Search, contentDescription = null, tint = Muted, modifier = Modifier.size(22.dp))
             Text(
-                query.ifBlank { hint },
+                query.ifBlank { "Search channels, movies, series" },
                 color = if (query.isBlank()) Muted else TextColor,
                 fontSize = 16.sp,
                 maxLines = 1,
@@ -195,7 +197,7 @@ fun SectionSearchBox(vm: MainViewModel, modifier: Modifier) {
                 keyboard?.hide()
                 focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Down)
             }),
-            modifier = modifier.height(56.dp).focusRequester(field)
+            modifier = modifier.width(220.dp).height(56.dp).focusRequester(field)
                 .onFocusChanged {
                     if (it.hasFocus) {
                         hadFocus = true
@@ -211,9 +213,40 @@ fun SectionSearchBox(vm: MainViewModel, modifier: Modifier) {
         LaunchedEffect(vm.refocusSearch) {
             if (vm.refocusSearch) runCatching { bar.requestFocus() }
         }
-        SearchBar(vm.sectionQuery, modifier.focusRequester(bar), hint = "Search in $where", height = 56.dp) {
+        SearchIcon(vm.sectionQuery, "Search in $where", modifier.focusRequester(bar)) {
             vm.searchEditing = true
             editing = true
+        }
+    }
+}
+
+/** A magnifier in a round button; with a search running, the text beside it. */
+@Composable
+private fun SearchIcon(query: String, label: String, modifier: Modifier, onOpen: () -> Unit) {
+    val round = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)
+    androidx.tv.material3.Surface(
+        onClick = onOpen,
+        modifier = modifier.height(40.dp).then(if (query.isEmpty()) Modifier.width(40.dp) else Modifier.widthIn(max = 200.dp)),
+        shape = androidx.tv.material3.ClickableSurfaceDefaults.shape(round),
+        colors = androidx.tv.material3.ClickableSurfaceDefaults.colors(
+            containerColor = Color.Transparent,
+            contentColor = TextColor,
+            focusedContainerColor = TextColor,
+            focusedContentColor = Background,
+        ),
+        scale = androidx.tv.material3.ClickableSurfaceDefaults.scale(focusedScale = 1f),
+        border = androidx.tv.material3.ClickableSurfaceDefaults.border(
+            border = androidx.tv.material3.Border(androidx.compose.foundation.BorderStroke(1.dp, Muted.copy(alpha = 0.7f)), shape = round),
+        ),
+    ) {
+        Row(
+            Modifier.fillMaxHeight().padding(horizontal = if (query.isEmpty()) 10.dp else 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Filled.Search, contentDescription = label, modifier = Modifier.size(20.dp))
+            if (query.isNotEmpty()) {
+                Text(query, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 6.dp))
+            }
         }
     }
 }
