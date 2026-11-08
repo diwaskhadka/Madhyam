@@ -248,7 +248,8 @@ private fun Seasons(vm: MainViewModel, series: Item) {
             OutlinedButton(
                 onClick = { vm.setWatched(eps, !allWatched) },
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                modifier = Modifier.padding(start = 16.dp),
+                // The end of the row: Right stays here instead of jumping up to the buttons above.
+                modifier = Modifier.padding(start = 16.dp).focusProperties { right = FocusRequester.Cancel },
             ) {
                 Text(if (allWatched) "Mark season as unwatched" else "Mark season as watched", fontSize = 12.sp)
             }
