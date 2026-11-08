@@ -13,7 +13,8 @@ How to cut a release and how to add a platform: [docs/RELEASING.md](docs/RELEASI
 - Search is one full page: microphone, box and search history. Its gear chooses what the whole-app search looks in.
 - Back climbs one level at a time: content, categories, menu, then the exit question.
 - Choosing a category narrows the category column to a slim strip, as the menu does, so the channels or posters get the room. Left from the left edge opens it again.
-- **Hold OK for options** on any channel, film, series, episode or category: favorites, play, details, watched mark, remove from Recent, hide or lock a category.
+- Back from the player or TV guide returns to the channel you were on, and focus no longer jumps to the wrong button on Home and on film and series pages.
+- **Hold OK for options** on any channel, film, series, episode, TV guide row or category: favorites, play, details, watched mark, remove from Recent, hide or lock a category.
 - **Voice search:** the search page starts listening as it opens once you've allowed the microphone, and what you say appears as you speak. Search also remembers what you looked for.
 - New dark theme, **Charcoal**: neutral and flat, with less text on screen and slimmer channel rows. Navy & Crimson is still in Settings › Appearance › Theme.
 - On the Live TV preview, the channels shrink to their logos and the picture gets the room.

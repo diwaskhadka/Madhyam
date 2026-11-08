@@ -479,6 +479,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** The rail is about to move the focus into Live TV: the channel list must not take it. */
     var skipChannelFocus = false
 
+    /** Home's banner opened a details page: the focus comes back to its Details button. */
+    var heroDetailsOpened = false
+
+    /** Set while Live TV hands the focus to one row: the way into the channels must not redirect it. */
+    var channelEntry: androidx.compose.ui.focus.FocusRequester? = null
+
     /** Live TV: the preview has the focus, so the channels shrink to their logos. */
     var previewFocused by mutableStateOf(false)
 

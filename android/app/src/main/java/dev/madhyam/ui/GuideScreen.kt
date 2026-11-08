@@ -244,6 +244,7 @@ private fun Cell(
     if (requester != null) m = m.focusRequester(requester)
     Surface(
         onClick = { vm.openFromGuide(ch, p) },
+        onLongClick = { vm.showOptions(ch) },
         modifier = m,
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(6.dp)),
         colors = ClickableSurfaceDefaults.colors(

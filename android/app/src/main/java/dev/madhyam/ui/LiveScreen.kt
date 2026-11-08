@@ -102,7 +102,7 @@ fun LiveScreen(vm: MainViewModel) {
     ) {
         // Coming in from the side lands in the channels, not on the button at the same height.
         val channels = remember { FocusRequester() }
-        Row(Modifier.fillMaxSize().sectionContent(vm) { if (vm.items.isNotEmpty() && !vm.lockedGroup) channels else FocusRequester.Default }) {
+        Row(Modifier.fillMaxSize().sectionContent(vm) { vm.channelEntry ?: if (vm.items.isNotEmpty() && !vm.lockedGroup) channels else FocusRequester.Default }) {
             // On the preview the channels shrink to their logos and the picture gets the room.
             ChannelList(vm, now, channels, if (vm.previewFocused) Modifier.width(88.dp) else Modifier.weight(1f))
             InfoPane(vm, now, if (vm.previewFocused) Modifier.weight(1f) else Modifier.width(380.dp))
@@ -332,9 +332,14 @@ private fun ChannelList(vm: MainViewModel, now: Long, channels: FocusRequester, 
             EmptyNote(if (vm.busy != null) "" else "No channels here.")
             return@Column
         }
-        // Entering Live TV puts the focus on the playing channel (or the first one), not on the rail.
+        // Coming to this list puts the focus on the playing channel, else the last one focused
+        // (back from the player or the guide), else the first; not on the rail.
         val start = remember { FocusRequester() }
-        val startIndex = vm.items.indexOfFirst { it.id == vm.playback.current?.id }.coerceAtLeast(0)
+        val startIndex = remember {
+            val id = vm.playback.current?.id ?: vm.focused?.id
+            vm.items.indexOfFirst { it.id == id }.coerceAtLeast(0)
+        }
+        val listState = rememberLazyListState(initialFirstVisibleItemIndex = startIndex)
         LaunchedEffect(Unit) {
             // Not when the rail is moving in (it lands on the categories).
             if (vm.skipChannelFocus) {
@@ -342,9 +347,13 @@ private fun ChannelList(vm: MainViewModel, now: Long, channels: FocusRequester, 
                 return@LaunchedEffect
             }
             delay(100)
+            // The saved scroll position can have that row off screen, and then it can't take focus.
+            if (listState.layoutInfo.visibleItemsInfo.none { it.index == startIndex }) listState.scrollToItem(startIndex)
+            androidx.compose.runtime.withFrameNanos { }
+            vm.channelEntry = start
             runCatching { start.requestFocus() }
+            vm.channelEntry = null
         }
-        val listState = rememberLazyListState(initialFirstVisibleItemIndex = startIndex)
         LazyColumn(
             // Rows scrolling out fade under the header instead of being cut in half.
             Modifier.focusRequester(channels).focusRestorer().fadeEdges(16.dp),

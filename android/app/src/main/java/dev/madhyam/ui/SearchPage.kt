@@ -161,7 +161,7 @@ fun SearchPage(vm: MainViewModel) {
         val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted && speech.available) speech.start() else openSystemVoice()
         }
-        val hasMic = { context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED }
+        val hasMic = { androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED }
         LaunchedEffect(Unit) {
             delay(80)
             runCatching { orb.requestFocus() }

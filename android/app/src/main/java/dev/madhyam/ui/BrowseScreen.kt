@@ -29,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -146,7 +147,17 @@ private fun ItemList(vm: MainViewModel) {
         "Series" to vm.items.filter { it.isSeries },
         "Episodes" to vm.items.filter { it.isEpisode },
     ).filter { it.second.isNotEmpty() }
-    LazyColumn(Modifier.focusRestorer(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    // From the rail the first time: the top row, not the row at the rail's height.
+    val firstRow = remember(vm.section) { FocusRequester() }
+    var visited by remember(vm.section) { mutableStateOf(false) }
+    val firstId = groups.first().second.first().id
+    LazyColumn(
+        Modifier
+            .focusProperties { enter = { if (it == androidx.compose.ui.focus.FocusDirection.Right && !visited) firstRow else FocusRequester.Default } }
+            .focusGroup()
+            .focusRestorer(),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
         for ((label, list) in groups) {
             if (groups.size > 1) {
                 item(key = "header:$label") {
@@ -154,7 +165,7 @@ private fun ItemList(vm: MainViewModel) {
                 }
             }
             itemsIndexed(list, key = { _, it -> it.id }) { _, item ->
-                ItemRow(vm, item, now, strip, onFocused = {})
+                ItemRow(vm, item, now, strip, if (item.id == firstId) Modifier.focusRequester(firstRow) else Modifier, onFocused = { visited = true })
             }
         }
     }
@@ -180,13 +191,13 @@ fun SearchCards(vm: MainViewModel, results: List<Item>) {
 }
 
 @Composable
-private fun ItemRow(vm: MainViewModel, item: Item, now: Long, strip: Boolean, onFocused: () -> Unit) {
+private fun ItemRow(vm: MainViewModel, item: Item, now: Long, strip: Boolean, modifier: Modifier, onFocused: () -> Unit) {
     val nn = vm.nowNext[item.id]
     ListItem(
         selected = false,
         onClick = { vm.open(item) },
         onLongClick = { vm.showOptions(item) },
-        modifier = Modifier.onFocusChanged { if (it.isFocused) onFocused() },
+        modifier = modifier.onFocusChanged { if (it.isFocused) onFocused() },
         leadingContent = { if (item.isLive) Logo(item, 64.dp, 40.dp, strip) else Logo(item, 44.dp, 64.dp) },
         headlineContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {

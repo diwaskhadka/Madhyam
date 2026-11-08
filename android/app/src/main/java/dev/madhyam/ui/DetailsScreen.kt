@@ -47,6 +47,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
@@ -160,6 +161,9 @@ private fun Hero(vm: MainViewModel, item: Item, info: DetailsInfo?, poster: Stri
 @Composable
 private fun Buttons(vm: MainViewModel, item: Item) {
     val first = remember { FocusRequester() }
+    val rail = LocalRailFocus.current
+    // Left from the first button goes to the rail, not down to "Mark season as watched".
+    val firstButton = Modifier.focusRequester(first).focusProperties { left = rail }
     // A series without episodes loses its Play button once loading ends.
     val noPlay = item.isSeries && vm.episodes.isEmpty() && !vm.detailsLoading
     // Opening the page puts the focus on Play / Resume. The button keeps its place while the
@@ -180,12 +184,12 @@ private fun Buttons(vm: MainViewModel, item: Item) {
                         else -> "Play ${ep.seasonEpisode}"
                     },
                     Icons.Filled.PlayArrow,
-                    Modifier.focusRequester(first),
+                    firstButton,
                     primary = true,
                 ) { if (ep != null) vm.playEpisode(ep) }
             }
         } else {
-            ActionButton(if (item.isStarted) "Resume" else "Play", Icons.Filled.PlayArrow, Modifier.focusRequester(first), primary = true) {
+            ActionButton(if (item.isStarted) "Resume" else "Play", Icons.Filled.PlayArrow, firstButton, primary = true) {
                 vm.playMovie()
             }
             if (item.isStarted) ActionButton("Start over", Icons.Filled.Replay) { vm.playMovie(startOver = true) }
@@ -194,7 +198,7 @@ private fun Buttons(vm: MainViewModel, item: Item) {
         ActionButton(
             if (fav) "Favorite" else "Add to favorites",
             if (fav) Icons.Filled.Star else Icons.Filled.StarBorder,
-            if (noPlay) Modifier.focusRequester(first) else Modifier,
+            if (noPlay) firstButton else Modifier,
         ) { vm.toggleFavorite(item) }
         if (!item.isSeries) {
             ActionButton(if (item.isWatched) "Watched" else "Mark as watched", Icons.Filled.Check) { vm.toggleWatched(item) }
