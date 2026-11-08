@@ -256,6 +256,9 @@ class Repository(context: Context) {
      * it is newer than the snapshot: writing the snapshot deletes it.
      */
     private val userStateFile = File(context.filesDir, "user-state.json")
+
+    /** False until [init] has applied that file: a save before then would overwrite it with the snapshot's older state. */
+    @Volatile private var userStateReady = false
     private val saveLock = Any()
     private val cache = context.cacheDir
     private val secrets = Secrets(File(context.filesDir, "secrets.json"))
@@ -300,6 +303,7 @@ class Repository(context: Context) {
             }
         }
         if (!snapshot.exists()) loadUserState()
+        userStateReady = true
         Log.i(TAG, "catalog loaded in ${System.currentTimeMillis() - started} ms")
     }
 
@@ -379,6 +383,7 @@ class Repository(context: Context) {
 
     /** Write favorites, progress and history only (after playback, a favorite, a watched mark). */
     private fun saveUserState() = synchronized(saveLock) {
+        if (!userStateReady) return@synchronized
         val started = System.currentTimeMillis()
         val tmp = File(userStateFile.path + ".tmp")
         try {
