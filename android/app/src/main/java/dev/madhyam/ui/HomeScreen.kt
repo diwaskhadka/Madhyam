@@ -198,7 +198,7 @@ internal fun ChannelRow(vm: MainViewModel, title: String, list: List<Item>) {
                 Column(Modifier.width(196.dp)) {
                     Surface(
                         onClick = { vm.watchChannel(ch, list) },
-                        onLongClick = { vm.toggleFavorite(ch) },
+                        onLongClick = { vm.showOptions(ch) },
                         modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
                         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
                         // A tinted highlight: many logos are white and would vanish on a white card.

@@ -264,6 +264,7 @@ private fun CategoryRow(vm: MainViewModel, c: Category, modifier: Modifier = Mod
                 focusManager.moveFocus(FocusDirection.Right)
             }
         },
+        onLongClick = if (c.isAll) null else ({ vm.showOptions(c) }),
         // Moving the focus over a category shows its contents, as on most TV apps.
         modifier = modifier.onFocusChanged { if (it.isFocused) vm.selectCategory(c) },
         headlineContent = {
@@ -378,7 +379,7 @@ private fun ChannelRow(modifier: Modifier, vm: MainViewModel, number: Int, item:
     DenseListItem(
         selected = playing,
         onClick = { vm.open(item) },
-        onLongClick = { vm.toggleFavorite(item) },
+        onLongClick = { vm.showOptions(item) },
         modifier = modifier.height(if (nn?.now != null && !compact) 58.dp else 46.dp).onFocusChanged {
             focused = it.isFocused
             if (it.isFocused) onFocused()

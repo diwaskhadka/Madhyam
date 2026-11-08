@@ -147,6 +147,8 @@ fun MainShell(vm: MainViewModel) {
     if (askExit) ExitDialog { askExit = false }
     // Hidden behind a details page opened from it, and back when that closes.
     if (vm.searchOpen && vm.details == null) SearchPage(vm)
+    // After the search page, so its window opens on top of that one.
+    OptionsDialog(vm)
 }
 
 /** "Exit Madhyam?" with Cancel focused, so a Back pressed once too often changes nothing. */

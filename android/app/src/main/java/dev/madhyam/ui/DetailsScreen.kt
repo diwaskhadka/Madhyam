@@ -234,7 +234,7 @@ private fun Seasons(vm: MainViewModel, series: Item) {
         val eps = vm.episodes.filter { (it.season ?: "1") == current }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Seasons and episodes", fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
-            Text("  ${vm.episodes.size} episodes · hold OK on one to mark it watched", color = Muted, fontSize = 12.sp)
+            Text("  ${vm.episodes.size} episodes · hold OK on one for options", color = Muted, fontSize = 12.sp)
         }
         Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             LazyRow(Modifier.weight(1f, fill = false).focusRestorer(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -268,7 +268,7 @@ private fun EpisodeCard(vm: MainViewModel, series: Item, ep: Item) {
     Column(Modifier.width(240.dp).bringIntoViewRequester(whole).padding(bottom = 16.dp)) {
         Surface(
             onClick = { vm.playEpisode(ep) },
-            onLongClick = { vm.toggleWatched(ep) },
+            onLongClick = { vm.showOptions(ep) },
             modifier = Modifier.fillMaxWidth().size(240.dp, 135.dp).onFocusChanged { focused = it.isFocused },
             shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
             colors = ClickableSurfaceDefaults.colors(containerColor = Panel, focusedContainerColor = Panel),

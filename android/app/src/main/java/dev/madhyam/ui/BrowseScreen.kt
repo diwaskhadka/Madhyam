@@ -129,7 +129,7 @@ private fun ItemList(vm: MainViewModel) {
         if (vm.busy == null) {
             EmptyNote(
                 when (vm.section) {
-                    Section.Favorites -> "No favorites yet. Hold OK on a channel or film to add one."
+                    Section.Favorites -> "No favorites yet. Hold OK on a channel or film and choose Add to favorites."
                     Section.Recent -> "Nothing watched yet."
                     else -> "Nothing here."
                 },
@@ -185,7 +185,7 @@ private fun ItemRow(vm: MainViewModel, item: Item, now: Long, strip: Boolean, on
     ListItem(
         selected = false,
         onClick = { vm.open(item) },
-        onLongClick = { if (vm.section == Section.Recent) vm.removeFromHistory(item) else vm.toggleFavorite(item) },
+        onLongClick = { vm.showOptions(item) },
         modifier = Modifier.onFocusChanged { if (it.isFocused) onFocused() },
         leadingContent = { if (item.isLive) Logo(item, 64.dp, 40.dp, strip) else Logo(item, 44.dp, 64.dp) },
         headlineContent = {

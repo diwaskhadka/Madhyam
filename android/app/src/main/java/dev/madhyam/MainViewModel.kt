@@ -846,6 +846,65 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             repo.setWatched(list, watched)
             reloadDetailsProgress()
+            // The lists on screen show watched marks too.
+            val fresh = list.mapNotNull { repo.item(it.id) }.associateBy { it.id }
+            items = items.map { fresh[it.id] ?: it }
+            searchResults = searchResults.map { fresh[it.id] ?: it }
+            continueItems = continueItems.map { fresh[it.id] ?: it }
+        }
+    }
+
+    // ------------------------------------------------------------ options (hold OK)
+
+    var optionsItem by mutableStateOf<Item?>(null)
+        private set
+    var optionsCategory by mutableStateOf<Category?>(null)
+        private set
+
+    fun showOptions(item: Item) {
+        viewModelScope.launch {
+            // Rows can be older than the last play or watched mark.
+            optionsItem = repo.item(item.id) ?: item
+        }
+    }
+
+    fun showOptions(c: Category) {
+        if (!c.isAll) optionsCategory = c
+    }
+
+    fun closeOptions() {
+        optionsItem = null
+        optionsCategory = null
+    }
+
+    fun watchFromOptions(item: Item) {
+        if (searchOpen) addSearchHistory(query)
+        val list = (if (searchOpen) searchResults else items).filter { it.isLive }
+        watchChannel(item, list.ifEmpty { listOf(item) })
+    }
+
+    fun hideCategory(name: String) {
+        val s = source ?: return
+        val key = kindKey ?: return
+        val wasShowing = group == name
+        setHidden(s, key, name, true)
+        if (wasShowing) categories.firstOrNull { it.isAll }?.let { selectCategory(it) }
+        focusCategories = true
+        message = "Hidden $name. Bring it back in the playlist's settings."
+    }
+
+    fun categoryIsLockedSetting(name: String): Boolean {
+        val s = source ?: return false
+        val kind = section.kind ?: return false
+        return categoryLockSetting(s.id, kind, name) != null
+    }
+
+    fun toggleCategoryLock(name: String) {
+        val s = source ?: return
+        val kind = section.kind ?: return
+        val lock = !categoryIsLockedSetting(name)
+        withPin("Enter the PIN to ${if (lock) "lock" else "unlock"} “$name”") {
+            setCategoryLock(s.id, Parental.kindKey(kind), name, lock)
         }
     }
 
@@ -1088,7 +1147,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Recent: hold OK removes an entry from the history. */
+    /** Recent: an entry leaves the history (hold OK for the menu). */
     fun removeFromHistory(item: Item) {
         viewModelScope.launch {
             repo.removeFromHistory(item.id)

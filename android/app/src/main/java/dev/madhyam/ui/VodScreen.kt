@@ -225,7 +225,7 @@ fun PosterCard(
     Column(if (width != null) modifier.width(width) else modifier.fillMaxWidth()) {
         Surface(
             onClick = onClick,
-            onLongClick = { vm.toggleFavorite(item) },
+            onLongClick = { vm.showOptions(item) },
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(2f / 3f)
