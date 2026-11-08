@@ -38,6 +38,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
@@ -63,6 +65,8 @@ import androidx.tv.material3.Text
 import dev.madhyam.MainViewModel
 import dev.madhyam.Section
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
 
 private val RailCollapsed = 72.dp
@@ -209,10 +213,17 @@ private fun Rail(vm: MainViewModel, selected: FocusRequester, onFocus: (Boolean)
                 selected = vm.section == s,
                 modifier = if (vm.section == s) Modifier.focusRequester(selected) else Modifier,
                 onClick = {
-                    if (vm.section != s) vm.selectSection(s)
-                    // OK closes the rail and goes into the page (once the new page is composed).
+                    if (vm.section != s) {
+                        vm.skipChannelFocus = s == Section.Live
+                        vm.selectSection(s)
+                    }
+                    // OK closes the rail and goes into the page, once the page has its rows: a
+                    // row of a list still loading would vanish with the focus on it.
                     scope.launch {
-                        delay(150)
+                        withTimeoutOrNull(5000) { snapshotFlow { vm.sectionLoading }.first { !it } }
+                        if (vm.section != s) return@launch // waiting for a PIN, or another entry chosen
+                        withFrameNanos { }
+                        withFrameNanos { }
                         if (!focusManager.moveFocus(FocusDirection.Right)) focusManager.moveFocus(FocusDirection.Next)
                     }
                 },

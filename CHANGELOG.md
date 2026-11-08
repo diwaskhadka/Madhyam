@@ -6,6 +6,13 @@ so. The engine (`crates/madhyam-core`) keeps its own version, given in each sect
 
 How to cut a release and how to add a platform: [docs/RELEASING.md](docs/RELEASING.md).
 
+## Unreleased
+
+### Android TV
+- **Search inside Live TV, Movies and Series:** a search box at the top of each section looks only in that section and the chosen category. Back clears it.
+- Choosing a category closes the category column so the channels or posters get the room. Left from the left edge brings it back.
+- OK on a section in the menu goes straight in: the previous section's list no longer flashes in the new page, and the menu closes once the page is ready.
+
 ## 1.1.1
 
 Parental controls, subtitle style like YouTube's and Buy me a coffee on every platform. Adding a playlist shows each step and how many live channels, movies and series it brought, and confirmations use the app's own look. Android TV starts in about 5 s, stops streams you leave and needs half the memory; Windows full screen is black edge to edge; Linux plays trailers in the app.

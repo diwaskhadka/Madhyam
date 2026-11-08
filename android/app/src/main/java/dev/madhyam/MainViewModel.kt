@@ -408,6 +408,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             withPin("Enter the PIN to open Settings") { selectSection(s) }
             return
         }
+        if (s != section) {
+            // The page changes now, its data a moment later: never draw the old section's list
+            // (or a focusable row of it) in the new page.
+            itemsJob?.cancel()
+            categories = emptyList()
+            items = emptyList()
+            continueItems = emptyList()
+            total = 0
+            loadedRows = 0
+            group = null
+            lockedGroup = false
+            sectionQuery = ""
+            searchEditing = false
+            categoriesOpen = true
+        }
+        sectionLoading = true
         section = s
         if (s != Section.Live) guideOpen = false
         if (s != Section.Settings && s != Section.Search) changeSettings { lastSection = s.name }
@@ -448,6 +464,58 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 s == Section.Search -> setItems(searchHits(query))
                 else -> setItems(emptyList())
             }
+            sectionLoading = false
+        }
+    }
+
+    /** The current section's first load is still running (the rail waits before moving in). */
+    var sectionLoading by mutableStateOf(false)
+        private set
+
+    /** Live TV, Movies, Series: the category column is showing (else the content has the room). */
+    var categoriesOpen by mutableStateOf(true)
+
+    /** The column was reopened with Left: it takes the focus once it is composed. */
+    var focusCategories by mutableStateOf(false)
+
+    /** The rail is about to move the focus into Live TV: the channel list must not take it. */
+    var skipChannelFocus = false
+
+    /** A section's search box is being typed in: the lists must not take the focus. */
+    var searchEditing = false
+
+    /** Text filter of the current section and category; blank shows everything. */
+    var sectionQuery by mutableStateOf("")
+        private set
+
+    /** Back cleared the search: the box takes the focus before the focused result goes away. */
+    var refocusSearch by mutableStateOf(false)
+
+    fun clearSectionSearch() {
+        searchEditing = true // lets the focus request reach the box
+        refocusSearch = true
+        searchSection("")
+        viewModelScope.launch {
+            delay(1000) // also if the box is scrolled out of view and never took the focus
+            refocusSearch = false
+            searchEditing = false
+        }
+    }
+
+    fun openCategories() {
+        categoriesOpen = true
+        focusCategories = true
+    }
+
+    /** Filter the current section (and category) off the main thread, after a typing pause. */
+    fun searchSection(q: String) {
+        if (q == sectionQuery) return
+        sectionQuery = q
+        sectionLoading = false
+        itemsJob?.cancel()
+        itemsJob = viewModelScope.launch {
+            delay(250)
+            loadGroup(group)
         }
     }
 
@@ -472,6 +540,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         if (name == group && details == null && items.isNotEmpty() && !lockedGroup) return
         itemsJob?.cancel()
+        sectionLoading = false
         itemsJob = viewModelScope.launch { loadGroup(name) }
     }
 
@@ -538,7 +607,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         val hidden = if (name == null) settings.hidden(src.id, kindKey!!) + lockedCategoryNames() else emptySet()
-        val page = repo.query(src.id, kind, name, hidden, sort, 0, PAGE, groupField, minRating)
+        val page = repo.query(src.id, kind, name, hidden, sort, 0, PAGE, groupField, minRating, sectionQuery.ifBlank { null })
         total = page.total
         setItems(page.items.filterNot { itemLocked(it) }, page.total, rows = page.items.size)
         // The info pane follows the list: drop a channel that is not in it (unless it is playing).
@@ -557,7 +626,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             try {
                 val hidden = if (group == null) settings.hidden(src.id, kindKey!!) + lockedCategoryNames() else emptySet()
-                val page = repo.query(src.id, kind, group, hidden, sort, loadedRows, PAGE, groupField, minRating)
+                val page = repo.query(src.id, kind, group, hidden, sort, loadedRows, PAGE, groupField, minRating, sectionQuery.ifBlank { null })
                 loadedRows += page.items.size
                 items = items + page.items.filterNot { itemLocked(it) }
                 fetchNowNext(page.items)

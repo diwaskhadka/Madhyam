@@ -32,6 +32,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -84,6 +85,7 @@ fun LiveScreen(vm: MainViewModel) {
         GuideScreen(vm)
         return
     }
+    SectionSearchBack(vm)
     Row(
         Modifier.fillMaxSize().onPreviewKeyEvent { ev ->
             // Menu opens the TV guide from anywhere in Live TV.
@@ -95,11 +97,36 @@ fun LiveScreen(vm: MainViewModel) {
             }
         },
     ) {
-        CategoryPanel(vm, Modifier.width(210.dp))
-        ChannelList(vm, now, Modifier.weight(1f))
-        InfoPane(vm, now, Modifier.width(380.dp))
+        if (vm.categoriesOpen) CategoryPanel(vm, Modifier.width(210.dp))
+        // Coming in from the side lands in the channels, not on the button at the same height.
+        val channels = remember { FocusRequester() }
+        Row(Modifier.weight(1f).sectionContent(vm) { if (vm.items.isNotEmpty() && !vm.lockedGroup && !vm.searchEditing) channels else FocusRequester.Default }) {
+            ChannelList(vm, now, channels, Modifier.weight(1f))
+            InfoPane(vm, now, Modifier.width(380.dp))
+        }
     }
 }
+
+/**
+ * The part of a section beside the category column. Focus inside it closes the column, so the
+ * content gets the room; Left from its left edge opens the column again.
+ */
+@Suppress("DEPRECATION") // FocusProperties.exit, as enter in the rail
+@kotlin.OptIn(ExperimentalComposeUiApi::class)
+fun Modifier.sectionContent(vm: MainViewModel, entry: () -> FocusRequester = { FocusRequester.Default }): Modifier = this
+    .focusProperties {
+        enter = { entry() }
+        exit = { direction ->
+            if (direction == FocusDirection.Left && !vm.categoriesOpen) {
+                vm.openCategories()
+                FocusRequester.Cancel
+            } else {
+                FocusRequester.Default
+            }
+        }
+    }
+    .onFocusChanged { if (it.hasFocus) vm.categoriesOpen = false }
+    .focusGroup()
 
 /** Category column shared by Live TV, Movies and Series. */
 @Suppress("DEPRECATION") // FocusProperties.enter, as in the rail
@@ -118,6 +145,15 @@ fun CategoryPanel(vm: MainViewModel, modifier: Modifier = Modifier) {
         val selectedIndex = vm.categories.indexOfFirst { if (it.isAll) vm.group == null else vm.group == it.name }.coerceAtLeast(0)
         val list = rememberLazyListState(initialFirstVisibleItemIndex = (selectedIndex - 3).coerceAtLeast(0))
         val current = remember { FocusRequester() }
+        // Reopened with Left from the content: the focus comes back to the chosen category.
+        LaunchedEffect(vm.focusCategories) {
+            if (vm.focusCategories) {
+                withFrameNanos { }
+                withFrameNanos { }
+                runCatching { current.requestFocus() }
+                vm.focusCategories = false
+            }
+        }
         LazyColumn(
             state = list,
             modifier = Modifier.focusProperties {
@@ -201,7 +237,7 @@ fun ToggleChip(label: String, on: Boolean, modifier: Modifier = Modifier, onClic
 
 @kotlin.OptIn(ExperimentalComposeUiApi::class)
 @Composable
-private fun ChannelList(vm: MainViewModel, now: Long, modifier: Modifier) {
+private fun ChannelList(vm: MainViewModel, now: Long, channels: FocusRequester, modifier: Modifier) {
     val strip = vm.settings.stripPrefixes
     Column(modifier.fillMaxHeight().padding(horizontal = 12.dp, vertical = 16.dp)) {
         val title = vm.group ?: vm.categories.firstOrNull()?.name ?: "Live TV"
@@ -209,6 +245,7 @@ private fun ChannelList(vm: MainViewModel, now: Long, modifier: Modifier) {
             Column(Modifier.weight(1f)) { SectionTitle(title, "%,d channels · hold OK for favorite".format(vm.total), subLines = 2) }
             ToggleChip("TV guide", false) { vm.openGuide() }
         }
+        if (!vm.lockedGroup) SectionSearchBox(vm, Modifier.fillMaxWidth().padding(bottom = 4.dp))
         if (vm.lockedGroup) {
             LockedNote()
             return@Column
@@ -221,13 +258,27 @@ private fun ChannelList(vm: MainViewModel, now: Long, modifier: Modifier) {
         val start = remember { FocusRequester() }
         val startIndex = vm.items.indexOfFirst { it.id == vm.playback.current?.id }.coerceAtLeast(0)
         LaunchedEffect(Unit) {
+            // Not when the rail is moving in (it lands on the categories) or while typing.
+            if (vm.skipChannelFocus) {
+                vm.skipChannelFocus = false
+                return@LaunchedEffect
+            }
             delay(100)
-            runCatching { start.requestFocus() }
+            if (!vm.searchEditing) runCatching { start.requestFocus() }
+        }
+        val listState = rememberLazyListState(initialFirstVisibleItemIndex = startIndex)
+        // New search text: start from the top of the matches.
+        var lastQuery by remember { mutableStateOf(vm.sectionQuery) }
+        LaunchedEffect(vm.items) {
+            if (lastQuery != vm.sectionQuery) {
+                lastQuery = vm.sectionQuery
+                listState.scrollToItem(0)
+            }
         }
         LazyColumn(
             // Rows scrolling out fade under the header instead of being cut in half.
-            Modifier.focusRestorer().fadeEdges(16.dp),
-            state = rememberLazyListState(initialFirstVisibleItemIndex = startIndex),
+            Modifier.focusRequester(channels).focusRestorer().fadeEdges(16.dp),
+            state = listState,
             contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {

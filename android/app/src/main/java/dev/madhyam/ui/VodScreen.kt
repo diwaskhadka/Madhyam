@@ -91,8 +91,9 @@ fun VodScreen(vm: MainViewModel) {
     var dialog by remember { mutableStateOf<String?>(null) }
     // A new sort or rating rebuilds the grid, header included: put the focus back on the button.
     var refocus by remember { mutableStateOf<String?>(null) }
+    SectionSearchBack(vm)
     Row(Modifier.fillMaxSize()) {
-        CategoryPanel(vm, Modifier.width(230.dp))
+        if (vm.categoriesOpen) CategoryPanel(vm, Modifier.width(230.dp))
         // A new list (section, category, sort, rating) starts with fresh scroll and focus memory.
         if (vm.lockedGroup) {
             Column(Modifier.weight(1f).padding(start = 24.dp, top = 16.dp)) {
@@ -101,6 +102,7 @@ fun VodScreen(vm: MainViewModel) {
             }
             return@Row
         }
+        Box(Modifier.weight(1f).fillMaxHeight().sectionContent(vm)) {
         key(vm.section, vm.group, vm.settings.vodSort, vm.settings.vodMinRating) {
             val headerRows = if (vm.continueItems.isNotEmpty() && vm.group == null) 2 else 1
             val openedIndex = vm.items.indexOfFirst { it.id == vm.lastOpenedId }
@@ -132,11 +134,11 @@ fun VodScreen(vm: MainViewModel) {
                 columns = GridCells.Adaptive(coverWidth(vm.settings.coverSize)), // Settings › Appearance › Cover size
                 state = state,
                 modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
+                    .fillMaxSize()
                     .focusProperties {
                         val target = focusIndex + headerRows
-                        enter = { if (state.layoutInfo.visibleItemsInfo.any { it.index == target }) back else FocusRequester.Default }
+                        // A focus request for the search box also passes here: leave that one alone.
+                        enter = { if (!vm.searchEditing && state.layoutInfo.visibleItemsInfo.any { it.index == target }) back else FocusRequester.Default }
                     }
                     .focusGroup(),
                 contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 32.dp),
@@ -158,6 +160,7 @@ fun VodScreen(vm: MainViewModel) {
                     )
                 }
             }
+        }
         }
     }
     when (dialog) {
@@ -181,6 +184,7 @@ private fun GridHeader(vm: MainViewModel, sortButton: FocusRequester, ratingButt
                 fontSize = 12.sp,
             )
         }
+        SectionSearchBox(vm, Modifier.width(230.dp).padding(end = 8.dp))
         val pad = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
         OutlinedButton(onClick = onSort, contentPadding = pad, modifier = Modifier.focusRequester(sortButton)) {
             Text(SortOptions.firstOrNull { it.first == vm.settings.vodSort }?.second ?: "Provider order", fontSize = 13.sp)

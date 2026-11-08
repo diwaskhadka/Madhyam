@@ -363,7 +363,7 @@ pub fn dispatch(st: &mut State, method: &str, a: &Value) -> Result<Value> {
             items_json(&v)
         }
         // Sorted/filtered/paged listing: {kind, source?, group?, hidden_groups?[],
-        // sort?, min_rating?, offset?, limit?} -> {total, items}
+        // sort?, min_rating?, text?, offset?, limit?} -> {total, items}
         "query" => {
             let mut q = ListQuery::new(arg_kind(a)?);
             q.source = a.int("source").map(|s| s as SourceId);
@@ -383,6 +383,7 @@ pub fn dispatch(st: &mut State, method: &str, a: &Value) -> Result<Value> {
                     .ok_or_else(|| Error::Invalid(format!("unknown sort '{sort}'")))?;
             }
             q.min_rating = a.num("min_rating").unwrap_or(0.0);
+            q.text = opt_str(a, "text");
             q.offset = usize_or(a, "offset", 0);
             q.limit = usize_or(a, "limit", 100);
             let (total, page) = c.query(&q);

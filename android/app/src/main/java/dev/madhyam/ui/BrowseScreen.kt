@@ -33,6 +33,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.tv.material3.Icon
@@ -128,10 +129,10 @@ private fun Header(vm: MainViewModel) {
 
 /** The search box while it is not being typed in: looks like the text field, OK opens it. */
 @Composable
-private fun SearchBar(query: String, modifier: Modifier, onOpen: () -> Unit) {
+private fun SearchBar(query: String, modifier: Modifier, hint: String = "Search channels, movies, series", height: Dp = 64.dp, onOpen: () -> Unit) {
     androidx.tv.material3.Surface(
         onClick = onOpen,
-        modifier = modifier.height(64.dp),
+        modifier = modifier.height(height),
         shape = androidx.tv.material3.ClickableSurfaceDefaults.shape(androidx.compose.foundation.shape.RoundedCornerShape(6.dp)),
         colors = androidx.tv.material3.ClickableSurfaceDefaults.colors(
             containerColor = Color.Transparent,
@@ -148,13 +149,71 @@ private fun SearchBar(query: String, modifier: Modifier, onOpen: () -> Unit) {
         Row(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.Search, contentDescription = null, tint = Muted, modifier = Modifier.size(22.dp))
             Text(
-                query.ifBlank { "Search channels, movies, series" },
+                query.ifBlank { hint },
                 color = if (query.isBlank()) Muted else TextColor,
                 fontSize = 16.sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(start = 12.dp),
             )
+        }
+    }
+}
+
+/** Back clears a section's search before it does anything else. */
+@Composable
+fun SectionSearchBack(vm: MainViewModel) {
+    androidx.activity.compose.BackHandler(enabled = vm.sectionQuery.isNotEmpty()) { vm.clearSectionSearch() }
+}
+
+/**
+ * Search inside the current section and category. A plain bar until OK, then the text field with
+ * the keyboard (as on the Search page); Up, Down or the keyboard's Search button leave it.
+ */
+@Composable
+fun SectionSearchBox(vm: MainViewModel, modifier: Modifier) {
+    var editing by remember { mutableStateOf(false) }
+    val where = vm.group ?: vm.section.label
+    if (editing) {
+        val field = remember { FocusRequester() }
+        val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+        val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+        var hadFocus by remember { mutableStateOf(false) }
+        LaunchedEffect(Unit) {
+            delay(50)
+            runCatching { field.requestFocus() }
+            keyboard?.show()
+        }
+        OutlinedTextField(
+            value = vm.sectionQuery,
+            onValueChange = vm::searchSection,
+            singleLine = true,
+            textStyle = androidx.compose.ui.text.TextStyle(color = TextColor, fontSize = 14.sp),
+            placeholder = { androidx.compose.material3.Text("Search in $where", fontSize = 14.sp, maxLines = 1) },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = {
+                keyboard?.hide()
+                focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Down)
+            }),
+            modifier = modifier.height(56.dp).focusRequester(field)
+                .onFocusChanged {
+                    if (it.hasFocus) {
+                        hadFocus = true
+                    } else if (hadFocus) {
+                        editing = false
+                        vm.searchEditing = false
+                    }
+                }
+                .tvTextField(atStart = { vm.sectionQuery.isEmpty() }),
+        )
+    } else {
+        val bar = remember { FocusRequester() }
+        LaunchedEffect(vm.refocusSearch) {
+            if (vm.refocusSearch) runCatching { bar.requestFocus() }
+        }
+        SearchBar(vm.sectionQuery, modifier.focusRequester(bar), hint = "Search in $where", height = 56.dp) {
+            vm.searchEditing = true
+            editing = true
         }
     }
 }

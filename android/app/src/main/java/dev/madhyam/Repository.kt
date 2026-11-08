@@ -762,6 +762,7 @@ class Repository(context: Context) {
         limit: Int = 200,
         groupField: String? = null,
         minRating: Double = 0.0,
+        text: String? = null,
     ): Page = io {
         val r = core.obj(
             "query",
@@ -773,6 +774,7 @@ class Repository(context: Context) {
                 "hidden_groups" to JSONArray(hidden.toList()),
                 "sort" to sort,
                 "min_rating" to minRating,
+                "text" to text,
                 "offset" to offset,
                 "limit" to limit,
             ),
