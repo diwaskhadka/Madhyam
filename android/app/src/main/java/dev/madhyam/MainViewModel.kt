@@ -419,8 +419,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             loadedRows = 0
             group = null
             lockedGroup = false
-            sectionQuery = ""
-            searchEditing = false
             categoriesOpen = true
             previewFocused = false
         }
@@ -462,7 +460,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 s == Section.Home -> loadHome()
                 s == Section.Favorites -> setItems(byPageKind(repo.favorites()))
                 s == Section.Recent -> setItems(byPageKind(repo.recent()))
-                s == Section.Search -> setItems(searchHits(query))
                 else -> setItems(emptyList())
             }
             sectionLoading = false
@@ -482,17 +479,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** The rail is about to move the focus into Live TV: the channel list must not take it. */
     var skipChannelFocus = false
 
-    /** A section's search box is being typed in: the lists must not take the focus. */
-    var searchEditing = false
-
-    /** Text filter of the current section and category; blank shows everything. */
-    var sectionQuery by mutableStateOf("")
-        private set
-
     /** Live TV: the preview has the focus, so the channels shrink to their logos. */
     var previewFocused by mutableStateOf(false)
 
-    /** Remember a search for the list under the Search page's box (newest first). */
+    /** Remember a search for the list on the search page (newest first). */
     fun addSearchHistory(q: String) {
         val text = q.trim()
         if (text.isEmpty()) return
@@ -503,47 +493,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** OK on a history entry: the list goes away, so the focus first moves up to the microphone. */
-    fun searchFromHistory(q: String) {
-        refocusSearch = true
-        search(q)
-        viewModelScope.launch {
-            delay(1000)
-            refocusSearch = false
-        }
-    }
-
     fun clearSearchHistory() = changeSettings { searchHistory.clear() }
-
-    /** Back cleared the search: the box takes the focus before the focused result goes away. */
-    var refocusSearch by mutableStateOf(false)
-
-    fun clearSectionSearch() {
-        searchEditing = true // lets the focus request reach the box
-        refocusSearch = true
-        searchSection("")
-        viewModelScope.launch {
-            delay(1000) // also if the box is scrolled out of view and never took the focus
-            refocusSearch = false
-            searchEditing = false
-        }
-    }
 
     fun openCategories() {
         categoriesOpen = true
         focusCategories = true
-    }
-
-    /** Filter the current section (and category) off the main thread, after a typing pause. */
-    fun searchSection(q: String) {
-        if (q == sectionQuery) return
-        sectionQuery = q
-        sectionLoading = false
-        itemsJob?.cancel()
-        itemsJob = viewModelScope.launch {
-            delay(250)
-            loadGroup(group)
-        }
     }
 
     /**
@@ -634,7 +588,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
         val hidden = if (name == null) settings.hidden(src.id, kindKey!!) + lockedCategoryNames() else emptySet()
-        val page = repo.query(src.id, kind, name, hidden, sort, 0, PAGE, groupField, minRating, sectionQuery.ifBlank { null })
+        val page = repo.query(src.id, kind, name, hidden, sort, 0, PAGE, groupField, minRating)
         total = page.total
         setItems(page.items.filterNot { itemLocked(it) }, page.total, rows = page.items.size)
         // The info pane follows the list: drop a channel that is not in it (unless it is playing).
@@ -653,7 +607,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             try {
                 val hidden = if (group == null) settings.hidden(src.id, kindKey!!) + lockedCategoryNames() else emptySet()
-                val page = repo.query(src.id, kind, group, hidden, sort, loadedRows, PAGE, groupField, minRating, sectionQuery.ifBlank { null })
+                val page = repo.query(src.id, kind, group, hidden, sort, loadedRows, PAGE, groupField, minRating)
                 loadedRows += page.items.size
                 items = items + page.items.filterNot { itemLocked(it) }
                 fetchNowNext(page.items)
@@ -682,13 +636,52 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         playback.current?.takeIf { it.isLive }?.let { fetchNowNext(listOf(it)) }
     }
 
+    /** The search page is open; [searchScoped]: over the current section and category only. */
+    var searchOpen by mutableStateOf(false)
+        private set
+    var searchScoped by mutableStateOf(false)
+        private set
+    var searchResults by mutableStateOf<List<Item>>(emptyList())
+        private set
+
+    /** The text [searchResults] are for, so "No results" doesn't flash while typing. */
+    var searchedFor by mutableStateOf("")
+        private set
+
+    fun openSearch(scoped: Boolean) {
+        searchJob?.cancel()
+        searchScoped = scoped
+        query = ""
+        searchedFor = ""
+        searchResults = emptyList()
+        searchOpen = true
+    }
+
+    fun closeSearch() {
+        searchJob?.cancel()
+        searchOpen = false
+    }
+
+    /** Runs off the main thread (the engine calls are on the IO dispatcher), after a typing pause. */
     fun search(q: String) {
         query = q
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
-            delay(300) // debounce: search after the user pauses typing
-            if (section == Section.Search) setItems(searchHits(q))
+            delay(300)
+            val hits = if (searchScoped) sectionHits(q) else searchHits(q)
+            searchResults = hits
+            searchedFor = q
+            fetchNowNext(hits.take(300))
         }
+    }
+
+    /** Matches in the current section and category. */
+    private suspend fun sectionHits(q: String): List<Item> {
+        val src = source ?: return emptyList()
+        val kind = section.kind ?: return emptyList()
+        if (q.isBlank()) return emptyList()
+        val hidden = if (group == null) settings.hidden(src.id, kindKey!!) + lockedCategoryNames() else emptySet()
+        return repo.query(src.id, kind, group, hidden, sort, 0, PAGE, groupField, minRating, q).items.filterNot { itemLocked(it) }
     }
 
     /** The focus moved onto a channel: show its programme in the info pane. */
@@ -709,7 +702,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * episodes play full screen.
      */
     fun open(item: Item) {
-        if (section == Section.Search) addSearchHistory(query)
+        if (searchOpen) addSearchHistory(query)
         if (itemLocked(item)) {
             withPin("Enter the PIN to open “${item.name}”") { open(item) }
             return
@@ -717,13 +710,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         when {
             item.isSeries || item.kind == "movie" -> showDetails(item)
             item.isEpisode -> resume(item)
-            item.isLive && section == Section.Live && settings.previewOnSelect && playback.current?.id != item.id -> {
+            item.isLive && section == Section.Live && !searchOpen && settings.previewOnSelect && playback.current?.id != item.id -> {
                 playback.play(item, items.filter { it.isLive })
                 viewModelScope.launch { repo.recordPlay(item.id) }
             }
             item.isLive && playback.current?.id == item.id -> screen = Screen.Player
             else -> viewModelScope.launch {
-                playback.play(item, items.filter { it.isLive })
+                playback.play(item, (if (searchOpen) searchResults else items).filter { it.isLive })
                 repo.recordPlay(item.id)
                 screen = Screen.Player
             }

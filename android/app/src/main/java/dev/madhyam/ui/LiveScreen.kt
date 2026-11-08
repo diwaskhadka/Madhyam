@@ -86,7 +86,7 @@ fun LiveScreen(vm: MainViewModel) {
         GuideScreen(vm)
         return
     }
-    SectionSearchBack(vm)
+    SectionBack(vm)
     SectionLayout(
         vm,
         210.dp,
@@ -102,7 +102,7 @@ fun LiveScreen(vm: MainViewModel) {
     ) {
         // Coming in from the side lands in the channels, not on the button at the same height.
         val channels = remember { FocusRequester() }
-        Row(Modifier.fillMaxSize().sectionContent(vm) { if (vm.items.isNotEmpty() && !vm.lockedGroup && !vm.searchEditing) channels else FocusRequester.Default }) {
+        Row(Modifier.fillMaxSize().sectionContent(vm) { if (vm.items.isNotEmpty() && !vm.lockedGroup) channels else FocusRequester.Default }) {
             // On the preview the channels shrink to their logos and the picture gets the room.
             ChannelList(vm, now, channels, if (vm.previewFocused) Modifier.width(88.dp) else Modifier.weight(1f))
             InfoPane(vm, now, if (vm.previewFocused) Modifier.weight(1f) else Modifier.width(380.dp))
@@ -320,7 +320,7 @@ private fun ChannelList(vm: MainViewModel, now: Long, channels: FocusRequester, 
         val title = vm.group ?: vm.categories.firstOrNull()?.name ?: "Live TV"
         if (!compact) Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) { SectionTitle(title, "%,d channels".format(vm.total), subLines = 2) }
-            if (!vm.lockedGroup) SectionSearchBox(vm, Modifier.padding(end = 8.dp))
+            if (!vm.lockedGroup) SectionSearchButton(vm, Modifier.padding(end = 8.dp))
             ToggleChip("TV guide", false) { vm.openGuide() }
         }
         if (vm.lockedGroup) {
@@ -335,23 +335,15 @@ private fun ChannelList(vm: MainViewModel, now: Long, channels: FocusRequester, 
         val start = remember { FocusRequester() }
         val startIndex = vm.items.indexOfFirst { it.id == vm.playback.current?.id }.coerceAtLeast(0)
         LaunchedEffect(Unit) {
-            // Not when the rail is moving in (it lands on the categories) or while typing.
+            // Not when the rail is moving in (it lands on the categories).
             if (vm.skipChannelFocus) {
                 vm.skipChannelFocus = false
                 return@LaunchedEffect
             }
             delay(100)
-            if (!vm.searchEditing) runCatching { start.requestFocus() }
+            runCatching { start.requestFocus() }
         }
         val listState = rememberLazyListState(initialFirstVisibleItemIndex = startIndex)
-        // New search text: start from the top of the matches.
-        var lastQuery by remember { mutableStateOf(vm.sectionQuery) }
-        LaunchedEffect(vm.items) {
-            if (lastQuery != vm.sectionQuery) {
-                lastQuery = vm.sectionQuery
-                listState.scrollToItem(0)
-            }
-        }
         LazyColumn(
             // Rows scrolling out fade under the header instead of being cut in half.
             Modifier.focusRequester(channels).focusRestorer().fadeEdges(16.dp),

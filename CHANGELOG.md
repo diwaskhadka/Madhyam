@@ -9,9 +9,11 @@ How to cut a release and how to add a platform: [docs/RELEASING.md](docs/RELEASI
 ## Unreleased
 
 ### Android TV
-- **Search inside Live TV, Movies and Series:** the magnifier at the top of each section looks only in that section and the chosen category. Back clears it.
+- **Search inside Live TV, Movies and Series:** the magnifier at the top of each section opens the search page for that section and the chosen category. Back returns to where you were.
+- Search is one full page: microphone, box and search history. Its gear chooses what the whole-app search looks in.
+- Back climbs one level at a time: content, categories, menu, then the exit question.
 - Choosing a category narrows the category column to a slim strip, as the menu does, so the channels or posters get the room. Left from the left edge opens it again.
-- **Voice search:** a microphone on the Search page and next to each section's search. Search also remembers what you looked for, under the box.
+- **Voice search:** the search page starts listening as it opens once you've allowed the microphone, and what you say appears as you speak. Search also remembers what you looked for.
 - New dark theme, **Charcoal**: neutral and flat, with less text on screen and slimmer channel rows. Navy & Crimson is still in Settings › Appearance › Theme.
 - On the Live TV preview, the channels shrink to their logos and the picture gets the room.
 - The menu and the category column slide open and push the page aside, instead of dimming it and rearranging the posters.

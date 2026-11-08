@@ -74,7 +74,7 @@ private val RailCollapsed = 72.dp
 private val RailExpanded = 230.dp
 
 /** The rail and the category column open and close with the same quick, settled motion. */
-fun <T> panelMotion() = androidx.compose.animation.core.tween<T>(200, easing = androidx.compose.animation.core.FastOutSlowInEasing)
+fun <T> panelMotion() = androidx.compose.animation.core.tween<T>(250, easing = androidx.compose.animation.core.FastOutSlowInEasing)
 private val PanelMotion = panelMotion<Float>()
 
 fun Section.icon(): ImageVector = when (this) {
@@ -100,7 +100,8 @@ fun MainShell(vm: MainViewModel) {
     var askExit by remember { mutableStateOf(false) }
     // Back at the top of the app asks before closing it. Pages with their own Back (details,
     // guide, Settings' playlist page) are composed later, so theirs runs first.
-    BackHandler { askExit = true }
+    // Elsewhere Back climbs one level at a time: content, categories, this rail, then here.
+    BackHandler { if (railFocused) askExit = true else runCatching { railFocus.requestFocus() } }
 
     LaunchedEffect(vm.message) {
         if (vm.message != null) {
@@ -118,10 +119,11 @@ fun MainShell(vm: MainViewModel) {
                 .graphicsLayer { translationX = railOpen.value * (RailExpanded - RailCollapsed).toPx() },
         ) {
             CompositionLocalProvider(LocalRailFocus provides railFocus) {
-            when (vm.section) {
-                Section.Home -> if (vm.details != null) DetailsScreen(vm) else HomeScreen(vm)
-                Section.Live -> LiveScreen(vm)
-                Section.Settings -> SettingsScreen(vm)
+            when {
+                vm.details != null -> DetailsScreen(vm) // also a film opened from the search page
+                vm.section == Section.Home -> HomeScreen(vm)
+                vm.section == Section.Live -> LiveScreen(vm)
+                vm.section == Section.Settings -> SettingsScreen(vm)
                 else -> BrowseScreen(vm)
             }
             }
@@ -143,6 +145,8 @@ fun MainShell(vm: MainViewModel) {
 
     if (pickPlaylist) PlaylistDialog(vm) { pickPlaylist = false }
     if (askExit) ExitDialog { askExit = false }
+    // Hidden behind a details page opened from it, and back when that closes.
+    if (vm.searchOpen && vm.details == null) SearchPage(vm)
 }
 
 /** "Exit Madhyam?" with Cancel focused, so a Back pressed once too often changes nothing. */
@@ -220,6 +224,10 @@ private fun Rail(vm: MainViewModel, selected: FocusRequester, onFocus: (Boolean)
                 selected = vm.section == s,
                 modifier = if (vm.section == s) Modifier.focusRequester(selected) else Modifier,
                 onClick = {
+                    if (s == Section.Search) {
+                        vm.openSearch(scoped = false)
+                        return@RailEntry
+                    }
                     if (vm.section != s) {
                         vm.skipChannelFocus = s == Section.Live
                         vm.selectSection(s)

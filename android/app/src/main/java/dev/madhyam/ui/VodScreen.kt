@@ -91,7 +91,7 @@ fun VodScreen(vm: MainViewModel) {
     var dialog by remember { mutableStateOf<String?>(null) }
     // A new sort or rating rebuilds the grid, header included: put the focus back on the button.
     var refocus by remember { mutableStateOf<String?>(null) }
-    SectionSearchBack(vm)
+    SectionBack(vm)
     SectionLayout(vm, 230.dp) {
         // A new list (section, category, sort, rating) starts with fresh scroll and focus memory.
         if (vm.lockedGroup) {
@@ -136,8 +136,7 @@ fun VodScreen(vm: MainViewModel) {
                     .fillMaxSize()
                     .focusProperties {
                         val target = focusIndex + headerRows
-                        // A focus request for the search box also passes here: leave that one alone.
-                        enter = { if (!vm.searchEditing && state.layoutInfo.visibleItemsInfo.any { it.index == target }) back else FocusRequester.Default }
+                        enter = { if (state.layoutInfo.visibleItemsInfo.any { it.index == target }) back else FocusRequester.Default }
                     }
                     .focusGroup(),
                 contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 32.dp),
@@ -183,7 +182,7 @@ private fun GridHeader(vm: MainViewModel, sortButton: FocusRequester, ratingButt
                 fontSize = 12.sp,
             )
         }
-        SectionSearchBox(vm, Modifier.padding(end = 8.dp))
+        SectionSearchButton(vm, Modifier.padding(end = 8.dp))
         val pad = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
         OutlinedButton(onClick = onSort, contentPadding = pad, modifier = Modifier.focusRequester(sortButton)) {
             Text(SortOptions.firstOrNull { it.first == vm.settings.vodSort }?.second ?: "Provider order", fontSize = 13.sp)
