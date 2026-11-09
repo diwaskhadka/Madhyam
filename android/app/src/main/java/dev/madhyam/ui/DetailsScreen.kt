@@ -47,6 +47,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
@@ -160,6 +161,9 @@ private fun Hero(vm: MainViewModel, item: Item, info: DetailsInfo?, poster: Stri
 @Composable
 private fun Buttons(vm: MainViewModel, item: Item) {
     val first = remember { FocusRequester() }
+    val rail = LocalRailFocus.current
+    // Left from the first button goes to the rail, not down to "Mark season as watched".
+    val firstButton = Modifier.focusRequester(first).focusProperties { left = rail }
     // A series without episodes loses its Play button once loading ends.
     val noPlay = item.isSeries && vm.episodes.isEmpty() && !vm.detailsLoading
     // Opening the page puts the focus on Play / Resume. The button keeps its place while the
@@ -180,12 +184,12 @@ private fun Buttons(vm: MainViewModel, item: Item) {
                         else -> "Play ${ep.seasonEpisode}"
                     },
                     Icons.Filled.PlayArrow,
-                    Modifier.focusRequester(first),
+                    firstButton,
                     primary = true,
                 ) { if (ep != null) vm.playEpisode(ep) }
             }
         } else {
-            ActionButton(if (item.isStarted) "Resume" else "Play", Icons.Filled.PlayArrow, Modifier.focusRequester(first), primary = true) {
+            ActionButton(if (item.isStarted) "Resume" else "Play", Icons.Filled.PlayArrow, firstButton, primary = true) {
                 vm.playMovie()
             }
             if (item.isStarted) ActionButton("Start over", Icons.Filled.Replay) { vm.playMovie(startOver = true) }
@@ -194,7 +198,7 @@ private fun Buttons(vm: MainViewModel, item: Item) {
         ActionButton(
             if (fav) "Favorite" else "Add to favorites",
             if (fav) Icons.Filled.Star else Icons.Filled.StarBorder,
-            if (noPlay) Modifier.focusRequester(first) else Modifier,
+            if (noPlay) firstButton else Modifier,
         ) { vm.toggleFavorite(item) }
         if (!item.isSeries) {
             ActionButton(if (item.isWatched) "Watched" else "Mark as watched", Icons.Filled.Check) { vm.toggleWatched(item) }
@@ -234,7 +238,7 @@ private fun Seasons(vm: MainViewModel, series: Item) {
         val eps = vm.episodes.filter { (it.season ?: "1") == current }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Seasons and episodes", fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
-            Text("  ${vm.episodes.size} episodes · hold OK on one to mark it watched", color = Muted, fontSize = 12.sp)
+            Text("  ${vm.episodes.size} episodes · hold OK on one for options", color = Muted, fontSize = 12.sp)
         }
         Row(Modifier.padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             LazyRow(Modifier.weight(1f, fill = false).focusRestorer(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -244,7 +248,8 @@ private fun Seasons(vm: MainViewModel, series: Item) {
             OutlinedButton(
                 onClick = { vm.setWatched(eps, !allWatched) },
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                modifier = Modifier.padding(start = 16.dp),
+                // The end of the row: Right stays here instead of jumping up to the buttons above.
+                modifier = Modifier.padding(start = 16.dp).focusProperties { right = FocusRequester.Cancel },
             ) {
                 Text(if (allWatched) "Mark season as unwatched" else "Mark season as watched", fontSize = 12.sp)
             }
@@ -268,7 +273,7 @@ private fun EpisodeCard(vm: MainViewModel, series: Item, ep: Item) {
     Column(Modifier.width(240.dp).bringIntoViewRequester(whole).padding(bottom = 16.dp)) {
         Surface(
             onClick = { vm.playEpisode(ep) },
-            onLongClick = { vm.toggleWatched(ep) },
+            onLongClick = { vm.showOptions(ep) },
             modifier = Modifier.fillMaxWidth().size(240.dp, 135.dp).onFocusChanged { focused = it.isFocused },
             shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
             colors = ClickableSurfaceDefaults.colors(containerColor = Panel, focusedContainerColor = Panel),

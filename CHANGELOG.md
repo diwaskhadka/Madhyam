@@ -6,6 +6,22 @@ so. The engine (`crates/madhyam-core`) keeps its own version, given in each sect
 
 How to cut a release and how to add a platform: [docs/RELEASING.md](docs/RELEASING.md).
 
+## Unreleased
+
+### Android TV
+- **Search inside Live TV, Movies and Series:** the magnifier at the top of each section opens the search page for that section and the chosen category. Back returns to where you were.
+- Search is one full page: microphone, box and search history. Its gear chooses what the whole-app search looks in.
+- Back climbs one level at a time: content, categories, menu, then the exit question.
+- Choosing a category narrows the category column to a slim strip, as the menu does, so the channels or posters get the room. Left from the left edge opens it again.
+- Leaving the app while it is still loading no longer loses recent favorites, resume points and history.
+- Back from the player or TV guide returns to the channel you were on, and focus no longer jumps to the wrong button on Home and on film and series pages.
+- **Hold OK for options** on any channel, film, series, episode, TV guide row or category: favorites, play, details, watched mark, remove from Recent, hide or lock a category.
+- **Voice search:** the search page starts listening as it opens once you've allowed the microphone, and what you say appears as you speak. Search also remembers what you looked for.
+- New dark theme, **Charcoal**: neutral and flat, with less text on screen and slimmer channel rows. Navy & Crimson is still in Settings › Appearance › Theme.
+- On the Live TV preview, the channels shrink to their logos and the picture gets the room.
+- The menu and the category column slide open and push the page aside, instead of dimming it and rearranging the posters.
+- OK on a section in the menu goes straight in: the previous section's list no longer flashes in the new page, and the menu closes once the page is ready.
+
 ## 1.1.1
 
 Parental controls, subtitle style like YouTube's and Buy me a coffee on every platform. Adding a playlist shows each step and how many live channels, movies and series it brought, and confirmations use the app's own look. Android TV starts in about 5 s, stops streams you leave and needs half the memory; Windows full screen is black edge to edge; Linux plays trailers in the app.

@@ -91,16 +91,17 @@ fun VodScreen(vm: MainViewModel) {
     var dialog by remember { mutableStateOf<String?>(null) }
     // A new sort or rating rebuilds the grid, header included: put the focus back on the button.
     var refocus by remember { mutableStateOf<String?>(null) }
-    Row(Modifier.fillMaxSize()) {
-        CategoryPanel(vm, Modifier.width(230.dp))
+    SectionBack(vm)
+    SectionLayout(vm, 230.dp) {
         // A new list (section, category, sort, rating) starts with fresh scroll and focus memory.
         if (vm.lockedGroup) {
-            Column(Modifier.weight(1f).padding(start = 24.dp, top = 16.dp)) {
+            Column(Modifier.fillMaxSize().padding(start = 24.dp, top = 16.dp)) {
                 Text(vm.group ?: "", fontSize = 24.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 LockedNote()
             }
-            return@Row
+            return@SectionLayout
         }
+        Box(Modifier.fillMaxSize().sectionContent(vm)) {
         key(vm.section, vm.group, vm.settings.vodSort, vm.settings.vodMinRating) {
             val headerRows = if (vm.continueItems.isNotEmpty() && vm.group == null) 2 else 1
             val openedIndex = vm.items.indexOfFirst { it.id == vm.lastOpenedId }
@@ -132,8 +133,7 @@ fun VodScreen(vm: MainViewModel) {
                 columns = GridCells.Adaptive(coverWidth(vm.settings.coverSize)), // Settings › Appearance › Cover size
                 state = state,
                 modifier = Modifier
-                    .weight(1f)
-                    .fillMaxHeight()
+                    .fillMaxSize()
                     .focusProperties {
                         val target = focusIndex + headerRows
                         enter = { if (state.layoutInfo.visibleItemsInfo.any { it.index == target }) back else FocusRequester.Default }
@@ -159,6 +159,7 @@ fun VodScreen(vm: MainViewModel) {
                 }
             }
         }
+        }
     }
     when (dialog) {
         "sort" -> OptionDialog("Sort by", SortOptions, vm.settings.vodSort, { refocus = "sort"; vm.setVodSort(it) }) { dialog = null }
@@ -176,11 +177,12 @@ private fun GridHeader(vm: MainViewModel, sortButton: FocusRequester, ratingButt
             Text(vm.group ?: vm.categories.firstOrNull()?.name ?: vm.section.label, fontSize = 24.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
                 if (vm.total == 0 && vm.busy == null) "Nothing here${if (vm.settings.vodMinRating > 0) " with this rating" else ""}."
-                else "%,d %s · hold OK for favorite".format(vm.total, noun),
+                else "%,d %s".format(vm.total, noun),
                 color = Muted,
                 fontSize = 12.sp,
             )
         }
+        SectionSearchButton(vm, Modifier.padding(end = 8.dp))
         val pad = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
         OutlinedButton(onClick = onSort, contentPadding = pad, modifier = Modifier.focusRequester(sortButton)) {
             Text(SortOptions.firstOrNull { it.first == vm.settings.vodSort }?.second ?: "Provider order", fontSize = 13.sp)
@@ -223,7 +225,7 @@ fun PosterCard(
     Column(if (width != null) modifier.width(width) else modifier.fillMaxWidth()) {
         Surface(
             onClick = onClick,
-            onLongClick = { vm.toggleFavorite(item) },
+            onLongClick = { vm.showOptions(item) },
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(2f / 3f)

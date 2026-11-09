@@ -32,6 +32,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -45,6 +46,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -84,7 +86,10 @@ fun LiveScreen(vm: MainViewModel) {
         GuideScreen(vm)
         return
     }
-    Row(
+    SectionBack(vm)
+    SectionLayout(
+        vm,
+        210.dp,
         Modifier.fillMaxSize().onPreviewKeyEvent { ev ->
             // Menu opens the TV guide from anywhere in Live TV.
             if (ev.type == KeyEventType.KeyDown && ev.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_MENU) {
@@ -95,9 +100,108 @@ fun LiveScreen(vm: MainViewModel) {
             }
         },
     ) {
-        CategoryPanel(vm, Modifier.width(210.dp))
-        ChannelList(vm, now, Modifier.weight(1f))
-        InfoPane(vm, now, Modifier.width(380.dp))
+        // Coming in from the side lands in the channels, not on the button at the same height.
+        val channels = remember { FocusRequester() }
+        Row(Modifier.fillMaxSize().sectionContent(vm) { vm.channelEntry ?: if (vm.items.isNotEmpty() && !vm.lockedGroup) channels else FocusRequester.Default }) {
+            // On the preview the channels shrink to their logos and the picture gets the room.
+            ChannelList(vm, now, channels, if (vm.previewFocused) Modifier.width(88.dp) else Modifier.weight(1f))
+            InfoPane(vm, now, if (vm.previewFocused) Modifier.weight(1f) else Modifier.width(380.dp))
+        }
+    }
+}
+
+/**
+ * The part of a section beside the category column. Focus inside it closes the column, so the
+ * content gets the room; Left from its left edge opens the column again.
+ */
+@Suppress("DEPRECATION") // FocusProperties.exit, as enter in the rail
+@kotlin.OptIn(ExperimentalComposeUiApi::class)
+fun Modifier.sectionContent(vm: MainViewModel, entry: () -> FocusRequester = { FocusRequester.Default }): Modifier = this
+    .focusProperties {
+        enter = { entry() }
+        exit = { direction ->
+            if (direction == FocusDirection.Left && !vm.categoriesOpen) {
+                vm.openCategories()
+                FocusRequester.Cancel
+            } else {
+                FocusRequester.Default
+            }
+        }
+    }
+    .onFocusChanged { if (it.hasFocus) vm.categoriesOpen = false }
+    .focusGroup()
+
+private val StripWidth = 56.dp
+
+/**
+ * Category column over [content]. Opening it slides the column in and pushes the content aside at
+ * its own size, past the right edge: moved as layers, so nothing is laid out again per frame.
+ */
+@Composable
+fun SectionLayout(vm: MainViewModel, panelWidth: androidx.compose.ui.unit.Dp, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val open = androidx.compose.animation.core.animateFloatAsState(if (vm.categoriesOpen) 1f else 0f, panelMotion(), label = "categories")
+    val showPanel by remember { androidx.compose.runtime.derivedStateOf { vm.categoriesOpen || open.value > 0.01f } }
+    val showStrip by remember { androidx.compose.runtime.derivedStateOf { !vm.categoriesOpen || open.value < 0.99f } }
+    Box(modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().padding(start = StripWidth).graphicsLayer { translationX = open.value * (panelWidth - StripWidth).toPx() }) {
+            content()
+        }
+        if (showStrip) CategoryStrip(vm, Modifier.graphicsLayer { alpha = 1f - open.value })
+        if (showPanel) {
+            CategoryPanel(
+                vm,
+                Modifier.width(panelWidth).graphicsLayer {
+                    translationX = -(1f - open.value) * (panelWidth - StripWidth).toPx()
+                    alpha = open.value
+                }.background(Background),
+            )
+        }
+    }
+}
+
+/** Short label for the slim column: the prefix before "|", else the initials of two words. */
+private fun categoryShort(c: Category): String {
+    if (c.isAll) return "All"
+    val prefix = c.name.substringBefore('|', "").trim()
+    if (prefix.isNotEmpty()) return prefix.take(3).uppercase()
+    val words = c.name.split(' ', '-', '_', '/').map { w -> w.filter { it.isLetterOrDigit() } }.filter { it.isNotEmpty() }
+    return when {
+        words.isEmpty() -> "•"
+        words.size == 1 -> words[0].take(2).uppercase()
+        else -> "${words[0][0]}${words[1][0]}".uppercase()
+    }
+}
+
+/**
+ * The category column while closed, as the rail is: narrow, the same categories in short, the
+ * chosen one marked. Not focusable: Left from the content opens the full column.
+ */
+@Composable
+fun CategoryStrip(vm: MainViewModel, modifier: Modifier = Modifier) {
+    val selectedIndex = vm.categories.indexOfFirst { if (it.isAll) vm.group == null else vm.group == it.name }.coerceAtLeast(0)
+    LazyColumn(
+        modifier = modifier.width(StripWidth).fillMaxHeight().background(Panel.copy(alpha = 0.55f)),
+        state = rememberLazyListState(initialFirstVisibleItemIndex = (selectedIndex - 3).coerceAtLeast(0)),
+        userScrollEnabled = false,
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 16.dp, horizontal = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        itemsIndexed(vm.categories, key = { _, c -> if (c.isAll) "\u0000all" else c.name }) { i, c ->
+            val on = i == selectedIndex
+            Box(
+                Modifier.fillMaxWidth().height(40.dp)
+                    .background(if (on) TextColor.copy(alpha = 0.16f) else Color.Transparent, RoundedCornerShape(8.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    categoryShort(c),
+                    fontSize = 12.sp,
+                    fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (on) TextColor else Muted,
+                    maxLines = 1,
+                )
+            }
+        }
     }
 }
 
@@ -118,6 +222,15 @@ fun CategoryPanel(vm: MainViewModel, modifier: Modifier = Modifier) {
         val selectedIndex = vm.categories.indexOfFirst { if (it.isAll) vm.group == null else vm.group == it.name }.coerceAtLeast(0)
         val list = rememberLazyListState(initialFirstVisibleItemIndex = (selectedIndex - 3).coerceAtLeast(0))
         val current = remember { FocusRequester() }
+        // Reopened with Left from the content: the focus comes back to the chosen category.
+        LaunchedEffect(vm.focusCategories) {
+            if (vm.focusCategories) {
+                withFrameNanos { }
+                withFrameNanos { }
+                runCatching { current.requestFocus() }
+                vm.focusCategories = false
+            }
+        }
         LazyColumn(
             state = list,
             modifier = Modifier.focusProperties {
@@ -151,6 +264,7 @@ private fun CategoryRow(vm: MainViewModel, c: Category, modifier: Modifier = Mod
                 focusManager.moveFocus(FocusDirection.Right)
             }
         },
+        onLongClick = if (c.isAll) null else ({ vm.showOptions(c) }),
         // Moving the focus over a category shows its contents, as on most TV apps.
         modifier = modifier.onFocusChanged { if (it.isFocused) vm.selectCategory(c) },
         headlineContent = {
@@ -165,7 +279,6 @@ private fun CategoryRow(vm: MainViewModel, c: Category, modifier: Modifier = Mod
         } else {
             null
         },
-        trailingContent = { Text("${c.count}", color = RowMuted, fontSize = 11.sp) },
     )
 }
 
@@ -201,12 +314,14 @@ fun ToggleChip(label: String, on: Boolean, modifier: Modifier = Modifier, onClic
 
 @kotlin.OptIn(ExperimentalComposeUiApi::class)
 @Composable
-private fun ChannelList(vm: MainViewModel, now: Long, modifier: Modifier) {
+private fun ChannelList(vm: MainViewModel, now: Long, channels: FocusRequester, modifier: Modifier) {
     val strip = vm.settings.stripPrefixes
-    Column(modifier.fillMaxHeight().padding(horizontal = 12.dp, vertical = 16.dp)) {
+    val compact = vm.previewFocused
+    Column(modifier.fillMaxHeight().padding(horizontal = if (compact) 4.dp else 12.dp, vertical = 16.dp)) {
         val title = vm.group ?: vm.categories.firstOrNull()?.name ?: "Live TV"
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) { SectionTitle(title, "%,d channels · hold OK for favorite".format(vm.total), subLines = 2) }
+        if (!compact) Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) { SectionTitle(title, "%,d channels".format(vm.total), subLines = 2) }
+            if (!vm.lockedGroup) SectionSearchButton(vm, Modifier.padding(end = 8.dp))
             ToggleChip("TV guide", false) { vm.openGuide() }
         }
         if (vm.lockedGroup) {
@@ -217,17 +332,32 @@ private fun ChannelList(vm: MainViewModel, now: Long, modifier: Modifier) {
             EmptyNote(if (vm.busy != null) "" else "No channels here.")
             return@Column
         }
-        // Entering Live TV puts the focus on the playing channel (or the first one), not on the rail.
+        // Coming to this list puts the focus on the playing channel, else the last one focused
+        // (back from the player or the guide), else the first; not on the rail.
         val start = remember { FocusRequester() }
-        val startIndex = vm.items.indexOfFirst { it.id == vm.playback.current?.id }.coerceAtLeast(0)
+        val startIndex = remember {
+            val id = vm.playback.current?.id ?: vm.focused?.id
+            vm.items.indexOfFirst { it.id == id }.coerceAtLeast(0)
+        }
+        val listState = rememberLazyListState(initialFirstVisibleItemIndex = startIndex)
         LaunchedEffect(Unit) {
+            // Not when the rail is moving in (it lands on the categories).
+            if (vm.skipChannelFocus) {
+                vm.skipChannelFocus = false
+                return@LaunchedEffect
+            }
             delay(100)
+            // The saved scroll position can have that row off screen, and then it can't take focus.
+            if (listState.layoutInfo.visibleItemsInfo.none { it.index == startIndex }) listState.scrollToItem(startIndex)
+            androidx.compose.runtime.withFrameNanos { }
+            vm.channelEntry = start
             runCatching { start.requestFocus() }
+            vm.channelEntry = null
         }
         LazyColumn(
             // Rows scrolling out fade under the header instead of being cut in half.
-            Modifier.focusRestorer().fadeEdges(16.dp),
-            state = rememberLazyListState(initialFirstVisibleItemIndex = startIndex),
+            Modifier.focusRequester(channels).focusRestorer().fadeEdges(16.dp),
+            state = listState,
             contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
@@ -239,6 +369,7 @@ private fun ChannelList(vm: MainViewModel, now: Long, modifier: Modifier) {
                     item = item,
                     now = now,
                     strip = strip,
+                    compact = compact,
                     onFocused = {
                         vm.focus(item)
                         if (i > vm.items.size - 30) vm.loadMore()
@@ -250,28 +381,28 @@ private fun ChannelList(vm: MainViewModel, now: Long, modifier: Modifier) {
 }
 
 @Composable
-private fun ChannelRow(modifier: Modifier, vm: MainViewModel, number: Int, item: Item, now: Long, strip: Boolean, onFocused: () -> Unit) {
+private fun ChannelRow(modifier: Modifier, vm: MainViewModel, number: Int, item: Item, now: Long, strip: Boolean, compact: Boolean, onFocused: () -> Unit) {
     val nn = vm.nowNext[item.id]
     val playing = vm.playback.current?.id == item.id
     var focused by remember { mutableStateOf(false) }
     DenseListItem(
         selected = playing,
         onClick = { vm.open(item) },
-        onLongClick = { vm.toggleFavorite(item) },
-        modifier = modifier.onFocusChanged {
+        onLongClick = { vm.showOptions(item) },
+        modifier = modifier.height(if (nn?.now != null && !compact) 58.dp else 46.dp).onFocusChanged {
             focused = it.isFocused
             if (it.isFocused) onFocused()
         },
         leadingContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (vm.settings.showNumbers) {
+                if (vm.settings.showNumbers && !compact) {
                     Text("$number", color = RowMuted, fontSize = 12.sp, modifier = Modifier.width(34.dp))
                 }
-                Logo(item, 56.dp, 34.dp, strip)
+                if (compact) Logo(item, 40.dp, 26.dp, strip) else Logo(item, 44.dp, 28.dp, strip)
             }
         },
         headlineContent = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            if (!compact) Row(verticalAlignment = Alignment.CenterVertically) {
                 if (playing) Icon(Icons.Filled.PlayArrow, null, tint = RowAccent, modifier = Modifier.size(16.dp).padding(end = 2.dp))
                 // The column is narrow: the focused name scrolls to show all of it.
                 Text(
@@ -286,7 +417,7 @@ private fun ChannelRow(modifier: Modifier, vm: MainViewModel, number: Int, item:
                 if (vm.isFavorite(item)) Icon(Icons.Filled.Star, null, tint = Color(0xFFFFC94D), modifier = Modifier.padding(start = 4.dp).size(14.dp))
             }
         },
-        supportingContent = nn?.now?.let { cur ->
+        supportingContent = if (compact) null else nn?.now?.let { cur ->
             {
                 Column {
                     Text(cur.title, color = RowMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -343,7 +474,10 @@ private fun Preview(vm: MainViewModel) {
         // On the preview, the info below is about what plays in it, not the last row focused
         // (which may be a separator row the focus passed on the way).
         modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)
-            .onFocusChanged { f -> if (f.isFocused) cur?.let { vm.focus(it) } },
+            .onFocusChanged { f ->
+                vm.previewFocused = f.isFocused
+                if (f.isFocused) cur?.let { vm.focus(it) }
+            },
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
         colors = ClickableSurfaceDefaults.colors(containerColor = Color.Black, focusedContainerColor = Color.Black),
         scale = ClickableSurfaceDefaults.scale(focusedScale = 1.02f),

@@ -38,6 +38,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
@@ -49,6 +51,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -63,10 +66,16 @@ import androidx.tv.material3.Text
 import dev.madhyam.MainViewModel
 import dev.madhyam.Section
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
 
 private val RailCollapsed = 72.dp
 private val RailExpanded = 230.dp
+
+/** The rail and the category column open and close with the same quick, settled motion. */
+fun <T> panelMotion() = androidx.compose.animation.core.tween<T>(250, easing = androidx.compose.animation.core.FastOutSlowInEasing)
+private val PanelMotion = panelMotion<Float>()
 
 fun Section.icon(): ImageVector = when (this) {
     Section.Home -> Icons.Filled.Home
@@ -91,7 +100,8 @@ fun MainShell(vm: MainViewModel) {
     var askExit by remember { mutableStateOf(false) }
     // Back at the top of the app asks before closing it. Pages with their own Back (details,
     // guide, Settings' playlist page) are composed later, so theirs runs first.
-    BackHandler { askExit = true }
+    // Elsewhere Back climbs one level at a time: content, categories, this rail, then here.
+    BackHandler { if (railFocused) askExit = true else runCatching { railFocus.requestFocus() } }
 
     LaunchedEffect(vm.message) {
         if (vm.message != null) {
@@ -101,20 +111,23 @@ fun MainShell(vm: MainViewModel) {
     }
 
     Box(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().padding(start = RailCollapsed)) {
+        // The open rail pushes the page aside at its own size, past the right edge: moved as a
+        // layer, so a big grid is not laid out again on every frame.
+        val railOpen = androidx.compose.animation.core.animateFloatAsState(if (railFocused) 1f else 0f, PanelMotion, label = "page")
+        Box(
+            Modifier.fillMaxSize().padding(start = RailCollapsed)
+                .graphicsLayer { translationX = railOpen.value * (RailExpanded - RailCollapsed).toPx() },
+        ) {
             CompositionLocalProvider(LocalRailFocus provides railFocus) {
-            when (vm.section) {
-                Section.Home -> if (vm.details != null) DetailsScreen(vm) else HomeScreen(vm)
-                Section.Live -> LiveScreen(vm)
-                Section.Settings -> SettingsScreen(vm)
+            when {
+                vm.details != null -> DetailsScreen(vm) // also a film opened from the search page
+                vm.section == Section.Home -> HomeScreen(vm)
+                vm.section == Section.Live -> LiveScreen(vm)
+                vm.section == Section.Settings -> SettingsScreen(vm)
                 else -> BrowseScreen(vm)
             }
             }
         }
-        // The open rail covers the left of the page: dim the page so the cut-off bits of it
-        // (category names, counts) don't show beside the rail.
-        val scrim by androidx.compose.animation.core.animateFloatAsState(if (railFocused) 0.82f else 0f, label = "scrim")
-        if (scrim > 0f) Box(Modifier.fillMaxSize().background(Background.copy(alpha = scrim)))
         Rail(vm, railFocus, onFocus = { railFocused = it }, expanded = railFocused, onPlaylists = { pickPlaylist = true })
 
         // Status line (busy / messages), bottom right, over everything.
@@ -132,6 +145,10 @@ fun MainShell(vm: MainViewModel) {
 
     if (pickPlaylist) PlaylistDialog(vm) { pickPlaylist = false }
     if (askExit) ExitDialog { askExit = false }
+    // Hidden behind a details page opened from it, and back when that closes.
+    if (vm.searchOpen && vm.details == null) SearchPage(vm)
+    // After the search page, so its window opens on top of that one.
+    OptionsDialog(vm)
 }
 
 /** "Exit Madhyam?" with Cancel focused, so a Back pressed once too often changes nothing. */
@@ -165,7 +182,7 @@ private fun ExitDialog(onDismiss: () -> Unit) {
 private fun Rail(vm: MainViewModel, selected: FocusRequester, onFocus: (Boolean) -> Unit, expanded: Boolean, onPlaylists: () -> Unit) {
     val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
-    val width by animateDpAsState(if (expanded) RailExpanded else RailCollapsed, label = "rail")
+    val width by animateDpAsState(if (expanded) RailExpanded else RailCollapsed, panelMotion(), label = "rail")
     Column(
         Modifier
             .width(width)
@@ -209,10 +226,21 @@ private fun Rail(vm: MainViewModel, selected: FocusRequester, onFocus: (Boolean)
                 selected = vm.section == s,
                 modifier = if (vm.section == s) Modifier.focusRequester(selected) else Modifier,
                 onClick = {
-                    if (vm.section != s) vm.selectSection(s)
-                    // OK closes the rail and goes into the page (once the new page is composed).
+                    if (s == Section.Search) {
+                        vm.openSearch(scoped = false)
+                        return@RailEntry
+                    }
+                    if (vm.section != s) {
+                        vm.skipChannelFocus = s == Section.Live
+                        vm.selectSection(s)
+                    }
+                    // OK closes the rail and goes into the page, once the page has its rows: a
+                    // row of a list still loading would vanish with the focus on it.
                     scope.launch {
-                        delay(150)
+                        withTimeoutOrNull(5000) { snapshotFlow { vm.sectionLoading }.first { !it } }
+                        if (vm.section != s) return@launch // waiting for a PIN, or another entry chosen
+                        withFrameNanos { }
+                        withFrameNanos { }
                         if (!focusManager.moveFocus(FocusDirection.Right)) focusManager.moveFocus(FocusDirection.Next)
                     }
                 },

@@ -408,6 +408,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             withPin("Enter the PIN to open Settings") { selectSection(s) }
             return
         }
+        if (s != section) {
+            // The page changes now, its data a moment later: never draw the old section's list
+            // (or a focusable row of it) in the new page.
+            itemsJob?.cancel()
+            categories = emptyList()
+            items = emptyList()
+            continueItems = emptyList()
+            total = 0
+            loadedRows = 0
+            group = null
+            lockedGroup = false
+            categoriesOpen = true
+            previewFocused = false
+        }
+        sectionLoading = true
         section = s
         if (s != Section.Live) guideOpen = false
         if (s != Section.Settings && s != Section.Search) changeSettings { lastSection = s.name }
@@ -445,10 +460,50 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 s == Section.Home -> loadHome()
                 s == Section.Favorites -> setItems(byPageKind(repo.favorites()))
                 s == Section.Recent -> setItems(byPageKind(repo.recent()))
-                s == Section.Search -> setItems(searchHits(query))
                 else -> setItems(emptyList())
             }
+            sectionLoading = false
         }
+    }
+
+    /** The current section's first load is still running (the rail waits before moving in). */
+    var sectionLoading by mutableStateOf(false)
+        private set
+
+    /** Live TV, Movies, Series: the category column is showing (else the content has the room). */
+    var categoriesOpen by mutableStateOf(true)
+
+    /** The column was reopened with Left: it takes the focus once it is composed. */
+    var focusCategories by mutableStateOf(false)
+
+    /** The rail is about to move the focus into Live TV: the channel list must not take it. */
+    var skipChannelFocus = false
+
+    /** Home's banner opened a details page: the focus comes back to its Details button. */
+    var heroDetailsOpened = false
+
+    /** Set while Live TV hands the focus to one row: the way into the channels must not redirect it. */
+    var channelEntry: androidx.compose.ui.focus.FocusRequester? = null
+
+    /** Live TV: the preview has the focus, so the channels shrink to their logos. */
+    var previewFocused by mutableStateOf(false)
+
+    /** Remember a search for the list on the search page (newest first). */
+    fun addSearchHistory(q: String) {
+        val text = q.trim()
+        if (text.isEmpty()) return
+        changeSettings {
+            searchHistory.removeAll { it.equals(text, ignoreCase = true) }
+            searchHistory.add(0, text)
+            while (searchHistory.size > 14) searchHistory.removeAt(searchHistory.lastIndex)
+        }
+    }
+
+    fun clearSearchHistory() = changeSettings { searchHistory.clear() }
+
+    fun openCategories() {
+        categoriesOpen = true
+        focusCategories = true
     }
 
     /**
@@ -472,6 +527,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         if (name == group && details == null && items.isNotEmpty() && !lockedGroup) return
         itemsJob?.cancel()
+        sectionLoading = false
         itemsJob = viewModelScope.launch { loadGroup(name) }
     }
 
@@ -586,13 +642,52 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         playback.current?.takeIf { it.isLive }?.let { fetchNowNext(listOf(it)) }
     }
 
+    /** The search page is open; [searchScoped]: over the current section and category only. */
+    var searchOpen by mutableStateOf(false)
+        private set
+    var searchScoped by mutableStateOf(false)
+        private set
+    var searchResults by mutableStateOf<List<Item>>(emptyList())
+        private set
+
+    /** The text [searchResults] are for, so "No results" doesn't flash while typing. */
+    var searchedFor by mutableStateOf("")
+        private set
+
+    fun openSearch(scoped: Boolean) {
+        searchJob?.cancel()
+        searchScoped = scoped
+        query = ""
+        searchedFor = ""
+        searchResults = emptyList()
+        searchOpen = true
+    }
+
+    fun closeSearch() {
+        searchJob?.cancel()
+        searchOpen = false
+    }
+
+    /** Runs off the main thread (the engine calls are on the IO dispatcher), after a typing pause. */
     fun search(q: String) {
         query = q
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
-            delay(300) // debounce: search after the user pauses typing
-            if (section == Section.Search) setItems(searchHits(q))
+            delay(300)
+            val hits = if (searchScoped) sectionHits(q) else searchHits(q)
+            searchResults = hits
+            searchedFor = q
+            fetchNowNext(hits.take(300))
         }
+    }
+
+    /** Matches in the current section and category. */
+    private suspend fun sectionHits(q: String): List<Item> {
+        val src = source ?: return emptyList()
+        val kind = section.kind ?: return emptyList()
+        if (q.isBlank()) return emptyList()
+        val hidden = if (group == null) settings.hidden(src.id, kindKey!!) + lockedCategoryNames() else emptySet()
+        return repo.query(src.id, kind, group, hidden, sort, 0, PAGE, groupField, minRating, q).items.filterNot { itemLocked(it) }
     }
 
     /** The focus moved onto a channel: show its programme in the info pane. */
@@ -613,6 +708,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * episodes play full screen.
      */
     fun open(item: Item) {
+        if (searchOpen) addSearchHistory(query)
         if (itemLocked(item)) {
             withPin("Enter the PIN to open “${item.name}”") { open(item) }
             return
@@ -620,13 +716,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         when {
             item.isSeries || item.kind == "movie" -> showDetails(item)
             item.isEpisode -> resume(item)
-            item.isLive && section == Section.Live && settings.previewOnSelect && playback.current?.id != item.id -> {
+            item.isLive && section == Section.Live && !searchOpen && settings.previewOnSelect && playback.current?.id != item.id -> {
                 playback.play(item, items.filter { it.isLive })
                 viewModelScope.launch { repo.recordPlay(item.id) }
             }
             item.isLive && playback.current?.id == item.id -> screen = Screen.Player
             else -> viewModelScope.launch {
-                playback.play(item, items.filter { it.isLive })
+                playback.play(item, (if (searchOpen) searchResults else items).filter { it.isLive })
                 repo.recordPlay(item.id)
                 screen = Screen.Player
             }
@@ -756,6 +852,65 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             repo.setWatched(list, watched)
             reloadDetailsProgress()
+            // The lists on screen show watched marks too.
+            val fresh = list.mapNotNull { repo.item(it.id) }.associateBy { it.id }
+            items = items.map { fresh[it.id] ?: it }
+            searchResults = searchResults.map { fresh[it.id] ?: it }
+            continueItems = continueItems.map { fresh[it.id] ?: it }
+        }
+    }
+
+    // ------------------------------------------------------------ options (hold OK)
+
+    var optionsItem by mutableStateOf<Item?>(null)
+        private set
+    var optionsCategory by mutableStateOf<Category?>(null)
+        private set
+
+    fun showOptions(item: Item) {
+        viewModelScope.launch {
+            // Rows can be older than the last play or watched mark.
+            optionsItem = repo.item(item.id) ?: item
+        }
+    }
+
+    fun showOptions(c: Category) {
+        if (!c.isAll) optionsCategory = c
+    }
+
+    fun closeOptions() {
+        optionsItem = null
+        optionsCategory = null
+    }
+
+    fun watchFromOptions(item: Item) {
+        if (searchOpen) addSearchHistory(query)
+        val list = (if (searchOpen) searchResults else items).filter { it.isLive }
+        watchChannel(item, list.ifEmpty { listOf(item) })
+    }
+
+    fun hideCategory(name: String) {
+        val s = source ?: return
+        val key = kindKey ?: return
+        val wasShowing = group == name
+        setHidden(s, key, name, true)
+        if (wasShowing) categories.firstOrNull { it.isAll }?.let { selectCategory(it) }
+        focusCategories = true
+        message = "Hidden $name. Bring it back in the playlist's settings."
+    }
+
+    fun categoryIsLockedSetting(name: String): Boolean {
+        val s = source ?: return false
+        val kind = section.kind ?: return false
+        return categoryLockSetting(s.id, kind, name) != null
+    }
+
+    fun toggleCategoryLock(name: String) {
+        val s = source ?: return
+        val kind = section.kind ?: return
+        val lock = !categoryIsLockedSetting(name)
+        withPin("Enter the PIN to ${if (lock) "lock" else "unlock"} “$name”") {
+            setCategoryLock(s.id, Parental.kindKey(kind), name, lock)
         }
     }
 
@@ -998,7 +1153,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Recent: hold OK removes an entry from the history. */
+    /** Recent: an entry leaves the history (hold OK for the menu). */
     fun removeFromHistory(item: Item) {
         viewModelScope.launch {
             repo.removeFromHistory(item.id)

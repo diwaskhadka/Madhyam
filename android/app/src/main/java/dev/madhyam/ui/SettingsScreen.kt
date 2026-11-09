@@ -731,8 +731,8 @@ private fun LazyListScope.appearance(vm: MainViewModel) {
     val st = vm.settings
     item { SectionTitle("Appearance") }
     item {
-        ChoiceRow("Theme", "Navy & Crimson is the dark theme; Custom builds one from your colour", st.theme,
-            listOf("Dark" to "Navy & Crimson", "Light" to "Light", "System" to "Follow the TV", "Custom" to "Custom")) { vm.changeSettings { theme = it } }
+        ChoiceRow("Theme", "Charcoal is the dark theme; Custom builds one from your colour", st.theme,
+            listOf("Dark" to "Charcoal", "Navy" to "Navy & Crimson", "Light" to "Light", "System" to "Follow the TV", "Custom" to "Custom")) { vm.changeSettings { theme = it } }
     }
     item {
         var picking by remember { mutableStateOf(false) }

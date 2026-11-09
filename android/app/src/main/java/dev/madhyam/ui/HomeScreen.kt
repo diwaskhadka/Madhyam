@@ -35,6 +35,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -99,10 +100,12 @@ fun HomeScreen(vm: MainViewModel) {
 @Composable
 private fun Hero(vm: MainViewModel, item: Item?) {
     val first = remember { FocusRequester() }
+    val detailsButton = remember { FocusRequester() }
     val rail = LocalRailFocus.current // Left from the first button goes to the rail, not down to a row
     LaunchedEffect(item?.id) {
         delay(120)
-        runCatching { first.requestFocus() }
+        runCatching { (if (vm.heroDetailsOpened) detailsButton else first).requestFocus() }
+        vm.heroDetailsOpened = false
     }
     Box(Modifier.fillMaxWidth().height(250.dp).clip(RoundedCornerShape(18.dp)).background(Panel)) {
         if (item != null) Poster(item.logo, "", Modifier.fillMaxSize().alpha(0.28f))
@@ -140,7 +143,8 @@ private fun Hero(vm: MainViewModel, item: Item?) {
                 Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (item != null) {
                         HeroButton("Continue watching", Icons.Filled.PlayArrow, Modifier.focusRequester(first).focusProperties { left = rail }, primary = true) { vm.resume(item) }
-                        HeroButton("Details", Icons.Filled.Info) {
+                        HeroButton("Details", Icons.Filled.Info, Modifier.focusRequester(detailsButton)) {
+                            vm.heroDetailsOpened = true
                             val series = item.seriesId
                             if (item.isEpisode && series != null) vm.openSeriesOf(item) else vm.showDetails(item)
                         }
@@ -173,12 +177,17 @@ internal fun RowTitle(title: String, count: Int) {
     }
 }
 
+/** A row keeps the focus at its right end instead of letting it jump to the row above. */
+@OptIn(ExperimentalComposeUiApi::class)
+private fun endStopsRow(): Modifier =
+    Modifier.focusProperties { exit = { if (it == androidx.compose.ui.focus.FocusDirection.Right) FocusRequester.Cancel else FocusRequester.Default } }.focusGroup().focusRestorer()
+
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 internal fun PosterRow(vm: MainViewModel, title: String, list: List<Item>, resume: Boolean = false) {
     Column {
         RowTitle(title, list.size)
-        LazyRow(Modifier.focusRestorer(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        LazyRow(endStopsRow(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             items(list, key = { it.id }) { item ->
                 PosterCard(vm, item, width = coverWidth(vm.settings.coverSize), onClick = { if (resume) vm.resume(item) else vm.open(item) })
             }
@@ -193,16 +202,16 @@ internal fun ChannelRow(vm: MainViewModel, title: String, list: List<Item>) {
     val now = System.currentTimeMillis() / 1000
     Column {
         RowTitle(title, list.size)
-        LazyRow(Modifier.focusRestorer(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        LazyRow(endStopsRow(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             items(list, key = { it.id }) { ch ->
                 Column(Modifier.width(196.dp)) {
                     Surface(
                         onClick = { vm.watchChannel(ch, list) },
-                        onLongClick = { vm.toggleFavorite(ch) },
+                        onLongClick = { vm.showOptions(ch) },
                         modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
                         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
-                        // A tinted highlight: many logos are white and would vanish on a white card.
-                        colors = ClickableSurfaceDefaults.colors(containerColor = Panel, focusedContainerColor = Color(0xFF3A4785)),
+                        // A grey highlight: many logos are white and would vanish on a white card.
+                        colors = ClickableSurfaceDefaults.colors(containerColor = Panel, focusedContainerColor = Muted.copy(alpha = 0.35f)),
                         border = ClickableSurfaceDefaults.border(focusedBorder = androidx.tv.material3.Border(androidx.compose.foundation.BorderStroke(2.dp, TextColor))),
                     ) {
                         Box(Modifier.fillMaxSize().padding(14.dp), contentAlignment = Alignment.Center) {
