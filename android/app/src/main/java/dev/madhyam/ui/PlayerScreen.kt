@@ -57,7 +57,7 @@ import dev.madhyam.PictureSize
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
-private enum class Picker { Audio, Subtitles, Speed, Picture, AudioDelay, SubtitleDelay }
+private enum class Picker { Audio, Subtitles, Speed, Picture, AudioDelay }
 
 /** One button of the options row. */
 private class Control(val icon: ImageVector, val label: String, val action: () -> Unit)
@@ -100,10 +100,6 @@ fun PlayerScreen(vm: MainViewModel) {
         add(Control(Icons.Filled.Audiotrack, "Audio") { picker = Picker.Audio })
         add(Control(Icons.Filled.ClosedCaption, "Subtitles") { picker = Picker.Subtitles })
         add(Control(Icons.Filled.Tune, "Audio delay ${delayLabel(pb.audioDelayMs)}") { picker = Picker.AudioDelay })
-        add(Control(Icons.Filled.Timer, "Subtitle delay ${delayLabel(pb.subtitleDelayMs)}") { picker = Picker.SubtitleDelay })
-        if (seekable && !item.isCatchup && vm.subtitleSearchAvailable) {
-            add(Control(Icons.Filled.Search, "Find subtitles") { vm.openSubtitleSearch() })
-        }
         if (seekable) add(Control(Icons.Filled.Speed, "Speed ${speedLabel(pb.speed)}") { picker = Picker.Speed })
         add(Control(Icons.Filled.AspectRatio, pb.pictureSize.label) { picker = Picker.Picture })
         if (item.isLive) {
@@ -157,15 +153,6 @@ fun PlayerScreen(vm: MainViewModel) {
         if (picker == null && controls) closeControls()
     }
 
-    // Back on the options row when the subtitle search closes.
-    val searching = vm.subtitleResults != null
-    LaunchedEffect(searching) {
-        if (!searching && controls) {
-            overlayToken++
-            delay(120)
-            runCatching { focus.requestFocus() }
-        }
-    }
     // Ask for focus once the page we replaced has let go of it (else the first key press is lost),
     // and again when a picker dialog closes.
     LaunchedEffect(picker) {
@@ -347,30 +334,21 @@ fun PlayerScreen(vm: MainViewModel) {
             val tracks = pb.audioTracks()
             PickerDialog("Audio", tracks.map { it to it.label }, tracks.firstOrNull { it.selected }, { pb.select(it) }) { pickerClosed() }
         }
-        Picker.Subtitles -> {
-            val tracks = pb.subtitleTracks()
-            val off = "off"
-            val style = "style"
-            val options: List<Pair<Any, String>> = listOf<Pair<Any, String>>(off to "Off") + tracks.map { it to it.label } + (style to "Subtitle style…")
-            val current: Any = if (pb.subtitlesOff) off else tracks.firstOrNull { it.selected } ?: off
-            PickerDialog("Subtitles", options, current, { choice ->
-                when (choice) {
-                    off -> pb.turnSubtitlesOff()
-                    style -> styling = true
-                    is dev.madhyam.TrackChoice -> pb.select(choice)
-                }
-            }) {
-                pickerClosed()
-                if (styling) closeControls() // the panel shows the subtitles where they really sit
-            }
-        }
+        // One panel for tracks, online search, delay and style.
+        Picker.Subtitles -> SubtitlesPanel(
+            vm,
+            canSearch = seekable && !item.isCatchup && vm.subtitleSearchAvailable,
+            onStyle = {
+                styling = true
+                closeControls() // the style page shows the subtitles where they really sit
+            },
+            onDismiss = { pickerClosed() },
+        )
         Picker.Speed -> PickerDialog("Speed", SPEEDS.map { it to speedLabel(it) }, pb.speed, { pb.changeSpeed(it) }) { pickerClosed() }
         Picker.Picture -> PickerDialog("Picture size", PictureSize.entries.map { it to it.label }, pb.pictureSize, { pb.pictureSize = it }) { pickerClosed() }
         Picker.AudioDelay -> PickerDialog("Audio delay (+ = sound later)", DELAYS.map { it to delayLabel(it) }, pb.audioDelayMs, { pb.changeAudioDelay(it) }) { pickerClosed() }
-        Picker.SubtitleDelay -> PickerDialog("Subtitle delay (+ = subtitles later)", DELAYS.map { it to delayLabel(it) }, pb.subtitleDelayMs, { pb.changeSubtitleDelay(it) }) { pickerClosed() }
         null -> {}
     }
-    if (searching) SubtitleSearchDialog(vm)
     if (styling) SubtitleStyleDialog(vm) { styling = false }
     LaunchedEffect(styling) {
         if (!styling) {
@@ -382,10 +360,10 @@ fun PlayerScreen(vm: MainViewModel) {
 
 private val SPEEDS = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
 
-private val DELAYS = (-12..12).map { it * 250 } // −3 s … +3 s
+internal val DELAYS = (-12..12).map { it * 250 } // −3 s … +3 s
 
 /** 250 → "+0.25 s", -1500 → "−1.5 s". */
-private fun delayLabel(ms: Int): String {
+internal fun delayLabel(ms: Int): String {
     if (ms == 0) return "0 s"
     val s = java.math.BigDecimal(kotlin.math.abs(ms)).movePointLeft(3).stripTrailingZeros().toPlainString()
     return (if (ms > 0) "+" else "−") + s + " s"

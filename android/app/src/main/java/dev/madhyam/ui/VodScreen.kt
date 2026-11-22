@@ -112,6 +112,7 @@ fun VodScreen(vm: MainViewModel) {
             val focusIndex = openedIndex.coerceAtLeast(0)
             val sortButton = remember { FocusRequester() }
             val ratingButton = remember { FocusRequester() }
+            val wrap = rememberWrap()
             LaunchedEffect(Unit) {
                 val target = refocus ?: return@LaunchedEffect
                 refocus = null
@@ -134,11 +135,23 @@ fun VodScreen(vm: MainViewModel) {
                 state = state,
                 modifier = Modifier
                     .fillMaxSize()
-                    .focusProperties {
-                        val target = focusIndex + headerRows
-                        enter = { if (state.layoutInfo.visibleItemsInfo.any { it.index == target }) back else FocusRequester.Default }
-                    }
-                    .focusGroup(),
+                    // Up past the header: the last poster (all of them loaded); Down past the last:
+                    // the first row of content (Continue watching when it shows).
+                    .wrapColumn(
+                        onTop = {
+                            wrap.focus {
+                                vm.loadAll()
+                                if (vm.items.isEmpty()) -1 else (headerRows + vm.items.lastIndex).also { state.scrollToItem(it) }
+                            }
+                        },
+                        onBottom = {
+                            if (vm.allLoaded) {
+                                wrap.focus { state.scrollToItem(0); if (headerRows == 2) 1 else headerRows }
+                            } else {
+                                vm.loadMore()
+                            }
+                        },
+                    ),
                 contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 16.dp, bottom = 32.dp),
                 horizontalArrangement = Arrangement.spacedBy(18.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -147,13 +160,13 @@ fun VodScreen(vm: MainViewModel) {
                     GridHeader(vm, sortButton, ratingButton, onSort = { dialog = "sort" }, onRating = { dialog = "rating" })
                 }
                 if (headerRows == 2) {
-                    item(span = { GridItemSpan(maxLineSpan) }, key = "\u0000continue") { ContinueRow(vm) }
+                    item(span = { GridItemSpan(maxLineSpan) }, key = "\u0000continue") { ContinueRow(vm, wrap.at(1)) }
                 }
                 itemsIndexed(vm.items, key = { _, it -> it.id }) { i, item ->
                     PosterCard(
                         vm,
                         item,
-                        modifier = if (i == focusIndex) Modifier.focusRequester(back) else Modifier,
+                        modifier = (if (i == focusIndex) Modifier.focusRequester(back) else Modifier).then(wrap.at(headerRows + i)),
                         onFocused = { if (i > vm.items.size - 30) vm.loadMore() },
                     )
                 }
@@ -196,8 +209,8 @@ private fun GridHeader(vm: MainViewModel, sortButton: FocusRequester, ratingButt
 /** Films (Movies) or episodes (Series) started but not finished; OK resumes. */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-private fun ContinueRow(vm: MainViewModel) {
-    Column {
+private fun ContinueRow(vm: MainViewModel, modifier: Modifier = Modifier) {
+    Column(modifier.focusGroup()) {
         Text("Continue watching", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 8.dp))
         LazyRow(
             Modifier.focusRestorer(),
@@ -331,15 +344,17 @@ fun <T> OptionDialog(title: String, options: List<Pair<T, String>>, current: T, 
         Column(Modifier.width(380.dp).background(Panel, RoundedCornerShape(16.dp)).padding(20.dp)) {
             Text(title, fontSize = 22.sp, modifier = Modifier.padding(bottom = 8.dp))
             val first = remember { FocusRequester() }
-            Column {
-                for ((value, label) in options) {
+            val wrap = rememberWrap()
+            Column(Modifier.wrapColumn(onTop = { wrap.focus { options.lastIndex } }, onBottom = { wrap.focus { 0 } })) {
+                for ((i, pair) in options.withIndex()) {
+                    val (value, label) = pair
                     ListItem(
                         selected = value == current,
                         onClick = {
                             onPick(value)
                             onDismiss()
                         },
-                        modifier = if (value == current) Modifier.focusRequester(first) else Modifier,
+                        modifier = (if (value == current) Modifier.focusRequester(first) else Modifier).then(wrap.at(i)),
                         headlineContent = { Text(label) },
                     )
                 }

@@ -13,6 +13,9 @@ How to cut a release and how to add a platform: [docs/RELEASING.md](docs/RELEASI
 - Search is one full page: microphone, box and search history. Its gear chooses what the whole-app search looks in.
 - Back climbs one level at a time: content, categories, menu, then the exit question.
 - Choosing a category narrows the category column to a slim strip, as the menu does, so the channels or posters get the room. Left from the left edge opens it again.
+- **Subtitles in one panel:** the player's Subtitles button lists Off and every track, then Find online (results open in the same panel), Delay and Style. The separate Find subtitles and Subtitle delay buttons are gone.
+- **D-pad Left and Right go to the item beside the focused one** on every page: Right from a category reaches Continue watching directly.
+- **Lists wrap around:** Up on the first item goes to the last and Down on the last goes to the first, in the menu, categories, channels, poster grids, Home, Favorites, Recent, Settings, the TV guide and pop-up lists.
 - Leaving the app while it is still loading no longer loses recent favorites, resume points and history.
 - Back from the player or TV guide returns to the channel you were on, and focus no longer jumps to the wrong button on Home and on film and series pages.
 - **Hold OK for options** on any channel, film, series, episode, TV guide row or category: favorites, play, details, watched mark, remove from Recent, hide or lock a category.

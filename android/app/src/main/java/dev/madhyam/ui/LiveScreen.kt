@@ -102,7 +102,7 @@ fun LiveScreen(vm: MainViewModel) {
     ) {
         // Coming in from the side lands in the channels, not on the button at the same height.
         val channels = remember { FocusRequester() }
-        Row(Modifier.fillMaxSize().sectionContent(vm) { vm.channelEntry ?: if (vm.items.isNotEmpty() && !vm.lockedGroup) channels else FocusRequester.Default }) {
+        Row(Modifier.fillMaxSize().sectionContent(vm) { vm.channelEntry ?: FocusRequester.Default }) {
             // On the preview the channels shrink to their logos and the picture gets the room.
             ChannelList(vm, now, channels, if (vm.previewFocused) Modifier.width(88.dp) else Modifier.weight(1f))
             InfoPane(vm, now, if (vm.previewFocused) Modifier.weight(1f) else Modifier.width(380.dp))
@@ -210,7 +210,15 @@ fun CategoryStrip(vm: MainViewModel, modifier: Modifier = Modifier) {
 @kotlin.OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun CategoryPanel(vm: MainViewModel, modifier: Modifier = Modifier) {
-    Column(modifier.fillMaxHeight().background(Panel.copy(alpha = 0.55f)).padding(vertical = 16.dp, horizontal = 8.dp)) {
+    val wrap = rememberWrap()
+    val list = rememberLazyListState(initialFirstVisibleItemIndex = (vm.categories.indexOfFirst { if (it.isAll) vm.group == null else vm.group == it.name } - 3).coerceAtLeast(0))
+    Column(
+        modifier.fillMaxHeight().background(Panel.copy(alpha = 0.55f)).padding(vertical = 16.dp, horizontal = 8.dp)
+            .wrapColumn(
+                onTop = { wrap.focus { vm.categories.lastIndex.also { if (it >= 0) list.scrollToItem(it) } } },
+                onBottom = { wrap.focus { list.scrollToItem(0); 0 } },
+            ),
+    ) {
         if (vm.section == Section.Live && vm.source?.isFreeTv == true) {
             Row(Modifier.padding(start = 4.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 ToggleChip("Categories", vm.liveGroupBy == "category") { vm.groupLiveBy("category") }
@@ -220,7 +228,6 @@ fun CategoryPanel(vm: MainViewModel, modifier: Modifier = Modifier) {
         // Open scrolled to the chosen category, and entering the list (Right from the rail) lands
         // on it: landing on the category at the same height would open that one instead.
         val selectedIndex = vm.categories.indexOfFirst { if (it.isAll) vm.group == null else vm.group == it.name }.coerceAtLeast(0)
-        val list = rememberLazyListState(initialFirstVisibleItemIndex = (selectedIndex - 3).coerceAtLeast(0))
         val current = remember { FocusRequester() }
         // Reopened with Left from the content: the focus comes back to the chosen category.
         LaunchedEffect(vm.focusCategories) {
@@ -234,12 +241,12 @@ fun CategoryPanel(vm: MainViewModel, modifier: Modifier = Modifier) {
         LazyColumn(
             state = list,
             modifier = Modifier.focusProperties {
-                enter = { if (list.layoutInfo.visibleItemsInfo.any { it.index == selectedIndex }) current else FocusRequester.Default }
+                enter = { if (!wrap.active && list.layoutInfo.visibleItemsInfo.any { it.index == selectedIndex }) current else FocusRequester.Default }
             }.focusGroup(),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             itemsIndexed(vm.categories, key = { _, c -> (if (c.isAll) "\u0000all" else c.name) }) { i, c ->
-                CategoryRow(vm, c, if (i == selectedIndex) Modifier.focusRequester(current) else Modifier)
+                CategoryRow(vm, c, (if (i == selectedIndex) Modifier.focusRequester(current) else Modifier).then(wrap.at(i)))
             }
         }
     }
@@ -317,7 +324,16 @@ fun ToggleChip(label: String, on: Boolean, modifier: Modifier = Modifier, onClic
 private fun ChannelList(vm: MainViewModel, now: Long, channels: FocusRequester, modifier: Modifier) {
     val strip = vm.settings.stripPrefixes
     val compact = vm.previewFocused
-    Column(modifier.fillMaxHeight().padding(horizontal = if (compact) 4.dp else 12.dp, vertical = 16.dp)) {
+    val wrap = rememberWrap()
+    // Filled in below; the column's wrap-around scrolls it.
+    var listRef: androidx.compose.foundation.lazy.LazyListState? = null
+    Column(
+        modifier.fillMaxHeight().padding(horizontal = if (compact) 4.dp else 12.dp, vertical = 16.dp)
+            .wrapColumn(
+                onTop = { wrap.focus { vm.loadAll(); vm.items.lastIndex.also { if (it >= 0) listRef?.scrollToItem(it) } } },
+                onBottom = { if (vm.allLoaded) wrap.focus { listRef?.scrollToItem(0); 0 } else vm.loadMore() },
+            ),
+    ) {
         val title = vm.group ?: vm.categories.firstOrNull()?.name ?: "Live TV"
         if (!compact) Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) { SectionTitle(title, "%,d channels".format(vm.total), subLines = 2) }
@@ -340,6 +356,7 @@ private fun ChannelList(vm: MainViewModel, now: Long, channels: FocusRequester, 
             vm.items.indexOfFirst { it.id == id }.coerceAtLeast(0)
         }
         val listState = rememberLazyListState(initialFirstVisibleItemIndex = startIndex)
+        listRef = listState
         LaunchedEffect(Unit) {
             // Not when the rail is moving in (it lands on the categories).
             if (vm.skipChannelFocus) {
@@ -363,7 +380,7 @@ private fun ChannelList(vm: MainViewModel, now: Long, channels: FocusRequester, 
         ) {
             itemsIndexed(vm.items, key = { _, it -> it.id }) { i, item ->
                 ChannelRow(
-                    modifier = if (i == startIndex) Modifier.focusRequester(start) else Modifier,
+                    modifier = (if (i == startIndex) Modifier.focusRequester(start) else Modifier).then(wrap.at(i)),
                     vm = vm,
                     number = i + 1,
                     item = item,

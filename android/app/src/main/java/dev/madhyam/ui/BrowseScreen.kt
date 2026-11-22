@@ -54,9 +54,20 @@ fun BrowseScreen(vm: MainViewModel) {
     when {
         vm.details != null -> DetailsScreen(vm)
         vm.section.kind != null -> VodScreen(vm)
-        else -> Column(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 16.dp)) {
-            Header(vm)
-            ItemList(vm)
+        else -> {
+            val wrap = rememberWrap()
+            val list = androidx.compose.foundation.lazy.rememberLazyListState()
+            // With more than one kind, each group has a heading row first.
+            val headed = vm.items.map { kindGroup(it) }.distinct().size > 1
+            Column(
+                Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 16.dp).wrapColumn(
+                    onTop = { wrap.focus { (list.layoutInfo.totalItemsCount - 1).also { if (it >= 0) list.scrollToItem(it) } } },
+                    onBottom = { wrap.focus { list.scrollToItem(0); if (vm.items.isEmpty()) -1 else if (headed) 1 else 0 } },
+                ),
+            ) {
+                Header(vm)
+                ItemList(vm, wrap, list)
+            }
         }
     }
 }
@@ -123,9 +134,17 @@ fun SearchIcon(query: String, label: String, modifier: Modifier, icon: androidx.
     }
 }
 
+private fun kindGroup(item: Item): Int = when {
+    item.isLive -> 0
+    item.kind == "movie" -> 1
+    item.isSeries -> 2
+    item.isEpisode -> 3
+    else -> 4
+}
+
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-private fun ItemList(vm: MainViewModel) {
+private fun ItemList(vm: MainViewModel, wrap: Wrap, listState: androidx.compose.foundation.lazy.LazyListState) {
     if (vm.items.isEmpty()) {
         if (vm.busy == null) {
             EmptyNote(
@@ -153,20 +172,26 @@ private fun ItemList(vm: MainViewModel) {
     val firstId = groups.first().second.first().id
     LazyColumn(
         Modifier
-            .focusProperties { enter = { if (it == androidx.compose.ui.focus.FocusDirection.Right && !visited) firstRow else FocusRequester.Default } }
+            // OK on the menu entry lands on the top row; a D-pad Right goes to the row beside it.
+            .focusProperties { enter = { if (vm.enteringPage && !visited) firstRow else FocusRequester.Default } }
             .focusGroup()
             .focusRestorer(),
+        state = listState,
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
+        var base = 0
         for ((label, list) in groups) {
             if (groups.size > 1) {
+                base++
                 item(key = "header:$label") {
                     Text("$label  ${list.size}", color = Accent, fontSize = 14.sp, modifier = Modifier.padding(top = 10.dp, bottom = 2.dp))
                 }
             }
-            itemsIndexed(list, key = { _, it -> it.id }) { _, item ->
-                ItemRow(vm, item, now, strip, if (item.id == firstId) Modifier.focusRequester(firstRow) else Modifier, onFocused = { visited = true })
+            val start = base
+            itemsIndexed(list, key = { _, it -> it.id }) { i, item ->
+                ItemRow(vm, item, now, strip, (if (item.id == firstId) Modifier.focusRequester(firstRow) else Modifier).then(wrap.at(start + i)), onFocused = { visited = true })
             }
+            base += list.size
         }
     }
 }

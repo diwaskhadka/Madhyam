@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -70,20 +71,34 @@ fun HomeScreen(vm: MainViewModel) {
         return
     }
     val hero = h.continueWatching.firstOrNull()
+    val wrap = rememberWrap()
+    // The hero takes the focus once per visit, not each time it scrolls back into view.
+    val heroFocused = remember { mutableStateOf(false) }
+    val list = androidx.compose.foundation.lazy.rememberLazyListState()
     LazyColumn(
-        Modifier.fillMaxSize(),
+        Modifier.fillMaxSize().wrapColumn(
+            onTop = { wrap.focus { (list.layoutInfo.totalItemsCount - 1).also { if (it >= 0) list.scrollToItem(it) } } },
+            onBottom = { wrap.focus { list.scrollToItem(0); 0 } },
+        ),
+        state = list,
         contentPadding = PaddingValues(start = 28.dp, end = 28.dp, top = 20.dp, bottom = 40.dp),
         verticalArrangement = Arrangement.spacedBy(22.dp),
     ) {
-        if (st.dashHero) item { Hero(vm, hero) }
-        if (st.dashContinue && h.continueWatching.isNotEmpty()) {
-            item { PosterRow(vm, "Continue watching", h.continueWatching, resume = true) }
+        // Each row is a focus group the wrap-around can land in (by its place in the list).
+        var k = 0
+        fun row(content: @Composable () -> Unit) {
+            val idx = k++
+            item { Box(wrap.at(idx).focusGroup()) { content() } }
         }
-        if (st.dashLiveFavorites && h.favoriteLive.isNotEmpty()) item { ChannelRow(vm, "Favorite channels", h.favoriteLive) }
-        if (st.dashRecentLive && h.recentLive.isNotEmpty()) item { ChannelRow(vm, "Recently watched channels", h.recentLive) }
-        if (st.dashFavoriteVod && h.favoriteVod.isNotEmpty()) item { PosterRow(vm, "Favorite movies and series", h.favoriteVod) }
-        if (st.dashRecentlyAdded && h.addedMovies.isNotEmpty()) item { PosterRow(vm, "Recently added movies", h.addedMovies) }
-        if (st.dashRecentlyAdded && h.addedSeries.isNotEmpty()) item { PosterRow(vm, "Recently added series", h.addedSeries) }
+        if (st.dashHero) row { Hero(vm, hero, heroFocused) }
+        if (st.dashContinue && h.continueWatching.isNotEmpty()) {
+            row { PosterRow(vm, "Continue watching", h.continueWatching, resume = true) }
+        }
+        if (st.dashLiveFavorites && h.favoriteLive.isNotEmpty()) row { ChannelRow(vm, "Favorite channels", h.favoriteLive) }
+        if (st.dashRecentLive && h.recentLive.isNotEmpty()) row { ChannelRow(vm, "Recently watched channels", h.recentLive) }
+        if (st.dashFavoriteVod && h.favoriteVod.isNotEmpty()) row { PosterRow(vm, "Favorite movies and series", h.favoriteVod) }
+        if (st.dashRecentlyAdded && h.addedMovies.isNotEmpty()) row { PosterRow(vm, "Recently added movies", h.addedMovies) }
+        if (st.dashRecentlyAdded && h.addedSeries.isNotEmpty()) row { PosterRow(vm, "Recently added series", h.addedSeries) }
         val nothing = h.continueWatching.isEmpty() && h.favoriteLive.isEmpty() && h.recentLive.isEmpty() &&
             h.favoriteVod.isEmpty() && h.addedMovies.isEmpty() && h.addedSeries.isEmpty()
         if (nothing) {
@@ -98,11 +113,12 @@ fun HomeScreen(vm: MainViewModel) {
 }
 
 @Composable
-private fun Hero(vm: MainViewModel, item: Item?) {
+private fun Hero(vm: MainViewModel, item: Item?, focused: androidx.compose.runtime.MutableState<Boolean>) {
     val first = remember { FocusRequester() }
     val detailsButton = remember { FocusRequester() }
-    val rail = LocalRailFocus.current // Left from the first button goes to the rail, not down to a row
     LaunchedEffect(item?.id) {
+        if (focused.value && !vm.heroDetailsOpened) return@LaunchedEffect
+        focused.value = true
         delay(120)
         runCatching { (if (vm.heroDetailsOpened) detailsButton else first).requestFocus() }
         vm.heroDetailsOpened = false
@@ -142,14 +158,14 @@ private fun Hero(vm: MainViewModel, item: Item?) {
                 }
                 Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (item != null) {
-                        HeroButton("Continue watching", Icons.Filled.PlayArrow, Modifier.focusRequester(first).focusProperties { left = rail }, primary = true) { vm.resume(item) }
+                        HeroButton("Continue watching", Icons.Filled.PlayArrow, Modifier.focusRequester(first), primary = true) { vm.resume(item) }
                         HeroButton("Details", Icons.Filled.Info, Modifier.focusRequester(detailsButton)) {
                             vm.heroDetailsOpened = true
                             val series = item.seriesId
                             if (item.isEpisode && series != null) vm.openSeriesOf(item) else vm.showDetails(item)
                         }
                     } else {
-                        HeroButton("Live TV", Icons.Filled.LiveTv, Modifier.focusRequester(first).focusProperties { left = rail }, primary = true) { vm.selectSection(Section.Live) }
+                        HeroButton("Live TV", Icons.Filled.LiveTv, Modifier.focusRequester(first), primary = true) { vm.selectSection(Section.Live) }
                         HeroButton("Movies", Icons.Filled.Movie) { vm.selectSection(Section.Movies) }
                         HeroButton("Series", Icons.Filled.VideoLibrary) { vm.selectSection(Section.Series) }
                     }

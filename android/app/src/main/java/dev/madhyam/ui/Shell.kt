@@ -183,15 +183,15 @@ private fun Rail(vm: MainViewModel, selected: FocusRequester, onFocus: (Boolean)
     val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
     val width by animateDpAsState(if (expanded) RailExpanded else RailCollapsed, panelMotion(), label = "rail")
+    val wrap = rememberWrap()
     Column(
         Modifier
             .width(width)
             .fillMaxHeight()
             .background(if (expanded) Panel else Background)
             .onFocusChanged { onFocus(it.hasFocus) }
-            // Entering the rail always lands on the current page, not the nearest entry.
-            .focusProperties { enter = { selected } }
-            .focusGroup()
+            // Up from the top entry goes to the bottom one and back.
+            .wrapColumn(onTop = { wrap.focus { 1 } }, onBottom = { wrap.focus { 0 } })
             .padding(horizontal = 10.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
@@ -202,6 +202,7 @@ private fun Rail(vm: MainViewModel, selected: FocusRequester, onFocus: (Boolean)
             expanded = expanded,
             selected = false,
             onClick = onPlaylists,
+            modifier = wrap.at(0),
         )
         Spacer(Modifier.height(10.dp))
         for (s in Section.entries) {
@@ -224,7 +225,8 @@ private fun Rail(vm: MainViewModel, selected: FocusRequester, onFocus: (Boolean)
                 label = s.label,
                 expanded = expanded,
                 selected = vm.section == s,
-                modifier = if (vm.section == s) Modifier.focusRequester(selected) else Modifier,
+                modifier = (if (vm.section == s) Modifier.focusRequester(selected) else Modifier)
+                    .then(if (s == Section.entries.last()) wrap.at(1) else Modifier),
                 onClick = {
                     if (s == Section.Search) {
                         vm.openSearch(scoped = false)
@@ -241,7 +243,9 @@ private fun Rail(vm: MainViewModel, selected: FocusRequester, onFocus: (Boolean)
                         if (vm.section != s) return@launch // waiting for a PIN, or another entry chosen
                         withFrameNanos { }
                         withFrameNanos { }
+                        vm.enteringPage = true
                         if (!focusManager.moveFocus(FocusDirection.Right)) focusManager.moveFocus(FocusDirection.Next)
+                        vm.enteringPage = false
                     }
                 },
             )

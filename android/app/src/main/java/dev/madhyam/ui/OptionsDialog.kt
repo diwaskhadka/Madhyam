@@ -67,6 +67,7 @@ private fun categoryOptions(vm: MainViewModel, c: Category): List<Pair<String, (
 @Composable
 private fun OptionsList(title: String, options: List<Pair<String, () -> Unit>>, onDismiss: () -> Unit) {
     val first = remember { FocusRequester() }
+    val wrap = rememberWrap()
     // Holding OK repeats its key-down and then lifts it in here: only a fresh press may choose.
     var armed by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
@@ -79,7 +80,8 @@ private fun OptionsList(title: String, options: List<Pair<String, () -> Unit>>, 
                 .onPreviewKeyEvent {
                     if (it.type == KeyEventType.KeyDown && it.nativeKeyEvent.repeatCount == 0) armed = true
                     false
-                },
+                }
+                .wrapColumn(onTop = { wrap.focus { options.lastIndex } }, onBottom = { wrap.focus { 0 } }),
         ) {
             Text(title, fontSize = 20.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(bottom = 10.dp))
             options.forEachIndexed { i, (label, action) ->
@@ -91,7 +93,7 @@ private fun OptionsList(title: String, options: List<Pair<String, () -> Unit>>, 
                             action()
                         }
                     },
-                    modifier = if (i == 0) Modifier.focusRequester(first) else Modifier,
+                    modifier = (if (i == 0) Modifier.focusRequester(first) else Modifier).then(wrap.at(i)),
                     headlineContent = { Text(label, maxLines = 1) },
                 )
             }

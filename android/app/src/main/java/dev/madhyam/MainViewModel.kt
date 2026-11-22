@@ -479,6 +479,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** The rail is about to move the focus into Live TV: the channel list must not take it. */
     var skipChannelFocus = false
 
+    /** OK on a menu entry is moving the focus into its page (not a D-pad Right). */
+    var enteringPage = false
+
     /** Home's banner opened a details page: the focus comes back to its Details button. */
     var heroDetailsOpened = false
 
@@ -621,6 +624,30 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             } finally {
                 loadingMore = false
             }
+        }
+    }
+
+    /** Every row of the current list is loaded. */
+    val allLoaded: Boolean get() = loadedRows >= total
+
+    /** Load the rest of the current list in one go (wrap-around from the top to the very end). */
+    suspend fun loadAll() {
+        val src = source ?: return
+        val kind = section.kind ?: return
+        while (loadingMore) delay(20)
+        if (loadedRows >= total) return
+        loadingMore = true
+        try {
+            val hidden = if (group == null) settings.hidden(src.id, kindKey!!) + lockedCategoryNames() else emptySet()
+            val page = repo.query(src.id, kind, group, hidden, sort, loadedRows, total - loadedRows, groupField, minRating)
+            loadedRows += page.items.size
+            items = items + page.items.filterNot { itemLocked(it) }
+            // Only the end shows: guide data for it alone, not for tens of thousands of channels.
+            val end = page.items.takeLast(PAGE)
+            fetchNowNext(end)
+            if (guideOpen) guideData = guideData + repo.guide(end.filter { it.isLive }.map { it.id }, guideFrom, guideTo)
+        } finally {
+            loadingMore = false
         }
     }
 
