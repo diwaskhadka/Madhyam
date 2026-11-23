@@ -22,6 +22,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -34,24 +37,40 @@ import kotlinx.coroutines.delay
 
 /**
  * The online page of the Subtitles panel: OpenSubtitles results for the playing film or episode,
- * by popularity; OK downloads the file and adds it to the stream's subtitles. The query can be
- * edited and searched again. [armed]: a key went down in the panel (ignore the opening OK's key-up).
+ * by popularity; OK downloads the file and adds it to the stream's subtitles. The title can be
+ * edited and searched again: Up from the first result reaches it, and an empty search lands on it. [armed]: a key went down in the panel (ignore the opening OK's key-up).
  */
 @Composable
 fun SubtitleSearchPage(vm: MainViewModel, armed: () -> Boolean) {
     var query by remember { mutableStateOf(vm.subtitleQuery) }
     val first = remember { FocusRequester() }
+    val field = remember { FocusRequester() }
     val results = vm.subtitleResults.orEmpty()
-    LaunchedEffect(results.isNotEmpty()) {
-        if (results.isNotEmpty()) {
-            delay(80)
-            runCatching { first.requestFocus() }
-        }
+    val wrap = rememberWrap()
+    val list = rememberLazyListState()
+    // Results: the focus goes to the best one. None (or an error): to the title, to fix it.
+    LaunchedEffect(results.isNotEmpty(), vm.subtitleSearching) {
+        if (vm.subtitleSearching) return@LaunchedEffect
+        delay(80)
+        runCatching { (if (results.isNotEmpty()) first else field).requestFocus() }
     }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Find subtitles online", fontSize = 22.sp)
-        Text("From opensubtitles.com · languages: ${vm.settings.osLanguages.ifBlank { "any" }} · Back returns to the list", color = Muted, fontSize = 12.sp)
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            "From opensubtitles.com · languages: ${vm.settings.osLanguages.ifBlank { "any" }} · " +
+                "Up from the first result edits the title · Back returns to the list",
+            color = Muted, fontSize = 12.sp,
+        )
+        // The title and Search are the top of the column: Up from them wraps to the last result.
+        Row(
+            Modifier.onPreviewKeyEvent { ev ->
+                if (ev.type == KeyEventType.KeyDown && ev.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP && results.isNotEmpty()) {
+                    wrap.focus { results.lastIndex.also { list.scrollToItem(it) } }
+                    true
+                } else false
+            },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
@@ -59,7 +78,7 @@ fun SubtitleSearchPage(vm: MainViewModel, armed: () -> Boolean) {
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { vm.searchSubtitles(query) }),
-                modifier = Modifier.weight(1f).tvTextField(atStart = { query.isEmpty() }),
+                modifier = Modifier.weight(1f).focusRequester(field).tvTextField(atStart = { query.isEmpty() }),
             )
             Spacer(Modifier.width(10.dp))
             Button(onClick = { if (armed()) vm.searchSubtitles(query) }) { Text("Search") }
@@ -69,11 +88,9 @@ fun SubtitleSearchPage(vm: MainViewModel, armed: () -> Boolean) {
             vm.subtitleError != null -> Text(vm.subtitleError!!, color = ErrorRed, fontSize = 14.sp)
             results.isEmpty() -> Text("No subtitles found. Try a shorter title.", color = Muted, fontSize = 14.sp)
         }
-        val wrap = rememberWrap()
-        val list = rememberLazyListState()
         LazyColumn(
             Modifier.heightIn(max = 380.dp).wrapColumn(
-                onTop = { wrap.focus { results.lastIndex.also { if (it >= 0) list.scrollToItem(it) } } },
+                onTop = { runCatching { field.requestFocus() } },
                 onBottom = { wrap.focus { if (results.isEmpty()) -1 else 0.also { list.scrollToItem(0) } } },
             ),
             state = list,

@@ -9,6 +9,9 @@ How to cut a release and how to add a platform: [docs/RELEASING.md](docs/RELEASI
 ## Unreleased
 
 ### Android TV
+- **Up next:** in the last 30 seconds of an episode a card shows the next one with a countdown; OK plays it now, Back hides the card, and it starts by itself when the episode ends. The options row also has a **Next episode** button.
+- **What the stream is, as in TiviMate:** beside the title the player shows the picture size, frame rate, HDR10 / HLG / Dolby Vision, the sound channels and the sound format (Dolby Digital, Atmos, DTS, AAC), each only when the stream reports it.
+- Find subtitles online: the title can be edited (Up from the first result, and an empty search lands on it), and the search no longer includes the provider's tag ("4K-OSN+ - Interstellar" searches "Interstellar").
 - **Search inside Live TV, Movies and Series:** the magnifier at the top of each section opens the search page for that section and the chosen category. Back returns to where you were.
 - Search is one full page: microphone, box and search history. Its gear chooses what the whole-app search looks in.
 - Back climbs one level at a time: content, categories, menu, then the exit question.

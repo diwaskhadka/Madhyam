@@ -1054,6 +1054,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** The episode after the playing one (the player's list is the whole series, in order), or null. */
+    val nextEpisode: Item?
+        get() = playback.current?.takeIf { it.isEpisode }?.let { playback.playlist.getOrNull(playback.index + 1) }
+
+    /** Up next / Next episode: keep the finished one's progress, then play the next from its resume point. */
+    fun playNextEpisode() {
+        val cur = playback.current ?: return
+        val next = nextEpisode ?: return
+        val pos = playback.positionMs
+        val dur = playback.durationMs
+        val list = playback.playlist
+        viewModelScope.launch {
+            if (dur > 0) repo.setProgress(cur.id, pos, dur)
+            val resume = if (settings.resumePlayback) repo.resumePositionMs(next.id) else 0L
+            season = next.season
+            playback.play(next, list, resume)
+            repo.recordPlay(next.id)
+            reloadDetailsProgress()
+        }
+    }
+
     fun saveProgress(item: Item? = playback.current) {
         if (item == null || item.isLive || item.isCatchup) return
         val pos = playback.positionMs
