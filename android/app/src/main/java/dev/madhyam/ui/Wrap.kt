@@ -44,11 +44,20 @@ class Wrap internal constructor(private val scope: CoroutineScope) {
             target = i
             withFrameNanos { }
             withFrameNanos { }
+            wrapMoving = true
             runCatching { requester.requestFocus() }
+            wrapMoving = false
             target = -1
         }
     }
 }
+
+/**
+ * True while any wrap-around moves the focus: a group's "enter" (the page you're on, the remembered
+ * row) must not redirect it.
+ */
+var wrapMoving = false
+    private set
 
 @Composable
 fun rememberWrap(): Wrap {

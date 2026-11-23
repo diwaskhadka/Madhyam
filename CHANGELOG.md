@@ -14,7 +14,10 @@ How to cut a release and how to add a platform: [docs/RELEASING.md](docs/RELEASI
 - Back climbs one level at a time: content, categories, menu, then the exit question.
 - Choosing a category narrows the category column to a slim strip, as the menu does, so the channels or posters get the room. Left from the left edge opens it again.
 - **Subtitles in one panel:** the player's Subtitles button lists Off and every track, then Find online (results open in the same panel), Delay and Style. The separate Find subtitles and Subtitle delay buttons are gone.
-- **D-pad Left and Right go to the item beside the focused one** on every page: Right from a category reaches Continue watching directly.
+- **Left and Right land where you expect, as in TiviMate:** Left into the menu lands on the page you're on, Left into the categories on the selected one, and Right from a category on the item you were last on, else the first (Continue watching when it shows), never on Search. Inside a row Left and Right go to the item beside.
+- **Select multiple:** hold OK › Select multiple, then OK ticks channels, films, series or episodes; hold OK again to add them all to favorites, mark them watched or not watched, or remove them from Recent. Back stops selecting.
+- Live TV: five-digit channel numbers are no longer cut off.
+- The app opens with the focus on the page, so the first key press is no longer lost; Add a playlist opens on its first field, and Down from the last field goes to Add playlist.
 - **Lists wrap around:** Up on the first item goes to the last and Down on the last goes to the first, in the menu, categories, channels, poster grids, Home, Favorites, Recent, Settings, the TV guide and pop-up lists.
 - Leaving the app while it is still loading no longer loses recent favorites, resume points and history.
 - Back from the player or TV guide returns to the channel you were on, and focus no longer jumps to the wrong button on Home and on film and series pages.

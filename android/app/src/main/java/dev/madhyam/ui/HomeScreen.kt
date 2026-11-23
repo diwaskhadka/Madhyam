@@ -222,7 +222,7 @@ internal fun ChannelRow(vm: MainViewModel, title: String, list: List<Item>) {
             items(list, key = { it.id }) { ch ->
                 Column(Modifier.width(196.dp)) {
                     Surface(
-                        onClick = { vm.watchChannel(ch, list) },
+                        onClick = { vm.pick(ch) { vm.watchChannel(ch, list) } },
                         onLongClick = { vm.showOptions(ch) },
                         modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
                         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
@@ -233,6 +233,7 @@ internal fun ChannelRow(vm: MainViewModel, title: String, list: List<Item>) {
                         Box(Modifier.fillMaxSize().padding(14.dp), contentAlignment = Alignment.Center) {
                             Logo(ch, 120.dp, 64.dp, strip)
                         }
+                        Box(Modifier.fillMaxSize()) { SelectedOverlay(vm, ch) }
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(ch.displayName(strip), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)

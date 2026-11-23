@@ -30,6 +30,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -102,7 +103,8 @@ fun LiveScreen(vm: MainViewModel) {
     ) {
         // Coming in from the side lands in the channels, not on the button at the same height.
         val channels = remember { FocusRequester() }
-        Row(Modifier.fillMaxSize().sectionContent(vm) { vm.channelEntry ?: FocusRequester.Default }) {
+        // From the categories: the playing channel, else the last one focused, else the first.
+        Row(Modifier.fillMaxSize().sectionContent(vm) { vm.channelEntry ?: if (!vm.lockedGroup && vm.items.isNotEmpty()) channels else FocusRequester.Default }) {
             // On the preview the channels shrink to their logos and the picture gets the room.
             ChannelList(vm, now, channels, if (vm.previewFocused) Modifier.width(88.dp) else Modifier.weight(1f))
             InfoPane(vm, now, if (vm.previewFocused) Modifier.weight(1f) else Modifier.width(380.dp))
@@ -118,7 +120,11 @@ fun LiveScreen(vm: MainViewModel) {
 @kotlin.OptIn(ExperimentalComposeUiApi::class)
 fun Modifier.sectionContent(vm: MainViewModel, entry: () -> FocusRequester = { FocusRequester.Default }): Modifier = this
     .focusProperties {
-        enter = { entry() }
+        // Left/Right from the categories land on the content's own first or remembered item (as
+        // TiviMate does), never on a header button at the same height. Up/Down: the nearest.
+        enter = { direction ->
+            if (!wrapMoving && (direction == FocusDirection.Right || direction == FocusDirection.Left)) entry() else FocusRequester.Default
+        }
         exit = { direction ->
             if (direction == FocusDirection.Left && !vm.categoriesOpen) {
                 vm.openCategories()
@@ -349,7 +355,11 @@ private fun ChannelList(vm: MainViewModel, now: Long, channels: FocusRequester, 
             return@Column
         }
         // Coming to this list puts the focus on the playing channel, else the last one focused
-        // (back from the player or the guide), else the first; not on the rail.
+        // (back from the player or the guide), else the first; not on the rail. Once per visit:
+        // moving through the categories must not pull the focus into each list they open.
+        var focusedOnce by remember { mutableStateOf(false) }
+        // Each category is a list of its own: its scroll and its remembered row start fresh.
+        key(vm.group) {
         val start = remember { FocusRequester() }
         val startIndex = remember {
             val id = vm.playback.current?.id ?: vm.focused?.id
@@ -358,6 +368,8 @@ private fun ChannelList(vm: MainViewModel, now: Long, channels: FocusRequester, 
         val listState = rememberLazyListState(initialFirstVisibleItemIndex = startIndex)
         listRef = listState
         LaunchedEffect(Unit) {
+            if (focusedOnce) return@LaunchedEffect
+            focusedOnce = true
             // Not when the rail is moving in (it lands on the categories).
             if (vm.skipChannelFocus) {
                 vm.skipChannelFocus = false
@@ -394,6 +406,7 @@ private fun ChannelList(vm: MainViewModel, now: Long, channels: FocusRequester, 
                 )
             }
         }
+        }
     }
 }
 
@@ -404,7 +417,7 @@ private fun ChannelRow(modifier: Modifier, vm: MainViewModel, number: Int, item:
     var focused by remember { mutableStateOf(false) }
     DenseListItem(
         selected = playing,
-        onClick = { vm.open(item) },
+        onClick = { vm.pick(item) { vm.open(item) } },
         onLongClick = { vm.showOptions(item) },
         modifier = modifier.height(if (nn?.now != null && !compact) 58.dp else 46.dp).onFocusChanged {
             focused = it.isFocused
@@ -412,8 +425,11 @@ private fun ChannelRow(modifier: Modifier, vm: MainViewModel, number: Int, item:
         },
         leadingContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                if (vm.isSelected(item)) SelectedMark(Modifier.padding(end = 8.dp))
                 if (vm.settings.showNumbers && !compact) {
-                    Text("$number", color = RowMuted, fontSize = 12.sp, modifier = Modifier.width(34.dp))
+                    // Wide enough for the list's longest number (53,154 channels: five digits).
+                    val digits = maxOf(vm.total, number).toString().length
+                    Text("$number", color = RowMuted, fontSize = 12.sp, maxLines = 1, softWrap = false, modifier = Modifier.width(maxOf(34, digits * 8 + 4).dp))
                 }
                 if (compact) Logo(item, 40.dp, 26.dp, strip) else Logo(item, 44.dp, 28.dp, strip)
             }

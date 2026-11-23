@@ -103,6 +103,16 @@ fun MainShell(vm: MainViewModel) {
     // Elsewhere Back climbs one level at a time: content, categories, this rail, then here.
     BackHandler { if (railFocused) askExit = true else runCatching { railFocus.requestFocus() } }
 
+    // At start-up nothing has the focus yet, so the first key press would be spent finding one:
+    // once the page is up, put the focus where coming in from the menu would.
+    val pageFocus = remember { FocusRequester() }
+    var pageFocused by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.withTimeoutOrNull(8000) { snapshotFlow { vm.sectionLoading }.first { !it } }
+        delay(400)
+        if (!pageFocused && !railFocused && !vm.searchOpen && !pickPlaylist && !askExit) runCatching { pageFocus.requestFocus() }
+    }
+
     LaunchedEffect(vm.message) {
         if (vm.message != null) {
             delay(5000)
@@ -116,7 +126,10 @@ fun MainShell(vm: MainViewModel) {
         val railOpen = androidx.compose.animation.core.animateFloatAsState(if (railFocused) 1f else 0f, PanelMotion, label = "page")
         Box(
             Modifier.fillMaxSize().padding(start = RailCollapsed)
-                .graphicsLayer { translationX = railOpen.value * (RailExpanded - RailCollapsed).toPx() },
+                .graphicsLayer { translationX = railOpen.value * (RailExpanded - RailCollapsed).toPx() }
+                .onFocusChanged { pageFocused = it.hasFocus }
+                .focusRequester(pageFocus)
+                .focusGroup(),
         ) {
             CompositionLocalProvider(LocalRailFocus provides railFocus) {
             when {
@@ -129,6 +142,20 @@ fun MainShell(vm: MainViewModel) {
             }
         }
         Rail(vm, railFocus, onFocus = { railFocused = it }, expanded = railFocused, onPlaylists = { pickPlaylist = true })
+
+        // Select multiple: how many are ticked and what the keys do.
+        if (vm.selecting) {
+            Box(
+                Modifier.align(androidx.compose.ui.Alignment.BottomCenter).padding(bottom = 24.dp)
+                    .background(Accent, RoundedCornerShape(24.dp))
+                    .padding(horizontal = 22.dp, vertical = 10.dp),
+            ) {
+                Text(
+                    "${vm.selectedCount} selected  ·  OK ticks  ·  hold OK for actions  ·  Back stops",
+                    color = androidx.compose.ui.graphics.Color.White, fontSize = 15.sp,
+                )
+            }
+        }
 
         // Status line (busy / messages), bottom right, over everything.
         val status = vm.busy ?: vm.message
@@ -149,6 +176,8 @@ fun MainShell(vm: MainViewModel) {
     if (vm.searchOpen && vm.details == null) SearchPage(vm)
     // After the search page, so its window opens on top of that one.
     OptionsDialog(vm)
+    // Last, so it runs before every other Back while items are being ticked.
+    BackHandler(enabled = vm.selecting) { vm.stopSelecting() }
 }
 
 /** "Exit Madhyam?" with Cancel focused, so a Back pressed once too often changes nothing. */
@@ -190,6 +219,8 @@ private fun Rail(vm: MainViewModel, selected: FocusRequester, onFocus: (Boolean)
             .fillMaxHeight()
             .background(if (expanded) Panel else Background)
             .onFocusChanged { onFocus(it.hasFocus) }
+            // Coming in from the side lands on the page you're on (as TiviMate does).
+            .focusProperties { enter = { if (wrapMoving) FocusRequester.Default else selected } }
             // Up from the top entry goes to the bottom one and back.
             .wrapColumn(onTop = { wrap.focus { 1 } }, onBottom = { wrap.focus { 0 } })
             .padding(horizontal = 10.dp, vertical = 14.dp),

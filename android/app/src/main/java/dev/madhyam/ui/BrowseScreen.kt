@@ -220,12 +220,13 @@ private fun ItemRow(vm: MainViewModel, item: Item, now: Long, strip: Boolean, mo
     val nn = vm.nowNext[item.id]
     ListItem(
         selected = false,
-        onClick = { vm.open(item) },
+        onClick = { vm.pick(item) { vm.open(item) } },
         onLongClick = { vm.showOptions(item) },
         modifier = modifier.onFocusChanged { if (it.isFocused) onFocused() },
         leadingContent = { if (item.isLive) Logo(item, 64.dp, 40.dp, strip) else Logo(item, 44.dp, 64.dp) },
         headlineContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                if (vm.isSelected(item)) SelectedMark(Modifier.padding(end = 8.dp))
                 Text(item.displayName(strip), maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 if (vm.isFavorite(item)) Icon(Icons.Filled.Star, null, tint = Color(0xFFFFC94D), modifier = Modifier.padding(start = 6.dp).size(14.dp))
             }

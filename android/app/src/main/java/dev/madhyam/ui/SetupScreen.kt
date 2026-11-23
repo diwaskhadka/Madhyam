@@ -1,7 +1,9 @@
 package dev.madhyam.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,12 +13,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -25,8 +32,10 @@ import androidx.tv.material3.OutlinedButton
 import androidx.tv.material3.Text
 import dev.madhyam.Brand
 import dev.madhyam.MainViewModel
+import kotlinx.coroutines.delay
 
 /** Add a playlist: Xtream Codes login, M3U URL, or the Free TV channels. */
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun SetupScreen(vm: MainViewModel) {
     var xtream by rememberSaveable { mutableStateOf(true) }
@@ -37,6 +46,13 @@ fun SetupScreen(vm: MainViewModel) {
     var pass by remember { mutableStateOf("") } // never saved to instance state
 
     BackHandler(enabled = vm.sources.isNotEmpty()) { vm.cancelSetup() }
+    // The page opens with the focus on its first field; Down from the last field goes to Add playlist.
+    val firstField = remember { FocusRequester() }
+    val addButton = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        delay(150)
+        runCatching { firstField.requestFocus() }
+    }
 
     Column(
         Modifier.fillMaxSize().padding(horizontal = 96.dp, vertical = 48.dp).verticalScroll(rememberScrollState()),
@@ -57,19 +73,26 @@ fun SetupScreen(vm: MainViewModel) {
             }
         }
 
-        Field("Name (optional)", name) { name = it }
-        if (xtream) {
-            Field("Server, e.g. http://example.com:8080", server, KeyboardType.Uri) { server = it }
-            Field("Username", user) { user = it }
-            Field("Password", pass, KeyboardType.Password, secret = true) { pass = it }
-        } else {
-            Field("Playlist URL (http://… .m3u)", url, KeyboardType.Uri) { url = it }
+        val canAdd = vm.busy == null && if (xtream) server.isNotBlank() && user.isNotBlank() else url.isNotBlank()
+        Box(Modifier.focusRequester(firstField).focusGroup()) { Field("Name (optional)", name) { name = it } }
+        Box(
+            Modifier.focusProperties { exit = { if (it == FocusDirection.Down && canAdd) addButton else FocusRequester.Default } }.focusGroup(),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                if (xtream) {
+                    Field("Server, e.g. http://example.com:8080", server, KeyboardType.Uri) { server = it }
+                    Field("Username", user) { user = it }
+                    Field("Password", pass, KeyboardType.Password, secret = true) { pass = it }
+                } else {
+                    Field("Playlist URL (http://… .m3u)", url, KeyboardType.Uri) { url = it }
+                }
+            }
         }
 
-        val canAdd = vm.busy == null && if (xtream) server.isNotBlank() && user.isNotBlank() else url.isNotBlank()
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Button(
                 enabled = canAdd,
+                modifier = Modifier.focusRequester(addButton),
                 onClick = { if (xtream) vm.addXtream(name, server, user, pass) else vm.addM3u(name, url) },
             ) { Text("Add playlist") }
             if (vm.sources.isNotEmpty()) {

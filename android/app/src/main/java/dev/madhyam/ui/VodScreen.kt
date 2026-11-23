@@ -1,5 +1,9 @@
 package dev.madhyam.ui
 
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
@@ -29,6 +33,9 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -101,7 +108,10 @@ fun VodScreen(vm: MainViewModel) {
             }
             return@SectionLayout
         }
-        Box(Modifier.fillMaxSize().sectionContent(vm)) {
+        // Left/Right from the categories land here (see entryIndex below).
+        val entry = remember { FocusRequester() }
+        var entryReady by remember { mutableStateOf(false) }
+        Box(Modifier.fillMaxSize().sectionContent(vm) { if (entryReady) entry else FocusRequester.Default }) {
         key(vm.section, vm.group, vm.settings.vodSort, vm.settings.vodMinRating) {
             val headerRows = if (vm.continueItems.isNotEmpty() && vm.group == null) 2 else 1
             val openedIndex = vm.items.indexOfFirst { it.id == vm.lastOpenedId }
@@ -113,6 +123,25 @@ fun VodScreen(vm: MainViewModel) {
             val sortButton = remember { FocusRequester() }
             val ratingButton = remember { FocusRequester() }
             val wrap = rememberWrap()
+            // Coming from the categories (as TiviMate does): the poster last focused in this list if
+            // it's on screen, else Continue watching, else the first poster on screen.
+            var lastFocused by remember { mutableIntStateOf(-1) }
+            val entryIndex by remember {
+                derivedStateOf {
+                    val visible = state.layoutInfo.visibleItemsInfo.map { it.index }
+                    when {
+                        lastFocused >= 0 && lastFocused in visible -> lastFocused
+                        headerRows == 2 && 1 in visible -> 1
+                        else -> visible.firstOrNull { it >= headerRows } ?: -1
+                    }
+                }
+            }
+            // Read here, in composition, so the flag follows the list as it lays out (a yes/no
+            // state: scrolling doesn't recompose the grid for it).
+            val ready by remember { derivedStateOf { entryIndex >= 0 } }
+            val readyNow = ready // read in composition (not only inside the effect), so it updates
+            SideEffect { entryReady = readyNow }
+            fun entryAt(index: Int): Modifier = if (index == entryIndex) Modifier.focusRequester(entry) else Modifier
             LaunchedEffect(Unit) {
                 val target = refocus ?: return@LaunchedEffect
                 refocus = null
@@ -160,14 +189,17 @@ fun VodScreen(vm: MainViewModel) {
                     GridHeader(vm, sortButton, ratingButton, onSort = { dialog = "sort" }, onRating = { dialog = "rating" })
                 }
                 if (headerRows == 2) {
-                    item(span = { GridItemSpan(maxLineSpan) }, key = "\u0000continue") { ContinueRow(vm, wrap.at(1)) }
+                    item(span = { GridItemSpan(maxLineSpan) }, key = "\u0000continue") { ContinueRow(vm, wrap.at(1).then(entryAt(1)).onFocusChanged { if (it.hasFocus) lastFocused = 1 }) }
                 }
                 itemsIndexed(vm.items, key = { _, it -> it.id }) { i, item ->
                     PosterCard(
                         vm,
                         item,
-                        modifier = (if (i == focusIndex) Modifier.focusRequester(back) else Modifier).then(wrap.at(headerRows + i)),
-                        onFocused = { if (i > vm.items.size - 30) vm.loadMore() },
+                        modifier = (if (i == focusIndex) Modifier.focusRequester(back) else Modifier).then(wrap.at(headerRows + i)).then(entryAt(headerRows + i)),
+                        onFocused = {
+                            lastFocused = headerRows + i
+                            if (i > vm.items.size - 30) vm.loadMore()
+                        },
                     )
                 }
             }
@@ -210,15 +242,24 @@ private fun GridHeader(vm: MainViewModel, sortButton: FocusRequester, ratingButt
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun ContinueRow(vm: MainViewModel, modifier: Modifier = Modifier) {
+    // Left on the first card goes back to the categories, not down to the poster a little to its left.
+    var first by remember { mutableStateOf(false) }
     Column(modifier.focusGroup()) {
         Text("Continue watching", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(bottom = 8.dp))
         LazyRow(
-            Modifier.focusRestorer(),
+            Modifier.focusRestorer().onPreviewKeyEvent {
+                if (first && it.type == KeyEventType.KeyDown && it.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT) {
+                    vm.openCategories()
+                    true
+                } else {
+                    false
+                }
+            },
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             contentPadding = PaddingValues(vertical = 8.dp, horizontal = 4.dp),
         ) {
-            items(vm.continueItems, key = { it.id }) { item ->
-                PosterCard(vm, item, width = 116.dp, onClick = { vm.resume(item) })
+            itemsIndexed(vm.continueItems, key = { _, it -> it.id }) { i, item ->
+                PosterCard(vm, item, Modifier.onFocusChanged { f -> if (f.isFocused || f.hasFocus) first = i == 0 }, width = 116.dp, onClick = { vm.resume(item) })
             }
         }
     }
@@ -237,7 +278,7 @@ fun PosterCard(
     var focused by remember { mutableStateOf(false) }
     Column(if (width != null) modifier.width(width) else modifier.fillMaxWidth()) {
         Surface(
-            onClick = onClick,
+            onClick = { vm.pick(item, onClick) },
             onLongClick = { vm.showOptions(item) },
             modifier = Modifier
                 .fillMaxWidth()
@@ -255,6 +296,7 @@ fun PosterCard(
         ) {
             Box(Modifier.fillMaxSize()) {
                 Poster(item.logo, item.name, Modifier.fillMaxSize(), small = true)
+                SelectedOverlay(vm, item)
                 item.ratingLabel?.let {
                     Badge("★ $it", Modifier.align(Alignment.TopEnd).padding(6.dp))
                 }
@@ -335,6 +377,22 @@ fun WatchedMark(modifier: Modifier = Modifier) {
     Box(modifier.size(24.dp).clip(RoundedCornerShape(12.dp)).background(Accent), contentAlignment = Alignment.Center) {
         Icon(Icons.Filled.Check, contentDescription = "Watched", tint = Color.White, modifier = Modifier.size(16.dp))
     }
+}
+
+/** The tick on an item chosen with Select multiple (hold OK). */
+@Composable
+fun SelectedMark(modifier: Modifier = Modifier) {
+    Box(modifier.size(28.dp).clip(RoundedCornerShape(14.dp)).background(Color.White), contentAlignment = Alignment.Center) {
+        Icon(Icons.Filled.Check, contentDescription = "Selected", tint = Accent, modifier = Modifier.size(20.dp))
+    }
+}
+
+/** A selected item's picture: tinted, with the tick on it. */
+@Composable
+fun androidx.compose.foundation.layout.BoxScope.SelectedOverlay(vm: MainViewModel, item: Item) {
+    if (!vm.isSelected(item)) return
+    Box(Modifier.matchParentSize().background(Accent.copy(alpha = 0.35f)))
+    SelectedMark(Modifier.align(Alignment.Center))
 }
 
 /** A list of choices in a dialog; the current one is highlighted and gets the focus. */

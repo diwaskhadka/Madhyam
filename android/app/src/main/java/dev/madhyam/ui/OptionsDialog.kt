@@ -35,6 +35,7 @@ fun OptionsDialog(vm: MainViewModel) {
     val item = vm.optionsItem
     val category = vm.optionsCategory
     when {
+        item != null && vm.selecting -> OptionsList("${vm.selectedCount} selected", selectionOptions(vm, item), vm::closeOptions)
         item != null -> OptionsList(item.displayName(vm.settings.stripPrefixes), itemOptions(vm, item), vm::closeOptions)
         category != null -> OptionsList(category.name, categoryOptions(vm, category), vm::closeOptions)
     }
@@ -55,6 +56,23 @@ private fun itemOptions(vm: MainViewModel, item: Item): List<Pair<String, () -> 
         add((if (item.isWatched) "Mark as not watched" else "Mark as watched") to { vm.toggleWatched(item) })
     }
     if (vm.section == Section.Recent && !vm.searchOpen) add("Remove from Recent" to { vm.removeFromHistory(item) })
+    add("Select multiple" to { vm.startSelecting(item) })
+}
+
+/** While selecting: one action for every ticked item. */
+private fun selectionOptions(vm: MainViewModel, item: Item): List<Pair<String, () -> Unit>> = buildList {
+    val picked = vm.selectedItems
+    val n = picked.size
+    add((if (vm.isSelected(item)) "Untick this one" else "Tick this one") to { vm.toggleSelected(item) })
+    if (n > 0) {
+        if (picked.any { !vm.isFavorite(it) }) add("Add $n to favorites" to { vm.favoriteSelected(true) })
+        if (picked.any { vm.isFavorite(it) }) add("Remove $n from favorites" to { vm.favoriteSelected(false) })
+        val watchable = picked.filter { it.kind == "movie" || it.isEpisode }
+        if (watchable.any { !it.isWatched }) add("Mark ${watchable.size} as watched" to { vm.markSelectedWatched(true) })
+        if (watchable.any { it.isWatched }) add("Mark ${watchable.size} as not watched" to { vm.markSelectedWatched(false) })
+        if (vm.section == Section.Recent && !vm.searchOpen) add("Remove $n from Recent" to { vm.removeSelectedFromHistory() })
+    }
+    add("Stop selecting" to { vm.stopSelecting() })
 }
 
 private fun categoryOptions(vm: MainViewModel, c: Category): List<Pair<String, () -> Unit>> = buildList {

@@ -404,6 +404,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val groupField: String? get() = if (section == Section.Live && liveGroupBy == "country") FreeTv.COUNTRY_FIELD else null
 
     fun selectSection(s: Section) {
+        stopSelecting() // a selection belongs to the page it was made on
         if (s == Section.Settings && section != Section.Settings && settings.parentalLockSettings && parentalActive && !unlocked) {
             withPin("Enter the PIN to open Settings") { selectSection(s) }
             return
@@ -908,6 +909,66 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun closeOptions() {
         optionsItem = null
         optionsCategory = null
+    }
+
+    // ------------------------------------------------------------ select multiple (hold OK)
+
+    /** Ticking several items, then one action for all of them (hold OK › Select multiple). */
+    var selecting by mutableStateOf(false)
+        private set
+    private var picked by mutableStateOf<Map<String, Item>>(emptyMap())
+    val selectedCount get() = picked.size
+    val selectedItems: List<Item> get() = picked.values.toList()
+
+    fun isSelected(item: Item) = selecting && item.id in picked
+
+    fun startSelecting(item: Item) {
+        picked = mapOf(item.id to item)
+        selecting = true
+    }
+
+    fun toggleSelected(item: Item) {
+        picked = if (item.id in picked) picked - item.id else picked + (item.id to item)
+    }
+
+    fun stopSelecting() {
+        selecting = false
+        picked = emptyMap()
+    }
+
+    /** OK on an item: ticks or unticks it while selecting, else [action]. */
+    fun pick(item: Item, action: () -> Unit) {
+        if (selecting) toggleSelected(item) else action()
+    }
+
+    private fun count(n: Int, one: String) = if (n == 1) "1 $one" else "$n ${one}s"
+
+    fun favoriteSelected(on: Boolean) {
+        val list = selectedItems.filter { (it.id in favorites) != on }
+        stopSelecting()
+        viewModelScope.launch {
+            list.forEach { repo.setFavorite(it.id, on) }
+            favorites = if (on) favorites + list.map { it.id } else favorites - list.map { it.id }.toSet()
+            if (section == Section.Favorites) setItems(repo.favorites())
+            message = if (on) "Added ${count(list.size, "item")} to favorites" else "Removed ${count(list.size, "item")} from favorites"
+        }
+    }
+
+    fun markSelectedWatched(watched: Boolean) {
+        val list = selectedItems.filter { it.kind == "movie" || it.isEpisode }
+        stopSelecting()
+        setWatched(list, watched)
+        message = "Marked ${count(list.size, "item")} as ${if (watched) "watched" else "not watched"}"
+    }
+
+    fun removeSelectedFromHistory() {
+        val list = selectedItems
+        stopSelecting()
+        viewModelScope.launch {
+            list.forEach { repo.removeFromHistory(it.id) }
+            if (section == Section.Recent) setItems(byPageKind(repo.recent()))
+            message = "Removed ${count(list.size, "item")} from Recent"
+        }
     }
 
     fun watchFromOptions(item: Item) {

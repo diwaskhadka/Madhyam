@@ -272,7 +272,7 @@ private fun EpisodeCard(vm: MainViewModel, series: Item, ep: Item) {
     LaunchedEffect(focused) { if (focused) whole.bringIntoView() }
     Column(Modifier.width(240.dp).bringIntoViewRequester(whole).padding(bottom = 16.dp)) {
         Surface(
-            onClick = { vm.playEpisode(ep) },
+            onClick = { vm.pick(ep) { vm.playEpisode(ep) } },
             onLongClick = { vm.showOptions(ep) },
             modifier = Modifier.fillMaxWidth().size(240.dp, 135.dp).onFocusChanged { focused = it.isFocused },
             shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
@@ -287,6 +287,7 @@ private fun EpisodeCard(vm: MainViewModel, series: Item, ep: Item) {
                 Badge("E${ep.episode ?: "?"}", Modifier.align(Alignment.TopStart).padding(7.dp))
                 if (ep.durationHint > 0) Badge(DetailsInfo.clock(ep.durationHint), Modifier.align(Alignment.BottomEnd).padding(start = 7.dp, end = 7.dp, bottom = 12.dp))
                 if (ep.isWatched) WatchedMark(Modifier.align(Alignment.TopEnd).padding(7.dp))
+                SelectedOverlay(vm, ep)
                 if (ep.isStarted) ProgressBar(ep.watchedRatio, Modifier.align(Alignment.BottomCenter).padding(horizontal = 8.dp, vertical = 3.dp))
             }
         }
