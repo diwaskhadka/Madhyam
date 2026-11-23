@@ -6,7 +6,9 @@ so. The engine (`crates/madhyam-core`) keeps its own version, given in each sect
 
 How to cut a release and how to add a platform: [docs/RELEASING.md](docs/RELEASING.md).
 
-## Unreleased
+## 1.1.1
+
+Parental controls, subtitle style like YouTube's and Buy me a coffee on every platform. Adding a playlist shows each step and how many live channels, movies and series it brought, and confirmations use the app's own look. Android TV starts in about 5 s, stops streams you leave and needs half the memory, moves like TiviMate, offers Up next for episodes and shows what the stream is (4K, HDR, Atmos); Windows full screen is black edge to edge; Linux plays trailers in the app.
 
 ### Android TV
 - **Up next:** in the last 30 seconds of an episode a card shows the next one with a countdown; OK plays it now, Back hides the card, and it starts by itself when the episode ends. The options row also has a **Next episode** button.
@@ -30,12 +32,6 @@ How to cut a release and how to add a platform: [docs/RELEASING.md](docs/RELEASI
 - On the Live TV preview, the channels shrink to their logos and the picture gets the room.
 - The menu and the category column slide open and push the page aside, instead of dimming it and rearranging the posters.
 - OK on a section in the menu goes straight in: the previous section's list no longer flashes in the new page, and the menu closes once the page is ready.
-
-## 1.1.1
-
-Parental controls, subtitle style like YouTube's and Buy me a coffee on every platform. Adding a playlist shows each step and how many live channels, movies and series it brought, and confirmations use the app's own look. Android TV starts in about 5 s, stops streams you leave and needs half the memory; Windows full screen is black edge to edge; Linux plays trailers in the app.
-
-### Android TV
 - **Parental controls** (Settings › Parental controls): a 4-digit PIN; lock any category of any playlist; adult categories and channels are locked automatically (you can unlock one); an age limit for films and series; Settings can be locked too. Locked items are left out of Search, Home and the "All" lists, and zapping passes over them. Once entered, the PIN stays for the session or 10 idle minutes; the open lock in the menu locks again. Forgot the PIN? Reset parental controls after typing RESET.
 - **Buy me a coffee:** Settings › About shows a QR code to scan with your phone.
 - **Subtitle style** (Settings › Playback, or Subtitles › Subtitle style… while watching): size in points, font, text, background and window colours and opacity, edge style and position, with a live preview. It applies to every kind of subtitle.
