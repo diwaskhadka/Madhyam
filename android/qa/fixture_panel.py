@@ -75,10 +75,11 @@ def series_info(sid):
 def guide():
     def t(x):
         return time.strftime("%Y%m%d%H%M%S +0000", time.gmtime(x))
+    now = int(time.time())  # around the time of the request, so a panel left running still has a "now"
     rows = ['<?xml version="1.0" encoding="UTF-8"?>', "<tv>"]
     for i in range(1, 26):
         rows.append(f' <channel id="news{i}.qa"><display-name>News {i:02d}</display-name></channel>')
-        start = NOW - NOW % HOUR - HOUR
+        start = now - now % HOUR - HOUR
         for k in range(6):
             rows.append(f' <programme start="{t(start + k * HOUR)}" stop="{t(start + (k + 1) * HOUR)}" '
                         f'channel="news{i}.qa"><title>Show {i}.{k}</title></programme>')

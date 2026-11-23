@@ -22,7 +22,9 @@ checks the focused element's text against **Expect**; a person can walk the same
 1. Start the fixture panel: `py android/qa/fixture_panel.py` (port 8099).
 2. On the emulator, add the playlist: Settings › Playlists › Add playlist › Xtream Codes, name `QA`,
    server `http://10.0.2.2:8099`, user `qa`, password `qa`. Leave it the selected playlist.
-3. Run: `py android/qa/run_focus_tests.py` (all), or `py android/qa/run_focus_tests.py LV` (one group).
+3. If the guide cases (GD) show "No information", the app's copy of the guide is out of date:
+   Settings › Playlists › QA › Update guide.
+4. Run: `py android/qa/run_focus_tests.py` (all), or `py android/qa/run_focus_tests.py LV` (one group).
    On a TV with its own playlist: `DEV=<ip>:5555 py android/qa/run_focus_tests.py --record` saves
    the screenshots and what had the focus without judging names (they're the fixture's).
 
@@ -122,7 +124,7 @@ start: Series DOWN
 | SR3 | `OK WAIT` | * | the series page opens |
 | SR4 | `BACK WAIT` | Crime 01 | back on the poster that was opened |
 | SR5 | `LEFT` | Crime | Crime 01 is in the first column |
-| SR6 | `UP RIGHT` | !Search | All series: Continue watching or the first poster |
+| SR6 | `UP WAIT RIGHT` | !Search | All series: Continue watching or the first poster |
 | SR7 | `LEFT LEFT` | Series | |
 
 ## Select multiple

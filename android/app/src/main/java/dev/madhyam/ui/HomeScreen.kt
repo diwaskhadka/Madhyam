@@ -116,6 +116,9 @@ fun HomeScreen(vm: MainViewModel) {
 private fun Hero(vm: MainViewModel, item: Item?, focused: androidx.compose.runtime.MutableState<Boolean>) {
     val first = remember { FocusRequester() }
     val detailsButton = remember { FocusRequester() }
+    val rail = LocalRailFocus.current
+    // Left from the first button goes to the menu, not down into the Continue watching row.
+    val firstButton = Modifier.focusRequester(first).focusProperties { left = rail }
     LaunchedEffect(item?.id) {
         if (focused.value && !vm.heroDetailsOpened) return@LaunchedEffect
         focused.value = true
@@ -158,14 +161,14 @@ private fun Hero(vm: MainViewModel, item: Item?, focused: androidx.compose.runti
                 }
                 Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (item != null) {
-                        HeroButton("Continue watching", Icons.Filled.PlayArrow, Modifier.focusRequester(first), primary = true) { vm.resume(item) }
+                        HeroButton("Continue watching", Icons.Filled.PlayArrow, firstButton, primary = true) { vm.resume(item) }
                         HeroButton("Details", Icons.Filled.Info, Modifier.focusRequester(detailsButton)) {
                             vm.heroDetailsOpened = true
                             val series = item.seriesId
                             if (item.isEpisode && series != null) vm.openSeriesOf(item) else vm.showDetails(item)
                         }
                     } else {
-                        HeroButton("Live TV", Icons.Filled.LiveTv, Modifier.focusRequester(first), primary = true) { vm.selectSection(Section.Live) }
+                        HeroButton("Live TV", Icons.Filled.LiveTv, firstButton, primary = true) { vm.selectSection(Section.Live) }
                         HeroButton("Movies", Icons.Filled.Movie) { vm.selectSection(Section.Movies) }
                         HeroButton("Series", Icons.Filled.VideoLibrary) { vm.selectSection(Section.Series) }
                     }
