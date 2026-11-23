@@ -23,8 +23,18 @@ data class Palette(
     val dark: Boolean,
 )
 
-/** Dark theme, "Navy & Crimson": deep navy surfaces, crimson highlights (brand colours, branding/README.md). */
+/** Dark theme, "Charcoal": neutral, flat surfaces with the crimson highlight. */
 private val DarkPalette = Palette(
+    accent = Color(0xFFF2506B),
+    background = Color(0xFF121416),
+    panel = Color(0xFF1D2023),
+    muted = Color(0xFF9AA0A6),
+    text = Color(0xFFECEEF0),
+    dark = true,
+)
+
+/** "Navy & Crimson": deep navy surfaces, crimson highlights (brand colours, branding/README.md). */
+private val NavyPalette = Palette(
     accent = Color(0xFFF2506B),
     background = Color(0xFF0B1024),
     panel = Color(0xFF131C40),
@@ -68,7 +78,7 @@ val RowAccent: Color
 
 /**
  * TV Material for focusable widgets, plus the phone Material 3 theme because text fields only
- * exist there. [theme] is "Dark" (Navy & Crimson), "Light", "System" (follow the TV) or
+ * exist there. [theme] is "Dark" (Charcoal), "Navy", "Light", "System" (follow the TV) or
  * "Custom" (built from [customColor] on a dark or, with [customLight], a light base).
  */
 @Composable
@@ -80,6 +90,7 @@ fun MadhyamTheme(
 ) {
     val p = when (theme) {
         "Light" -> LightPalette
+        "Navy" -> NavyPalette
         "System" -> if (isSystemInDarkTheme()) DarkPalette else LightPalette
         "Custom" -> customPalette(customColor, customLight)
         else -> DarkPalette

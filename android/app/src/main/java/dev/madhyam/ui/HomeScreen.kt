@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -35,6 +36,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -69,20 +71,34 @@ fun HomeScreen(vm: MainViewModel) {
         return
     }
     val hero = h.continueWatching.firstOrNull()
+    val wrap = rememberWrap()
+    // The hero takes the focus once per visit, not each time it scrolls back into view.
+    val heroFocused = remember { mutableStateOf(false) }
+    val list = androidx.compose.foundation.lazy.rememberLazyListState()
     LazyColumn(
-        Modifier.fillMaxSize(),
+        Modifier.fillMaxSize().wrapColumn(
+            onTop = { wrap.focus { (list.layoutInfo.totalItemsCount - 1).also { if (it >= 0) list.scrollToItem(it) } } },
+            onBottom = { wrap.focus { list.scrollToItem(0); 0 } },
+        ),
+        state = list,
         contentPadding = PaddingValues(start = 28.dp, end = 28.dp, top = 20.dp, bottom = 40.dp),
         verticalArrangement = Arrangement.spacedBy(22.dp),
     ) {
-        if (st.dashHero) item { Hero(vm, hero) }
-        if (st.dashContinue && h.continueWatching.isNotEmpty()) {
-            item { PosterRow(vm, "Continue watching", h.continueWatching, resume = true) }
+        // Each row is a focus group the wrap-around can land in (by its place in the list).
+        var k = 0
+        fun row(content: @Composable () -> Unit) {
+            val idx = k++
+            item { Box(wrap.at(idx).focusGroup()) { content() } }
         }
-        if (st.dashLiveFavorites && h.favoriteLive.isNotEmpty()) item { ChannelRow(vm, "Favorite channels", h.favoriteLive) }
-        if (st.dashRecentLive && h.recentLive.isNotEmpty()) item { ChannelRow(vm, "Recently watched channels", h.recentLive) }
-        if (st.dashFavoriteVod && h.favoriteVod.isNotEmpty()) item { PosterRow(vm, "Favorite movies and series", h.favoriteVod) }
-        if (st.dashRecentlyAdded && h.addedMovies.isNotEmpty()) item { PosterRow(vm, "Recently added movies", h.addedMovies) }
-        if (st.dashRecentlyAdded && h.addedSeries.isNotEmpty()) item { PosterRow(vm, "Recently added series", h.addedSeries) }
+        if (st.dashHero) row { Hero(vm, hero, heroFocused) }
+        if (st.dashContinue && h.continueWatching.isNotEmpty()) {
+            row { PosterRow(vm, "Continue watching", h.continueWatching, resume = true) }
+        }
+        if (st.dashLiveFavorites && h.favoriteLive.isNotEmpty()) row { ChannelRow(vm, "Favorite channels", h.favoriteLive) }
+        if (st.dashRecentLive && h.recentLive.isNotEmpty()) row { ChannelRow(vm, "Recently watched channels", h.recentLive) }
+        if (st.dashFavoriteVod && h.favoriteVod.isNotEmpty()) row { PosterRow(vm, "Favorite movies and series", h.favoriteVod) }
+        if (st.dashRecentlyAdded && h.addedMovies.isNotEmpty()) row { PosterRow(vm, "Recently added movies", h.addedMovies) }
+        if (st.dashRecentlyAdded && h.addedSeries.isNotEmpty()) row { PosterRow(vm, "Recently added series", h.addedSeries) }
         val nothing = h.continueWatching.isEmpty() && h.favoriteLive.isEmpty() && h.recentLive.isEmpty() &&
             h.favoriteVod.isEmpty() && h.addedMovies.isEmpty() && h.addedSeries.isEmpty()
         if (nothing) {
@@ -97,12 +113,18 @@ fun HomeScreen(vm: MainViewModel) {
 }
 
 @Composable
-private fun Hero(vm: MainViewModel, item: Item?) {
+private fun Hero(vm: MainViewModel, item: Item?, focused: androidx.compose.runtime.MutableState<Boolean>) {
     val first = remember { FocusRequester() }
-    val rail = LocalRailFocus.current // Left from the first button goes to the rail, not down to a row
+    val detailsButton = remember { FocusRequester() }
+    val rail = LocalRailFocus.current
+    // Left from the first button goes to the menu, not down into the Continue watching row.
+    val firstButton = Modifier.focusRequester(first).focusProperties { left = rail }
     LaunchedEffect(item?.id) {
+        if (focused.value && !vm.heroDetailsOpened) return@LaunchedEffect
+        focused.value = true
         delay(120)
-        runCatching { first.requestFocus() }
+        runCatching { (if (vm.heroDetailsOpened) detailsButton else first).requestFocus() }
+        vm.heroDetailsOpened = false
     }
     Box(Modifier.fillMaxWidth().height(250.dp).clip(RoundedCornerShape(18.dp)).background(Panel)) {
         if (item != null) Poster(item.logo, "", Modifier.fillMaxSize().alpha(0.28f))
@@ -139,13 +161,14 @@ private fun Hero(vm: MainViewModel, item: Item?) {
                 }
                 Row(Modifier.padding(top = 18.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (item != null) {
-                        HeroButton("Continue watching", Icons.Filled.PlayArrow, Modifier.focusRequester(first).focusProperties { left = rail }, primary = true) { vm.resume(item) }
-                        HeroButton("Details", Icons.Filled.Info) {
+                        HeroButton("Continue watching", Icons.Filled.PlayArrow, firstButton, primary = true) { vm.resume(item) }
+                        HeroButton("Details", Icons.Filled.Info, Modifier.focusRequester(detailsButton)) {
+                            vm.heroDetailsOpened = true
                             val series = item.seriesId
                             if (item.isEpisode && series != null) vm.openSeriesOf(item) else vm.showDetails(item)
                         }
                     } else {
-                        HeroButton("Live TV", Icons.Filled.LiveTv, Modifier.focusRequester(first).focusProperties { left = rail }, primary = true) { vm.selectSection(Section.Live) }
+                        HeroButton("Live TV", Icons.Filled.LiveTv, firstButton, primary = true) { vm.selectSection(Section.Live) }
                         HeroButton("Movies", Icons.Filled.Movie) { vm.selectSection(Section.Movies) }
                         HeroButton("Series", Icons.Filled.VideoLibrary) { vm.selectSection(Section.Series) }
                     }
@@ -173,12 +196,17 @@ internal fun RowTitle(title: String, count: Int) {
     }
 }
 
+/** A row keeps the focus at its right end instead of letting it jump to the row above. */
+@OptIn(ExperimentalComposeUiApi::class)
+private fun endStopsRow(): Modifier =
+    Modifier.focusProperties { exit = { if (it == androidx.compose.ui.focus.FocusDirection.Right) FocusRequester.Cancel else FocusRequester.Default } }.focusGroup().focusRestorer()
+
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 internal fun PosterRow(vm: MainViewModel, title: String, list: List<Item>, resume: Boolean = false) {
     Column {
         RowTitle(title, list.size)
-        LazyRow(Modifier.focusRestorer(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        LazyRow(endStopsRow(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             items(list, key = { it.id }) { item ->
                 PosterCard(vm, item, width = coverWidth(vm.settings.coverSize), onClick = { if (resume) vm.resume(item) else vm.open(item) })
             }
@@ -193,21 +221,22 @@ internal fun ChannelRow(vm: MainViewModel, title: String, list: List<Item>) {
     val now = System.currentTimeMillis() / 1000
     Column {
         RowTitle(title, list.size)
-        LazyRow(Modifier.focusRestorer(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+        LazyRow(endStopsRow(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             items(list, key = { it.id }) { ch ->
                 Column(Modifier.width(196.dp)) {
                     Surface(
-                        onClick = { vm.watchChannel(ch, list) },
-                        onLongClick = { vm.toggleFavorite(ch) },
+                        onClick = { vm.pick(ch) { vm.watchChannel(ch, list) } },
+                        onLongClick = { vm.showOptions(ch) },
                         modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
                         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(10.dp)),
-                        // A tinted highlight: many logos are white and would vanish on a white card.
-                        colors = ClickableSurfaceDefaults.colors(containerColor = Panel, focusedContainerColor = Color(0xFF3A4785)),
+                        // A grey highlight: many logos are white and would vanish on a white card.
+                        colors = ClickableSurfaceDefaults.colors(containerColor = Panel, focusedContainerColor = Muted.copy(alpha = 0.35f)),
                         border = ClickableSurfaceDefaults.border(focusedBorder = androidx.tv.material3.Border(androidx.compose.foundation.BorderStroke(2.dp, TextColor))),
                     ) {
                         Box(Modifier.fillMaxSize().padding(14.dp), contentAlignment = Alignment.Center) {
                             Logo(ch, 120.dp, 64.dp, strip)
                         }
+                        Box(Modifier.fillMaxSize()) { SelectedOverlay(vm, ch) }
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(ch.displayName(strip), fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)

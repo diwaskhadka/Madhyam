@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.runtime.LaunchedEffect
@@ -117,8 +118,15 @@ fun <T> PickerDialog(title: String, options: List<Pair<T, String>>, selected: T?
             if (options.isEmpty()) {
                 Text("Nothing to choose from in this stream.", color = Muted, fontSize = 14.sp)
             }
-            LazyColumn(Modifier.heightIn(max = 420.dp), state = list) {
-                items(options) { (value, label) ->
+            val wrap = rememberWrap()
+            LazyColumn(
+                Modifier.heightIn(max = 420.dp).wrapColumn(
+                    onTop = { wrap.focus { options.lastIndex.also { list.scrollToItem(it) } } },
+                    onBottom = { wrap.focus { list.scrollToItem(0); 0 } },
+                ),
+                state = list,
+            ) {
+                itemsIndexed(options) { i, (value, label) ->
                     val isSel = value == selected
                     androidx.tv.material3.ListItem(
                         selected = isSel,
@@ -128,7 +136,7 @@ fun <T> PickerDialog(title: String, options: List<Pair<T, String>>, selected: T?
                                 onDismiss()
                             }
                         },
-                        modifier = if (isSel || (selected == null && value == options.first().first)) Modifier.focusRequester(current) else Modifier,
+                        modifier = (if (isSel || (selected == null && value == options.first().first)) Modifier.focusRequester(current) else Modifier).then(wrap.at(i)),
                         headlineContent = { Text(label, maxLines = 1) },
                         trailingContent = if (isSel) {
                             { androidx.tv.material3.Icon(Icons.Filled.Check, null, tint = Accent) }

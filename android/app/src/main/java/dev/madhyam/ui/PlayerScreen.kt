@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Tune
@@ -54,10 +55,11 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.Text
 import dev.madhyam.MainViewModel
 import dev.madhyam.PictureSize
+import androidx.media3.common.Player
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
-private enum class Picker { Audio, Subtitles, Speed, Picture, AudioDelay, SubtitleDelay }
+private enum class Picker { Audio, Subtitles, Speed, Picture, AudioDelay }
 
 /** One button of the options row. */
 private class Control(val icon: ImageVector, val label: String, val action: () -> Unit)
@@ -89,21 +91,38 @@ fun PlayerScreen(vm: MainViewModel) {
     var styling by remember { mutableStateOf(false) } // Subtitles › Subtitle style…
     var position by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
+    var badges by remember { mutableStateOf(emptyList<String>()) } // "3840x2160", "24 FPS", "STEREO"
     val seekable = !item.isLive
+    // Up next: the last 30 s of an episode offer the next one (OK plays it, Back hides the card,
+    // and it starts by itself when this one ends).
+    val next = vm.nextEpisode
+    var secondsLeft by remember { mutableIntStateOf(-1) } // -1: unknown
+    var ended by remember { mutableStateOf(false) }
+    var upNextHidden by remember(item.id) { mutableStateOf(false) }
+    LaunchedEffect(item.id) {
+        secondsLeft = -1
+        ended = false
+        if (!item.isEpisode) return@LaunchedEffect
+        while (isActive) {
+            val d = pb.durationMs
+            ended = pb.player.playbackState == Player.STATE_ENDED
+            secondsLeft = if (ended) 0 else if (d > 0) ((d - pb.positionMs).coerceAtLeast(0) / 1000).toInt() else -1
+            delay(500)
+        }
+    }
+    val upNext = next != null && !upNextHidden && picker == null && !styling && (ended || secondsLeft in 0..30)
+    LaunchedEffect(upNext, ended) { if (upNext && ended) vm.playNextEpisode() }
 
     val row: List<Control> = buildList {
         if (seekable) {
             add(Control(if (pb.paused) Icons.Filled.PlayArrow else Icons.Filled.Pause, if (pb.paused) "Play" else "Pause") { pb.togglePause() })
             add(Control(Icons.Filled.Replay10, "−10 s") { pb.seekBy(-10_000) })
             add(Control(Icons.Filled.Forward10, "+10 s") { pb.seekBy(10_000) })
+            if (next != null) add(Control(Icons.Filled.SkipNext, "Next episode") { controls = false; vm.playNextEpisode() })
         }
         add(Control(Icons.Filled.Audiotrack, "Audio") { picker = Picker.Audio })
         add(Control(Icons.Filled.ClosedCaption, "Subtitles") { picker = Picker.Subtitles })
         add(Control(Icons.Filled.Tune, "Audio delay ${delayLabel(pb.audioDelayMs)}") { picker = Picker.AudioDelay })
-        add(Control(Icons.Filled.Timer, "Subtitle delay ${delayLabel(pb.subtitleDelayMs)}") { picker = Picker.SubtitleDelay })
-        if (seekable && !item.isCatchup && vm.subtitleSearchAvailable) {
-            add(Control(Icons.Filled.Search, "Find subtitles") { vm.openSubtitleSearch() })
-        }
         if (seekable) add(Control(Icons.Filled.Speed, "Speed ${speedLabel(pb.speed)}") { picker = Picker.Speed })
         add(Control(Icons.Filled.AspectRatio, pb.pictureSize.label) { picker = Picker.Picture })
         if (item.isLive) {
@@ -151,21 +170,13 @@ fun PlayerScreen(vm: MainViewModel) {
         while (isActive && (pb.paused || System.currentTimeMillis() < until)) {
             position = pb.positionMs
             duration = pb.durationMs
+            badges = pb.streamBadges()
             delay(250)
         }
         overlayVisible = false
         if (picker == null && controls) closeControls()
     }
 
-    // Back on the options row when the subtitle search closes.
-    val searching = vm.subtitleResults != null
-    LaunchedEffect(searching) {
-        if (!searching && controls) {
-            overlayToken++
-            delay(120)
-            runCatching { focus.requestFocus() }
-        }
-    }
     // Ask for focus once the page we replaced has let go of it (else the first key press is lost),
     // and again when a picker dialog closes.
     LaunchedEffect(picker) {
@@ -174,7 +185,13 @@ fun PlayerScreen(vm: MainViewModel) {
             runCatching { focus.requestFocus() }
         }
     }
-    BackHandler { if (controls) closeControls() else vm.closePlayer() }
+    BackHandler {
+        when {
+            controls -> closeControls()
+            upNext -> upNextHidden = true
+            else -> vm.closePlayer()
+        }
+    }
 
     Box(
         Modifier
@@ -219,6 +236,10 @@ fun PlayerScreen(vm: MainViewModel) {
                         if (item.isLive) vm.zap(1)
                         return@onPreviewKeyEvent true
                     }
+                }
+                if (upNext && !controls && (code == AndroidKeyEvent.KEYCODE_DPAD_CENTER || code == AndroidKeyEvent.KEYCODE_ENTER)) {
+                    vm.playNextEpisode()
+                    return@onPreviewKeyEvent true
                 }
                 if (controls) {
                     // The options row: Left/Right move, OK runs, Up/Down close it.
@@ -275,12 +296,12 @@ fun PlayerScreen(vm: MainViewModel) {
                     .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))))
                     .padding(start = 48.dp, end = 48.dp, top = 48.dp, bottom = 28.dp),
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     if (item.isLive || item.isCatchup) {
                         Logo(item, 72.dp, 44.dp, strip)
                         Spacer(Modifier.width(12.dp))
                     }
-                    Column {
+                    Column(Modifier.weight(1f)) {
                         Text(
                             if (item.isEpisode) item.episodeLabel else item.displayName(strip),
                             fontSize = 26.sp, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -290,6 +311,14 @@ fun PlayerScreen(vm: MainViewModel) {
                             item.isLive && pb.playlist.size > 1 ->
                                 Text("${pb.index + 1} / ${pb.playlist.size}   ▲▼ change channel   OK options", color = Muted, fontSize = 12.sp)
                         }
+                    }
+                    // Picture size, frame rate and sound, as TiviMate shows them.
+                    badges.forEach { b ->
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            b, color = Color.Black, fontSize = 12.sp, maxLines = 1, softWrap = false,
+                            modifier = Modifier.background(Color.White.copy(alpha = 0.72f), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
+                        )
                     }
                 }
                 if (item.isLive) {
@@ -339,6 +368,7 @@ fun PlayerScreen(vm: MainViewModel) {
                 }
             }
         }
+        if (upNext && next != null) UpNextCard(next, secondsLeft, Modifier.align(Alignment.BottomEnd).padding(end = 48.dp, bottom = if (controls || overlayVisible) 170.dp else 48.dp))
     }
 
     @Suppress("UNUSED_EXPRESSION") pb.tracksVersion // re-read the track lists when they change
@@ -347,30 +377,21 @@ fun PlayerScreen(vm: MainViewModel) {
             val tracks = pb.audioTracks()
             PickerDialog("Audio", tracks.map { it to it.label }, tracks.firstOrNull { it.selected }, { pb.select(it) }) { pickerClosed() }
         }
-        Picker.Subtitles -> {
-            val tracks = pb.subtitleTracks()
-            val off = "off"
-            val style = "style"
-            val options: List<Pair<Any, String>> = listOf<Pair<Any, String>>(off to "Off") + tracks.map { it to it.label } + (style to "Subtitle style…")
-            val current: Any = if (pb.subtitlesOff) off else tracks.firstOrNull { it.selected } ?: off
-            PickerDialog("Subtitles", options, current, { choice ->
-                when (choice) {
-                    off -> pb.turnSubtitlesOff()
-                    style -> styling = true
-                    is dev.madhyam.TrackChoice -> pb.select(choice)
-                }
-            }) {
-                pickerClosed()
-                if (styling) closeControls() // the panel shows the subtitles where they really sit
-            }
-        }
+        // One panel for tracks, online search, delay and style.
+        Picker.Subtitles -> SubtitlesPanel(
+            vm,
+            canSearch = seekable && !item.isCatchup && vm.subtitleSearchAvailable,
+            onStyle = {
+                styling = true
+                closeControls() // the style page shows the subtitles where they really sit
+            },
+            onDismiss = { pickerClosed() },
+        )
         Picker.Speed -> PickerDialog("Speed", SPEEDS.map { it to speedLabel(it) }, pb.speed, { pb.changeSpeed(it) }) { pickerClosed() }
         Picker.Picture -> PickerDialog("Picture size", PictureSize.entries.map { it to it.label }, pb.pictureSize, { pb.pictureSize = it }) { pickerClosed() }
         Picker.AudioDelay -> PickerDialog("Audio delay (+ = sound later)", DELAYS.map { it to delayLabel(it) }, pb.audioDelayMs, { pb.changeAudioDelay(it) }) { pickerClosed() }
-        Picker.SubtitleDelay -> PickerDialog("Subtitle delay (+ = subtitles later)", DELAYS.map { it to delayLabel(it) }, pb.subtitleDelayMs, { pb.changeSubtitleDelay(it) }) { pickerClosed() }
         null -> {}
     }
-    if (searching) SubtitleSearchDialog(vm)
     if (styling) SubtitleStyleDialog(vm) { styling = false }
     LaunchedEffect(styling) {
         if (!styling) {
@@ -382,10 +403,10 @@ fun PlayerScreen(vm: MainViewModel) {
 
 private val SPEEDS = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
 
-private val DELAYS = (-12..12).map { it * 250 } // −3 s … +3 s
+internal val DELAYS = (-12..12).map { it * 250 } // −3 s … +3 s
 
 /** 250 → "+0.25 s", -1500 → "−1.5 s". */
-private fun delayLabel(ms: Int): String {
+internal fun delayLabel(ms: Int): String {
     if (ms == 0) return "0 s"
     val s = java.math.BigDecimal(kotlin.math.abs(ms)).movePointLeft(3).stripTrailingZeros().toPlainString()
     return (if (ms > 0) "+" else "−") + s + " s"
@@ -406,6 +427,35 @@ private fun ControlChip(c: Control, highlighted: Boolean, showLabel: Boolean = t
         if (showLabel || highlighted) {
             Spacer(Modifier.width(6.dp))
             Text(c.label, fontSize = 13.sp, color = fg, maxLines = 1, softWrap = false)
+        }
+    }
+}
+
+/** The card in the last seconds of an episode: what plays next, and when. */
+@Composable
+private fun UpNextCard(next: dev.madhyam.Item, secondsLeft: Int, modifier: Modifier) {
+    Column(
+        modifier
+            .width(360.dp)
+            .background(Color.Black.copy(alpha = 0.82f), RoundedCornerShape(14.dp))
+            .padding(18.dp),
+    ) {
+        Text("UP NEXT", color = Accent, fontSize = 12.sp)
+        Text(next.episodeLabel, color = Color.White, fontSize = 20.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.height(12.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                Modifier.background(Color.White, RoundedCornerShape(50)).padding(horizontal = 16.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Filled.PlayArrow, contentDescription = null, tint = Color.Black, modifier = Modifier.size(20.dp))
+                Text(" Play now  OK", color = Color.Black, fontSize = 14.sp)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column {
+                Text(if (secondsLeft > 0) "Starts in $secondsLeft s" else "Starting…", color = Color.White, fontSize = 13.sp)
+                Text("Back hides this", color = Muted, fontSize = 12.sp)
+            }
         }
     }
 }

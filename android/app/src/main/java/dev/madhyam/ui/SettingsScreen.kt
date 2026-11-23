@@ -1,5 +1,6 @@
 package dev.madhyam.ui
 
+import androidx.compose.foundation.lazy.itemsIndexed
 import android.view.KeyEvent as AndroidKeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -131,14 +132,23 @@ fun SettingsScreen(vm: MainViewModel) {
     }
     BackHandler(enabled = styling) { styling = false }
 
+    val sideWrap = rememberWrap()
+    val side = androidx.compose.foundation.lazy.rememberLazyListState()
+    val pageWrap = rememberWrapByMoving()
     Row(Modifier.fillMaxSize()) {
         LazyColumn(
             Modifier.width(220.dp).fillMaxHeight().background(Panel.copy(alpha = 0.55f)).padding(vertical = 16.dp, horizontal = 8.dp)
-                .focusRestorer(currentPage), // first entry lands on the open page, not the nearest row
+                .wrapColumn(
+                    onTop = { sideWrap.focus { Page.entries.size.also { side.scrollToItem(it) } } },
+                    onBottom = { sideWrap.focus { side.scrollToItem(0); 1 } },
+                )
+                // Entering lands on the open page: a row resting under the focus opens its page.
+                .focusRestorer(currentPage),
+            state = side,
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             item { Text("Settings", fontSize = 24.sp, modifier = Modifier.padding(start = 12.dp, bottom = 12.dp)) }
-            items(Page.entries) { p ->
+            itemsIndexed(Page.entries) { i, p ->
                 ListItem(
                     selected = page == p,
                     onClick = {
@@ -147,6 +157,7 @@ fun SettingsScreen(vm: MainViewModel) {
                         enterPage++
                     },
                     modifier = (if (page == p) Modifier.focusRequester(currentPage) else Modifier)
+                        .then(sideWrap.at(i + 1))
                         .onFocusChanged {
                             if (it.isFocused) resting = if (page != p) p else null
                             else if (resting == p) resting = null
@@ -167,7 +178,7 @@ fun SettingsScreen(vm: MainViewModel) {
         }
         Column(
             Modifier.weight(1f).fillMaxHeight().padding(horizontal = 28.dp, vertical = 16.dp)
-                .focusProperties { enter = { pageFirst } }.focusGroup(),
+                .wrapByMoving(pageWrap),
         ) {
             val src = openSource?.let { o -> vm.sources.firstOrNull { it.id == o.id } }
             // A new page starts at the top, with no memory of the last page's focused row.
@@ -731,8 +742,8 @@ private fun LazyListScope.appearance(vm: MainViewModel) {
     val st = vm.settings
     item { SectionTitle("Appearance") }
     item {
-        ChoiceRow("Theme", "Navy & Crimson is the dark theme; Custom builds one from your colour", st.theme,
-            listOf("Dark" to "Navy & Crimson", "Light" to "Light", "System" to "Follow the TV", "Custom" to "Custom")) { vm.changeSettings { theme = it } }
+        ChoiceRow("Theme", "Charcoal is the dark theme; Custom builds one from your colour", st.theme,
+            listOf("Dark" to "Charcoal", "Navy" to "Navy & Crimson", "Light" to "Light", "System" to "Follow the TV", "Custom" to "Custom")) { vm.changeSettings { theme = it } }
     }
     item {
         var picking by remember { mutableStateOf(false) }

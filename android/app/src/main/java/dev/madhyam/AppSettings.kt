@@ -71,13 +71,14 @@ class AppSettings private constructor(private val file: File) {
     var lastLoadMs by mutableStateOf(0L)
 
     // ------------------------------------------- 0.9.0: Windows 0.4.11 parity
-    var theme by mutableStateOf("Dark")                      // Dark (Navy & Crimson) | Light | System | Custom
+    var theme by mutableStateOf("Dark")                      // Dark (Charcoal) | Navy | Light | System | Custom
     var customColor by mutableStateOf("#DC143C")             // Custom theme: the picked colour
     var customLight by mutableStateOf(false)                 // Custom theme on a light base
     var coverSize by mutableStateOf("Medium")                // Tiny | Extra small | Small | Medium | Large
     var titlesUnderCovers by mutableStateOf(true)
     var epgOffsetMinutes by mutableStateOf(0)                // positive = programmes shown later
     val extraEpgUrls = mutableListOf<String>()
+    val searchHistory = mutableListOf<String>()              // newest first
     /** Playlist id → user agent sent for its downloads and streams ("" = the default). */
     val sourceUserAgent = mutableMapOf<Int, String>()
     var liveFormat by mutableStateOf("Auto")                 // Auto | TS | HLS (Xtream live streams)
@@ -190,6 +191,7 @@ class AppSettings private constructor(private val file: File) {
             .put("titlesUnderCovers", titlesUnderCovers)
             .put("epgOffsetMinutes", epgOffsetMinutes)
             .put("extraEpgUrls", JSONArray(extraEpgUrls))
+            .put("searchHistory", JSONArray(searchHistory))
             .put("sourceUserAgent", JSONObject().apply { for ((k, v) in sourceUserAgent) if (v.isNotBlank()) put(k.toString(), v) })
             .put("liveFormat", liveFormat)
             .put("bufferMs", bufferMs)
@@ -278,6 +280,8 @@ class AppSettings private constructor(private val file: File) {
             titlesUnderCovers = o.optBoolean("titlesUnderCovers", titlesUnderCovers)
             epgOffsetMinutes = o.optInt("epgOffsetMinutes", epgOffsetMinutes)
             o.optJSONArray("extraEpgUrls")?.let { a -> for (i in 0 until a.length()) extraEpgUrls += a.getString(i) }
+            searchHistory.clear()
+            o.optJSONArray("searchHistory")?.let { a -> for (i in 0 until a.length()) searchHistory += a.getString(i) }
             o.optJSONObject("sourceUserAgent")?.let { m -> for (k in m.keys()) k.toIntOrNull()?.let { sourceUserAgent[it] = m.getString(k) } }
             liveFormat = o.optString("liveFormat", liveFormat)
             bufferMs = o.optInt("bufferMs", bufferMs)

@@ -291,6 +291,40 @@ class Playback(private val context: Context, private val settings: AppSettings) 
 
     fun pause() = player.pause()
 
+    /** What the stream really is, as TiviMate shows it beside the title: "3840x2160", "24 FPS", "STEREO". */
+    @androidx.annotation.OptIn(UnstableApi::class)
+    fun streamBadges(): List<String> = buildList {
+        val v = player.videoFormat
+        val w = v?.width?.takeIf { it > 0 } ?: player.videoSize.width
+        val h = v?.height?.takeIf { it > 0 } ?: player.videoSize.height
+        if (w > 0 && h > 0) add("${w}x$h")
+        v?.frameRate?.takeIf { it > 0f }?.let { add("${Math.round(it)} FPS") }
+        // High dynamic range, only when the stream has it.
+        when {
+            v == null -> {}
+            v.sampleMimeType == MimeTypes.VIDEO_DOLBY_VISION || v.codecs?.startsWith("dv") == true -> add("DOLBY VISION")
+            v.colorInfo?.colorTransfer == C.COLOR_TRANSFER_ST2084 -> add("HDR10")
+            v.colorInfo?.colorTransfer == C.COLOR_TRANSFER_HLG -> add("HLG")
+        }
+        val a = player.audioFormat
+        a?.channelCount?.takeIf { it > 0 }?.let {
+            add(when (it) { 1 -> "MONO"; 2 -> "STEREO"; 6 -> "5.1"; 8 -> "7.1"; else -> "$it CH" })
+        }
+        // The sound format, when it says more than plain stereo/surround.
+        when (a?.sampleMimeType) {
+            MimeTypes.AUDIO_E_AC3_JOC -> "DOLBY ATMOS"
+            MimeTypes.AUDIO_TRUEHD -> "DOLBY TRUEHD"
+            MimeTypes.AUDIO_E_AC3 -> "DOLBY DIGITAL+"
+            MimeTypes.AUDIO_AC3 -> "DOLBY DIGITAL"
+            MimeTypes.AUDIO_DTS_HD -> "DTS-HD"
+            MimeTypes.AUDIO_DTS_X -> "DTS:X"
+            MimeTypes.AUDIO_DTS, MimeTypes.AUDIO_DTS_EXPRESS -> "DTS"
+            MimeTypes.AUDIO_AAC -> "AAC"
+            MimeTypes.AUDIO_AC4 -> "DOLBY AC-4"
+            else -> null
+        }?.let { add(it) }
+    }
+
     /** A plain sentence for a playback error (the code goes to [errorDetail]). */
     private fun describe(e: PlaybackException): String {
         val what = if (current?.isLive == true) "this channel" else "this stream"

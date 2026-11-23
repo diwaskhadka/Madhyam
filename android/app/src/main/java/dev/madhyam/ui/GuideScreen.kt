@@ -1,5 +1,6 @@
 package dev.madhyam.ui
 
+import androidx.compose.foundation.focusGroup
 import android.view.KeyEvent as AndroidKeyEvent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -78,7 +79,14 @@ fun GuideScreen(vm: MainViewModel) {
     val to = vm.guideTo
     val strip = vm.settings.stripPrefixes
 
-    Column(Modifier.fillMaxSize().padding(start = 16.dp, end = 24.dp, top = 16.dp, bottom = 8.dp)) {
+    val wrap = rememberWrap()
+    val rows = rememberLazyListState(initialFirstVisibleItemIndex = (channels.indexOfFirst { it.id == vm.guideStartId } - 2).coerceAtLeast(0))
+    Column(
+        Modifier.fillMaxSize().padding(start = 16.dp, end = 24.dp, top = 16.dp, bottom = 8.dp).wrapColumn(
+            onTop = { wrap.focus { vm.loadAll(); vm.items.count { it.isLive }.minus(1).also { if (it >= 0) rows.scrollToItem(it) } } },
+            onBottom = { if (vm.allLoaded) wrap.focus { rows.scrollToItem(0); 0 } else vm.loadMore() },
+        ),
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("TV guide · ${vm.group ?: vm.categories.firstOrNull()?.name ?: "Live TV"}", fontSize = 22.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -109,10 +117,11 @@ fun GuideScreen(vm: MainViewModel) {
                     runCatching { start.requestFocus() }
                 }
                 LazyColumn(
-                    state = rememberLazyListState(initialFirstVisibleItemIndex = (startIndex - 2).coerceAtLeast(0)),
+                    state = rows,
                     verticalArrangement = Arrangement.spacedBy(3.dp),
                 ) {
                     itemsIndexed(channels, key = { _, c -> c.id }) { i, ch ->
+                        androidx.compose.foundation.layout.Box(wrap.at(i).focusGroup()) {
                         GuideRow(
                             vm, ch, vm.guideData[ch.id].orEmpty(), from, to, now, perSec, strip,
                             focusFirst = if (i == startIndex) start else null,
@@ -121,6 +130,7 @@ fun GuideScreen(vm: MainViewModel) {
                                 if (i > channels.size - 20) vm.loadMore()
                             },
                         )
+                        }
                     }
                 }
             }
@@ -244,6 +254,7 @@ private fun Cell(
     if (requester != null) m = m.focusRequester(requester)
     Surface(
         onClick = { vm.openFromGuide(ch, p) },
+        onLongClick = { vm.showOptions(ch) },
         modifier = m,
         shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(6.dp)),
         colors = ClickableSurfaceDefaults.colors(

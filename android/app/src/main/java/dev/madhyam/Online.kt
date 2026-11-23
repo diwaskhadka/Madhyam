@@ -56,7 +56,8 @@ class Ratings(private val http: OkHttpClient) {
     }
 
     companion object {
-        private val PREFIX = Regex("""^\s*(?:4K-)?[A-Z0-9]{2,4}\s*[-|:]\s+""")
+        // The provider's tag: "EN - ", "4K-OSN+ - ", "|EN| " (a letter in it, so "9-1-1: Lone Star" stays whole).
+        private val PREFIX = Regex("""^\s*(?:\|[^|]{1,12}\|\s*|(?=[A-Z0-9+\-]*[A-Z])[A-Z0-9][A-Z0-9+\-]{0,9}\s*[-|:]\s+)""")
         private val BRACKETS = Regex("""[(\[].*?[)\]]""")
 
         /** "EN - The Movie (2024) [4K]" → "The Movie". */

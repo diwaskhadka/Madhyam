@@ -387,6 +387,8 @@ pub struct ListQuery {
     pub hidden_groups: HashSet<String>,
     pub sort: Sort,
     pub min_rating: f64,
+    /// Keep only items whose name matches every word of this (prefix, accent-insensitive).
+    pub text: Option<String>,
     pub offset: usize,
     pub limit: usize,
 }
@@ -401,6 +403,7 @@ impl ListQuery {
             hidden_groups: HashSet::new(),
             sort: Sort::Provider,
             min_rating: 0.0,
+            text: None,
             offset: 0,
             limit: 100,
         }
@@ -817,9 +820,15 @@ impl Catalog {
     /// Filtered, sorted, paged listing for grids and long lists.
     /// Returns `(total matches, page)`.
     pub fn query(&self, q: &ListQuery) -> (usize, Vec<&Item>) {
-        let mut v: Vec<&Item> = self
-            .items
-            .iter()
+        // With a text filter only the index's hits are looked at, not the whole catalog.
+        let words = q.text.as_deref().map(tokens).unwrap_or_default();
+        let candidates: Box<dyn Iterator<Item = &Item>> = if words.is_empty() {
+            Box::new(self.items.iter())
+        } else {
+            let hits = self.text_hits(&words);
+            Box::new(hits.into_iter().map(|ix| &self.items[ix as usize]))
+        };
+        let mut v: Vec<&Item> = candidates
             .filter(|i| {
                 i.kind == q.kind
                     && q.source.is_none_or(|s| s == i.source)
@@ -863,21 +872,30 @@ impl Catalog {
         v
     }
 
+    /// Indexes of the items matching every token (at least one token is required).
+    fn text_hits(&self, words: &[String]) -> Vec<u32> {
+        // Rarest token first keeps intermediate sets small.
+        let mut sets: Vec<Vec<u32>> = words.iter().map(|t| self.index.prefix(t)).collect();
+        sets.sort_by_key(Vec::len);
+        let mut hits = sets[0].clone();
+        for s in &sets[1..] {
+            hits = intersect(&hits, s);
+            if hits.is_empty() {
+                break;
+            }
+        }
+        hits
+    }
+
     /// Ranked, accent-insensitive, prefix-matching search over item names.
     pub fn search(&self, query: &str, filter: SearchFilter, limit: usize) -> Vec<&Item> {
         let q = tokens(query);
         if q.is_empty() || limit == 0 {
             return Vec::new();
         }
-        // Rarest token first keeps intermediate sets small.
-        let mut sets: Vec<Vec<u32>> = q.iter().map(|t| self.index.prefix(t)).collect();
-        sets.sort_by_key(Vec::len);
-        let mut hits = sets[0].clone();
-        for s in &sets[1..] {
-            hits = intersect(&hits, s);
-            if hits.is_empty() {
-                return Vec::new();
-            }
+        let hits = self.text_hits(&q);
+        if hits.is_empty() {
+            return Vec::new();
         }
         let joined = q.join(" ");
         let mut scored: Vec<(i32, usize, u32, u32)> = hits
@@ -1713,6 +1731,11 @@ mod tests {
         };
         let mut q = ListQuery::new(ItemKind::Movie);
         assert_eq!(names(&q), ["Beta", "alpha", "Gamma", "delta"]);
+        let mut found = ListQuery::new(ItemKind::Movie);
+        found.text = Some("ALP".into());
+        assert_eq!(names(&found), ["alpha"]);
+        found.group = Some("B".into());
+        assert!(names(&found).is_empty());
         q.sort = Sort::NameAsc;
         assert_eq!(names(&q), ["alpha", "Beta", "delta", "Gamma"]);
         q.sort = Sort::AddedDesc;
