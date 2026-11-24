@@ -77,6 +77,7 @@ private fun selectionOptions(vm: MainViewModel, item: Item): List<Pair<String, (
 
 private fun categoryOptions(vm: MainViewModel, c: Category): List<Pair<String, () -> Unit>> = buildList {
     add("Hide category" to { vm.hideCategory(c.name) })
+    add("Show and hide categories…" to { vm.editingCategories = true })
     if (vm.parentalActive) {
         add((if (vm.categoryIsLockedSetting(c.name)) "Unlock category" else "Lock category") to { vm.toggleCategoryLock(c.name) })
     }

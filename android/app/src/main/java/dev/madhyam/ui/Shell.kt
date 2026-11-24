@@ -176,6 +176,7 @@ fun MainShell(vm: MainViewModel) {
     if (vm.searchOpen && vm.details == null) SearchPage(vm)
     // After the search page, so its window opens on top of that one.
     OptionsDialog(vm)
+    CategoryVisibilityDialog(vm)
     // Last, so it runs before every other Back while items are being ticked.
     BackHandler(enabled = vm.selecting) { vm.stopSelecting() }
 }
