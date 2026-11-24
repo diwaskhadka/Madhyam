@@ -17,6 +17,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 
 /** Top-level pages of the app. */
 sealed interface Screen {
@@ -438,24 +440,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val s = section
             when {
                 s.kind != null && src != null -> {
-                    val hidden = settings.hidden(src.id, kindKey!!)
-                    val groups = repo.groups(src.id, s.kind, groupField).filter { it.name !in hidden }
-                        .let { sortCategories(it, s.kind) }
-                    // Not the sum of the groups: a channel can be in several countries.
-                    val allCount = repo.query(src.id, s.kind, null, hidden, "provider", 0, 1, groupField).total
-                    val all = Category(
-                        when (s) {
-                            Section.Live -> if (groupField != null) "All countries" else "All channels"
-                            Section.Movies -> "All movies"
-                            else -> "All series"
-                        },
-                        allCount,
-                        isAll = true,
-                    )
-                    categories = listOf(all) + groups.map { Category(it.name, it.count) }
+                    categories = buildCategories(src, s)
                     loadContinue()
                     // Keep the selected category if it still exists.
-                    val keep = group?.takeIf { g -> groups.any { it.name == g } }
+                    val keep = group?.takeIf { g -> categories.any { !it.isAll && it.name == g } }
                     loadGroup(keep)
                 }
                 s == Section.Home -> loadHome()
@@ -465,6 +453,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             sectionLoading = false
         }
+    }
+
+    /** "All …" first, then the section's categories that are not hidden, in the chosen order. */
+    private suspend fun buildCategories(src: Source, s: Section): List<Category> {
+        val kind = s.kind ?: return emptyList()
+        val hidden = settings.hidden(src.id, kindKey!!)
+        val groups = repo.groups(src.id, kind, groupField).filter { it.name !in hidden }
+            .let { sortCategories(it, kind) }
+        // Not the sum of the groups: a channel can be in several countries.
+        val allCount = repo.query(src.id, kind, null, hidden, "provider", 0, 1, groupField).total
+        val all = Category(
+            when (s) {
+                Section.Live -> if (groupField != null) "All countries" else "All channels"
+                Section.Movies -> "All movies"
+                else -> "All series"
+            },
+            allCount,
+            isAll = true,
+        )
+        return listOf(all) + groups.map { Category(it.name, it.count) }
     }
 
     /** The current section's first load is still running (the rail waits before moving in). */
@@ -978,13 +986,74 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun hideCategory(name: String) {
-        val s = source ?: return
+        setCategoriesHidden(hide = listOf(name))
+        message = "Hidden $name. Bring it back with hold OK › Show and hide categories."
+    }
+
+    /**
+     * Hide and show categories of the page at once. The focus stays in the category list: when the
+     * open category goes, the next one still shown opens (else the one before). The rows go only
+     * once the focus has left them; a focused row that disappears drops the focus to the menu.
+     * (Before, hiding cancelled its own list refresh, so the category stayed until the next one.)
+     */
+    fun setCategoriesHidden(hide: Collection<String> = emptyList(), show: Collection<String> = emptyList()) {
+        val src = source ?: return
         val key = kindKey ?: return
-        val wasShowing = group == name
-        setHidden(s, key, name, true)
-        if (wasShowing) categories.firstOrNull { it.isAll }?.let { selectCategory(it) }
+        val sec = section
+        if (sec.kind == null || (hide.isEmpty() && show.isEmpty())) return
+        val gone = hide.toSet()
+        changeSettings {
+            hidden(src.id, key).apply {
+                addAll(gone)
+                removeAll(show.toSet())
+            }
+        }
+        val cats = categories
+        val here = cats.indexOfFirst { if (it.isAll) group == null else it.name == group }.coerceAtLeast(0)
+        val stay = cats.filter { it.isAll || it.name !in gone }
+        if (group != null && group in gone) {
+            val next = cats.drop(here).firstOrNull { it.isAll || it.name !in gone } ?: stay.lastOrNull()
+            next?.let { selectCategory(it) }
+        }
         focusCategories = true
-        message = "Hidden $name. Bring it back in the playlist's settings."
+        categoriesJob?.cancel()
+        categoriesJob = viewModelScope.launch {
+            withTimeoutOrNull(1500) { snapshotFlow { focusCategories }.first { !it } }
+            if (section != sec || source?.id != src.id) return@launch
+            categories = stay
+            // Then the counts ("All" drops what was hidden) and the categories shown again.
+            categories = buildCategories(src, sec)
+        }
+    }
+
+    private var categoriesJob: kotlinx.coroutines.Job? = null
+
+    /** Every category of the page, hidden ones too (Show and hide categories). */
+    suspend fun allCategoriesHere(): List<Group> {
+        val src = source ?: return emptyList()
+        val kind = section.kind ?: return emptyList()
+        return sortCategories(repo.groups(src.id, kind, groupField), kind)
+    }
+
+    fun isCategoryHidden(name: String): Boolean {
+        val src = source ?: return false
+        val key = kindKey ?: return false
+        return settings.isHidden(src.id, key, name)
+    }
+
+    /** Hold OK › Show and hide categories: the dialog with every category of the page. */
+    var editingCategories by mutableStateOf(false)
+
+    /** The dialog's Hide N / Show N. */
+    fun applyCategoryChoice(hide: Collection<String>, show: Collection<String>) {
+        editingCategories = false
+        setCategoriesHidden(hide, show)
+        fun n(k: Int) = if (k == 1) "1 category" else "$k categories"
+        message = when {
+            hide.isNotEmpty() && show.isNotEmpty() -> "Hid ${n(hide.size)}, showing ${n(show.size)} again."
+            hide.isNotEmpty() -> "Hid ${n(hide.size)}."
+            else -> "Showing ${n(show.size)} again."
+        }
     }
 
     fun categoryIsLockedSetting(name: String): Boolean {
