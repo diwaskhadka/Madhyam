@@ -71,6 +71,10 @@ import dev.madhyam.Item
 import dev.madhyam.MainViewModel
 import dev.madhyam.Section
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.platform.LocalFocusManager
 
 /** Sort names understood by the engine's `query` (catalog.rs Sort::parse), as on Windows. */
 val SortOptions = listOf(
@@ -123,9 +127,14 @@ fun VodScreen(vm: MainViewModel) {
             val sortButton = remember { FocusRequester() }
             val ratingButton = remember { FocusRequester() }
             val wrap = rememberWrap()
+            val focusManager = LocalFocusManager.current
+            val scope = rememberCoroutineScope()
             // Coming from the categories (as TiviMate does): the poster last focused in this list if
             // it's on screen, else Continue watching, else the first poster on screen.
             var lastFocused by remember { mutableIntStateOf(-1) }
+            // The poster that has the focus now (-1: the header, Continue watching or elsewhere).
+            var focusedPoster by remember { mutableIntStateOf(-1) }
+            var wrapping by remember { mutableStateOf(false) }
             val entryIndex by remember {
                 derivedStateOf {
                     val visible = state.layoutInfo.visibleItemsInfo.map { it.index }
@@ -164,6 +173,28 @@ fun VodScreen(vm: MainViewModel) {
                 state = state,
                 modifier = Modifier
                     .fillMaxSize()
+                    // Right at the end of a row: the first poster of the next row (held Right walks
+                    // through the whole list); on the last poster it does nothing.
+                    .onPreviewKeyEvent { ev ->
+                        if (ev.type != KeyEventType.KeyDown || ev.nativeKeyEvent.keyCode != android.view.KeyEvent.KEYCODE_DPAD_RIGHT) return@onPreviewKeyEvent false
+                        val i = focusedPoster
+                        if (i < 0) return@onPreviewKeyEvent false
+                        if (wrapping) return@onPreviewKeyEvent true // a held key while the focus is still moving
+                        if (focusManager.moveFocus(FocusDirection.Right)) return@onPreviewKeyEvent true
+                        val next = i + 1
+                        if (next < vm.items.size) {
+                            wrapping = true
+                            wrap.focus {
+                                val cell = headerRows + next
+                                if (state.layoutInfo.visibleItemsInfo.none { it.index == cell }) state.scrollToItem(cell)
+                                cell
+                            }
+                            scope.launch { delay(120); wrapping = false }
+                        } else if (!vm.allLoaded) {
+                            vm.loadMore()
+                        }
+                        true
+                    }
                     // Up past the header: the last poster (all of them loaded); Down past the last:
                     // the first row of content (Continue watching when it shows).
                     .wrapColumn(
@@ -195,7 +226,8 @@ fun VodScreen(vm: MainViewModel) {
                     PosterCard(
                         vm,
                         item,
-                        modifier = (if (i == focusIndex) Modifier.focusRequester(back) else Modifier).then(wrap.at(headerRows + i)).then(entryAt(headerRows + i)),
+                        modifier = (if (i == focusIndex) Modifier.focusRequester(back) else Modifier).then(wrap.at(headerRows + i)).then(entryAt(headerRows + i))
+                            .onFocusChanged { if (it.hasFocus) focusedPoster = i else if (focusedPoster == i) focusedPoster = -1 },
                         onFocused = {
                             lastFocused = headerRows + i
                             if (i > vm.items.size - 30) vm.loadMore()
