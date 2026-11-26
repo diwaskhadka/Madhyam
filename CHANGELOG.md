@@ -6,18 +6,14 @@ so. The engine (`crates/madhyam-core`) keeps its own version, given in each sect
 
 How to cut a release and how to add a platform: [docs/RELEASING.md](docs/RELEASING.md).
 
-## Unreleased
-
-### Android TV
-- Hiding a category takes it off the list at once (it stayed until another one was hidden), and the focus moves to the next category instead of jumping to the menu.
-- **Show and hide categories:** hold OK on a category › Show and hide categories lists every category of the page, hidden ones too. OK ticks several; Hide N or Show N changes them all at once. In Live TV, Movies and Series.
-- **Right keeps going in poster grids:** in Movies and Series, Right on the last poster of a row moves to the first poster of the next row, so holding Right walks through the whole list. On the very last poster it stops.
-
 ## 1.1.1
 
 Parental controls, subtitle style like YouTube's and Buy me a coffee on every platform. Adding a playlist shows each step and how many live channels, movies and series it brought, and confirmations use the app's own look. Android TV starts in about 5 s, stops streams you leave and needs half the memory, moves like TiviMate, offers Up next for episodes and shows what the stream is (4K, HDR, Atmos); Windows full screen is black edge to edge; Linux plays trailers in the app.
 
 ### Android TV
+- Hiding a category takes it off the list at once (it stayed until another one was hidden), and the focus moves to the next category instead of jumping to the menu.
+- **Show and hide categories:** hold OK on a category › Show and hide categories lists every category of the page, hidden ones too. OK ticks several; Hide N or Show N changes them all at once. In Live TV, Movies and Series.
+- **Right keeps going in poster grids:** in Movies and Series, Right on the last poster of a row moves to the first poster of the next row, so holding Right walks through the whole list. On the very last poster it stops.
 - **Up next:** in the last 30 seconds of an episode a card shows the next one with a countdown; OK plays it now, Back hides the card, and it starts by itself when the episode ends. The options row also has a **Next episode** button.
 - **What the stream is, as in TiviMate:** beside the title the player shows the picture size, frame rate, HDR10 / HLG / Dolby Vision, the sound channels and the sound format (Dolby Digital, Atmos, DTS, AAC), each only when the stream reports it.
 - Find subtitles online: the title can be edited (Up from the first result, and an empty search lands on it), and the search no longer includes the provider's tag ("4K-OSN+ - Interstellar" searches "Interstellar").
