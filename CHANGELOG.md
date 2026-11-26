@@ -11,6 +11,7 @@ How to cut a release and how to add a platform: [docs/RELEASING.md](docs/RELEASI
 ### Android TV
 - Hiding a category takes it off the list at once (it stayed until another one was hidden), and the focus moves to the next category instead of jumping to the menu.
 - **Show and hide categories:** hold OK on a category › Show and hide categories lists every category of the page, hidden ones too. OK ticks several; Hide N or Show N changes them all at once. In Live TV, Movies and Series.
+- **Right keeps going in poster grids:** in Movies and Series, Right on the last poster of a row moves to the first poster of the next row, so holding Right walks through the whole list. On the very last poster it stops.
 
 ## 1.1.1
 
