@@ -87,10 +87,13 @@ fun SubtitlesPanel(vm: MainViewModel, canSearch: Boolean, onStyle: () -> Unit, o
             when (page) {
                 SubPage.List -> {
                     val tracks = pb.subtitleTracks()
-                    val off = pb.subtitlesOff || tracks.none { it.selected }
+                    val ext = pb.activeExternal
+                    val off = ext == null && (pb.subtitlesOff || tracks.none { it.selected })
                     val rows = buildList {
                         add(Row("Off", null, off) { pb.turnSubtitlesOff(); onDismiss() })
-                        tracks.forEach { t: TrackChoice -> add(Row(t.label, null, !off && t.selected) { pb.select(t); onDismiss() }) }
+                        tracks.forEach { t: TrackChoice -> add(Row(t.label, null, !off && ext == null && t.selected) { pb.select(t); onDismiss() }) }
+                        // Downloaded with Find online (drawn by the app, so picking one never restarts the video).
+                        pb.externalSubtitles.forEach { s -> add(Row(s.label, null, ext == s) { pb.useExternal(s); onDismiss() }) }
                         var divider = true
                         if (canSearch) {
                             add(Row("Find online…", Icons.Filled.Search, false, divider = true) { vm.openSubtitleSearch(); page = SubPage.Online })
@@ -105,13 +108,9 @@ fun SubtitlesPanel(vm: MainViewModel, canSearch: Boolean, onStyle: () -> Unit, o
                     PanelList(rows.size, start, armed = { armed }, isChecked = { rows[it].checked }, divider = { rows[it].divider }, label = { rows[it].label }, icon = { rows[it].icon }) { rows[it].onPick() }
                 }
                 SubPage.Delay -> {
-                    val start = DELAYS.indexOf(pb.subtitleDelayMs).coerceAtLeast(0)
                     Text("Subtitle delay", fontSize = 22.sp)
                     Text("+ shows subtitles later · Back returns to the list", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 10.dp))
-                    PanelList(DELAYS.size, start, armed = { armed }, isChecked = { DELAYS[it] == pb.subtitleDelayMs }, divider = { false }, label = { delayLabel(DELAYS[it]) }, icon = { null }) {
-                        pb.changeSubtitleDelay(DELAYS[it])
-                        page = SubPage.List
-                    }
+                    DelayStepper({ pb.subtitleDelayMs }, { armed }) { pb.changeSubtitleDelay(it) }
                 }
                 SubPage.Online -> SubtitleSearchPage(vm) { armed }
             }

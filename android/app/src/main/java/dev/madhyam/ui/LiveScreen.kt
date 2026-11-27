@@ -517,7 +517,7 @@ private fun Preview(vm: MainViewModel) {
     ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             if (cur != null) {
-                VideoSurface(vm.playback.player, Modifier.fillMaxSize(), style = vm.settings)
+                VideoSurface(vm.playback.player, Modifier.fillMaxSize(), style = vm.settings, playback = vm.playback)
                 vm.playback.error?.let {
                     Column(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)).padding(14.dp), verticalArrangement = Arrangement.Center) {
                         Text(it, color = ErrorRed, fontSize = 13.sp)
@@ -547,6 +547,7 @@ fun VideoSurface(
     resizeMode: Int = AspectRatioFrameLayout.RESIZE_MODE_FIT,
     subtitleLift: Float = 0f,
     style: dev.madhyam.AppSettings? = null,
+    playback: dev.madhyam.Playback? = null,
 ) {
     // Read here so a style change redraws the view (the settings are snapshot state).
     val styleKey = style?.let {
@@ -568,6 +569,26 @@ fun VideoSurface(
             }
             player.addListener(listener)
             onDispose { player.removeListener(listener) }
+        }
+    }
+    // A subtitle downloaded with Find online: the app draws its lines (it isn't part of the stream).
+    val external = playback?.activeExternal
+    if (playback != null && external != null) {
+        LaunchedEffect(external) {
+            var shown: List<androidx.media3.common.text.Cue>? = null
+            try {
+                while (true) {
+                    val cues = playback.externalCuesNow()
+                    if (cues != shown) {
+                        shown = cues
+                        val place = style != null && dev.madhyam.SubtitleStyle.movesCues(style)
+                        view[0]?.subtitleView?.setCues(if (place) dev.madhyam.SubtitleStyle.placeCues(cues) else cues)
+                    }
+                    kotlinx.coroutines.delay(100)
+                }
+            } finally {
+                view[0]?.subtitleView?.setCues(emptyList())
+            }
         }
     }
     AndroidView(

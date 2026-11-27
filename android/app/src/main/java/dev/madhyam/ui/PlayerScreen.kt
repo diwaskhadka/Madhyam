@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AspectRatio
@@ -59,10 +60,26 @@ import androidx.media3.common.Player
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
-private enum class Picker { Audio, Subtitles, Speed, Picture, AudioDelay }
+private enum class Picker { Audio, Subtitles, Speed, Picture }
+
+/** One press of a delay − / + button, and how far the delays go. */
+private const val DELAY_STEP_MS = 250
+private const val DELAY_LIMIT_MS = 10_000
 
 /** One button of the options row. */
-private class Control(val icon: ImageVector, val label: String, val action: () -> Unit)
+/**
+ * [short] shows beside the icon even when the button isn't highlighted (the delay − / + buttons).
+ * [value] is the option's current setting, shown under the button at all times (like "0 s" or "Off");
+ * buttons with the same [group] sit together over one shared [value].
+ */
+private class Control(
+    val icon: ImageVector,
+    val label: String,
+    val short: String? = null,
+    val value: String? = null,
+    val group: String? = null,
+    val action: () -> Unit,
+)
 
 /**
  * Full-screen playback with remote-control keys:
@@ -120,11 +137,22 @@ fun PlayerScreen(vm: MainViewModel) {
             add(Control(Icons.Filled.Forward10, "+10 s") { pb.seekBy(10_000) })
             if (next != null) add(Control(Icons.Filled.SkipNext, "Next episode") { controls = false; vm.playNextEpisode() })
         }
-        add(Control(Icons.Filled.Audiotrack, "Audio") { picker = Picker.Audio })
-        add(Control(Icons.Filled.ClosedCaption, "Subtitles") { picker = Picker.Subtitles })
-        add(Control(Icons.Filled.Tune, "Audio delay ${delayLabel(pb.audioDelayMs)}") { picker = Picker.AudioDelay })
-        if (seekable) add(Control(Icons.Filled.Speed, "Speed ${speedLabel(pb.speed)}") { picker = Picker.Speed })
-        add(Control(Icons.Filled.AspectRatio, pb.pictureSize.label) { picker = Picker.Picture })
+        @Suppress("UNUSED_EXPRESSION") pb.tracksVersion // re-read the current tracks when they change
+        val audioNow = pb.audioTracks().firstOrNull { it.selected }?.label
+        val subsNow = pb.activeExternal?.label ?: pb.subtitleTracks().firstOrNull { it.selected }?.label ?: "Off"
+        add(Control(Icons.Filled.Audiotrack, "Audio", value = audioNow) { picker = Picker.Audio })
+        add(Control(Icons.Filled.ClosedCaption, "Subtitles", value = subsNow) { picker = Picker.Subtitles })
+        // Delays right in the row, like −10 s / +10 s: each OK moves the delay by 0.25 s at once
+        // (read at the press: quick presses come before the row is redrawn).
+        fun step(ms: Int, by: Int) = (ms + by).coerceIn(-DELAY_LIMIT_MS, DELAY_LIMIT_MS)
+        val a = pb.audioDelayMs
+        val sd = pb.subtitleDelayMs
+        add(Control(Icons.Filled.Audiotrack, "Audio delay", "−", delayLabel(a), "audio delay") { pb.changeAudioDelay(step(pb.audioDelayMs, -DELAY_STEP_MS)) })
+        add(Control(Icons.Filled.Audiotrack, "Audio delay", "+", delayLabel(a), "audio delay") { pb.changeAudioDelay(step(pb.audioDelayMs, DELAY_STEP_MS)) })
+        add(Control(Icons.Filled.ClosedCaption, "Subtitle delay", "−", delayLabel(sd), "subtitle delay") { pb.changeSubtitleDelay(step(pb.subtitleDelayMs, -DELAY_STEP_MS)) })
+        add(Control(Icons.Filled.ClosedCaption, "Subtitle delay", "+", delayLabel(sd), "subtitle delay") { pb.changeSubtitleDelay(step(pb.subtitleDelayMs, DELAY_STEP_MS)) })
+        if (seekable) add(Control(Icons.Filled.Speed, "Speed", value = speedLabel(pb.speed)) { picker = Picker.Speed })
+        add(Control(Icons.Filled.AspectRatio, "Picture size", value = pb.pictureSize.label) { picker = Picker.Picture })
         if (item.isLive) {
             add(Control(Icons.Filled.GridView, "TV guide") {
                 vm.closePlayer()
@@ -285,7 +313,7 @@ fun PlayerScreen(vm: MainViewModel) {
             overlayVisible -> 0.14f
             else -> 0f
         }
-        VideoSurface(pb.player, Modifier.fillMaxSize(), pb.pictureSize.resizeMode, subtitleLift = lift, style = vm.settings)
+        VideoSurface(pb.player, Modifier.fillMaxSize(), pb.pictureSize.resizeMode, subtitleLift = lift, style = vm.settings, playback = pb)
 
         if (overlayVisible || controls || pb.error != null) {
             val strip = vm.settings.stripPrefixes
@@ -360,10 +388,32 @@ fun PlayerScreen(vm: MainViewModel) {
                 }
                 if (controls) {
                     Spacer(Modifier.height(14.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        // Films have up to eight options: then only the highlighted one shows its label.
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
+                        // Films have up to thirteen options: then only the highlighted one shows its label.
                         val labels = row.size <= 5
-                        row.forEachIndexed { i, c -> ControlChip(c, i == selected, showLabel = labels) }
+                        // Like TiviMate: each option shows its current setting under it at all times,
+                        // and the delay − / + pairs share one value.
+                        var i = 0
+                        while (i < row.size) {
+                            val first = i
+                            val g = row[i].group
+                            i++
+                            while (g != null && i < row.size && row[i].group == g) i++
+                            val on = selected in first until i
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    for (k in first until i) ControlChip(row[k], k == selected, showLabel = labels)
+                                }
+                                row[first].value?.let {
+                                    Text(
+                                        it,
+                                        color = if (on) Color.White else Muted,
+                                        fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.padding(top = 4.dp).widthIn(max = 130.dp),
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -389,7 +439,6 @@ fun PlayerScreen(vm: MainViewModel) {
         )
         Picker.Speed -> PickerDialog("Speed", SPEEDS.map { it to speedLabel(it) }, pb.speed, { pb.changeSpeed(it) }) { pickerClosed() }
         Picker.Picture -> PickerDialog("Picture size", PictureSize.entries.map { it to it.label }, pb.pictureSize, { pb.pictureSize = it }) { pickerClosed() }
-        Picker.AudioDelay -> PickerDialog("Audio delay (+ = sound later)", DELAYS.map { it to delayLabel(it) }, pb.audioDelayMs, { pb.changeAudioDelay(it) }) { pickerClosed() }
         null -> {}
     }
     if (styling) SubtitleStyleDialog(vm) { styling = false }
@@ -402,8 +451,6 @@ fun PlayerScreen(vm: MainViewModel) {
 }
 
 private val SPEEDS = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
-
-internal val DELAYS = (-12..12).map { it * 250 } // −3 s … +3 s
 
 /** 250 → "+0.25 s", -1500 → "−1.5 s". */
 internal fun delayLabel(ms: Int): String {
@@ -419,14 +466,18 @@ private fun ControlChip(c: Control, highlighted: Boolean, showLabel: Boolean = t
     Row(
         Modifier
             .background(if (highlighted) Color.White else Color.White.copy(alpha = 0.12f), RoundedCornerShape(50))
-            .padding(horizontal = 16.dp, vertical = 9.dp),
+            .padding(horizontal = 14.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val fg = if (highlighted) Color.Black else Color.White
         Icon(c.icon, contentDescription = null, tint = fg, modifier = Modifier.size(20.dp))
         if (showLabel || highlighted) {
             Spacer(Modifier.width(6.dp))
+            if (c.short != null) Text(c.short + "  ", fontSize = 15.sp, color = fg, maxLines = 1)
             Text(c.label, fontSize = 13.sp, color = fg, maxLines = 1, softWrap = false)
+        } else if (c.short != null) {
+            Spacer(Modifier.width(4.dp))
+            Text(c.short, fontSize = 15.sp, color = fg, maxLines = 1)
         }
     }
 }
