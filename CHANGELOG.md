@@ -9,7 +9,7 @@ How to cut a release and how to add a platform: [docs/RELEASING.md](docs/RELEASI
 ## Unreleased
 
 ### Android TV
-- **Audio and subtitle delay right in the player's controls:** ♪ − / ♪ + and CC − / CC + sit in the row at the bottom of the video, like −10 s / +10 s. Each OK moves that delay by 0.25 s at once, with no menu to open (up to ±10 s instead of ±3 s); the highlighted button shows the delay. The Subtitles panel's Delay page has buttons too (−1 s, −0.25 s, Reset, +0.25 s, +1 s).
+- **Audio and subtitle delay right in the player's controls:** ♪ − / ♪ + and CC − / CC + sit in the row at the bottom of the video, like −10 s / +10 s. Each OK moves that delay by 0.25 s at once, with no menu to open (up to ±10 s instead of ±3 s). Like TiviMate, every option shows its current setting under it: the audio track, subtitles, both delays, speed and picture size. The Subtitles panel's Delay page has buttons too (−1 s, −0.25 s, Reset, +0.25 s, +1 s).
 - **Find online no longer restarts the video:** a downloaded subtitle shows at once while the film keeps playing (the app draws it over the picture), and switching between it and the stream's own subtitles never reloads.
 
 ## 1.1.1
