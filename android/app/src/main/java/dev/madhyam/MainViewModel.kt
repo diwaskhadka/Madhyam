@@ -522,7 +522,41 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * Show a category. Moving the focus over a locked one only says it is locked; OK on it
      * ([fromClick]) asks for the PIN.
      */
-    fun selectCategory(c: Category, fromClick: Boolean = false) {
+    private var previewJob: Job? = null
+
+    /**
+     * The focus moved onto a category: show it once the focus rests there. Passing over categories
+     * (pressing or holding Down) loads nothing, so the grid isn't rebuilt on every step.
+     */
+    fun previewCategory(c: Category) {
+        previewJob?.cancel()
+        val name = if (c.isAll) null else c.name
+        if (name == group && !lockedGroup && items.isNotEmpty()) return
+        pendingCategory = c
+        previewJob = viewModelScope.launch {
+            delay(CATEGORY_SETTLE_MS)
+            pendingCategory = null
+            selectCategory(c, fromPreview = true)
+        }
+    }
+
+    private var pendingCategory: Category? = null
+
+    /** The focused category is still waiting or loading: entering its list now would land in the old one. */
+    val categoryPending: Boolean get() = previewJob?.isActive == true || itemsJob?.isActive == true
+
+    /** Show the focused category now (no more waiting) and return once its items are in. */
+    suspend fun awaitCategory() {
+        val c = pendingCategory
+        if (c != null && previewJob?.isActive == true) selectCategory(c)
+        itemsJob?.join()
+    }
+
+    fun selectCategory(c: Category, fromClick: Boolean = false, fromPreview: Boolean = false) {
+        if (!fromPreview) {
+            previewJob?.cancel()
+            pendingCategory = null
+        }
         val name = if (c.isAll) null else c.name
         if (name != null && isCategoryLocked(name)) {
             if (fromClick) {
@@ -532,6 +566,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 group = name
                 lockedGroup = true
                 items = emptyList()
+                listGroup = name
                 total = 0
                 loadedRows = 0
             }
@@ -661,8 +696,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** [rows]: how many rows of the engine's list [list] came from (locked items are left out). */
+    /**
+     * The category [items] belong to. [group] changes as soon as a category is chosen; this one only
+     * when its items arrive, so a list keyed on it is rebuilt once per category, not twice.
+     */
+    var listGroup by mutableStateOf<String?>(null)
+        private set
+
     private suspend fun setItems(list: List<Item>, count: Int = list.size, rows: Int = list.size) {
         items = list
+        listGroup = group
         loadedRows = rows
         total = count
         fetchNowNext(list)
@@ -1681,6 +1724,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private companion object {
         const val PAGE = 200
+        /** How long the focus rests on a category before its contents load. */
+        const val CATEGORY_SETTLE_MS = 250L
         const val GUIDE_SPAN_MIN = 150
     }
 }

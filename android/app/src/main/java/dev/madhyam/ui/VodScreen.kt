@@ -116,8 +116,8 @@ fun VodScreen(vm: MainViewModel) {
         val entry = remember { FocusRequester() }
         var entryReady by remember { mutableStateOf(false) }
         Box(Modifier.fillMaxSize().sectionContent(vm) { if (entryReady) entry else FocusRequester.Default }) {
-        key(vm.section, vm.group, vm.settings.vodSort, vm.settings.vodMinRating) {
-            val headerRows = if (vm.continueItems.isNotEmpty() && vm.group == null) 2 else 1
+        key(vm.section, vm.listGroup, vm.settings.vodSort, vm.settings.vodMinRating) {
+            val headerRows = if (vm.continueItems.isNotEmpty() && vm.listGroup == null) 2 else 1
             val openedIndex = vm.items.indexOfFirst { it.id == vm.lastOpenedId }
             // Keep the header in view unless the opened poster is further down.
             val state = rememberLazyGridState(initialFirstVisibleItemIndex = if (openedIndex >= 8) openedIndex + headerRows else 0)
