@@ -17,7 +17,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AspectRatio
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Audiotrack
 import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Forward10
@@ -59,7 +62,14 @@ import androidx.media3.common.Player
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
-private enum class Picker { Audio, Subtitles, Speed, Picture, AudioDelay }
+private enum class Picker { Audio, Subtitles, Speed, Picture }
+
+/** Which delay the options row is changing in place (see [DELAY_STEPS]). */
+private enum class DelayEdit(val title: String) { Audio("Audio delay"), Subtitles("Subtitle delay") }
+
+/** The delay buttons, in ms (0 = Reset); the focus starts on +0.25 s. */
+private val DELAY_STEPS = listOf(-1000, -250, 0, 250, 1000)
+private const val DELAY_LIMIT_MS = 10_000
 
 /** One button of the options row. */
 private class Control(val icon: ImageVector, val label: String, val action: () -> Unit)
@@ -88,6 +98,9 @@ fun PlayerScreen(vm: MainViewModel) {
     var controls by remember { mutableStateOf(false) }
     var selected by remember { mutableIntStateOf(0) }
     var picker by remember { mutableStateOf<Picker?>(null) }
+    // Audio or subtitle delay: the options row turns into the delay buttons, where it is.
+    var delayEdit by remember { mutableStateOf<DelayEdit?>(null) }
+    var delaySel by remember { mutableIntStateOf(3) }
     var styling by remember { mutableStateOf(false) } // Subtitles › Subtitle style…
     var position by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(0L) }
@@ -122,7 +135,8 @@ fun PlayerScreen(vm: MainViewModel) {
         }
         add(Control(Icons.Filled.Audiotrack, "Audio") { picker = Picker.Audio })
         add(Control(Icons.Filled.ClosedCaption, "Subtitles") { picker = Picker.Subtitles })
-        add(Control(Icons.Filled.Tune, "Audio delay ${delayLabel(pb.audioDelayMs)}") { picker = Picker.AudioDelay })
+        add(Control(Icons.Filled.Tune, "Audio delay ${delayLabel(pb.audioDelayMs)}") { delayEdit = DelayEdit.Audio; delaySel = 3 })
+        add(Control(Icons.Filled.Timer, "Subtitle delay ${delayLabel(pb.subtitleDelayMs)}") { delayEdit = DelayEdit.Subtitles; delaySel = 3 })
         if (seekable) add(Control(Icons.Filled.Speed, "Speed ${speedLabel(pb.speed)}") { picker = Picker.Speed })
         add(Control(Icons.Filled.AspectRatio, pb.pictureSize.label) { picker = Picker.Picture })
         if (item.isLive) {
@@ -142,6 +156,15 @@ fun PlayerScreen(vm: MainViewModel) {
     fun closeControls() {
         controls = false
         picker = null
+        delayEdit = null
+    }
+
+    fun delayValue(): Int = if (delayEdit == DelayEdit.Subtitles) pb.subtitleDelayMs else pb.audioDelayMs
+
+    fun applyDelayStep() {
+        val step = DELAY_STEPS[delaySel]
+        val ms = if (step == 0) 0 else (delayValue() + step).coerceIn(-DELAY_LIMIT_MS, DELAY_LIMIT_MS)
+        if (delayEdit == DelayEdit.Subtitles) pb.changeSubtitleDelay(ms) else pb.changeAudioDelay(ms)
     }
 
     // Back on the options row (same button highlighted) after a picker closes.
@@ -187,6 +210,7 @@ fun PlayerScreen(vm: MainViewModel) {
     }
     BackHandler {
         when {
+            delayEdit != null -> delayEdit = null
             controls -> closeControls()
             upNext -> upNextHidden = true
             else -> vm.closePlayer()
@@ -239,6 +263,18 @@ fun PlayerScreen(vm: MainViewModel) {
                 }
                 if (upNext && !controls && (code == AndroidKeyEvent.KEYCODE_DPAD_CENTER || code == AndroidKeyEvent.KEYCODE_ENTER)) {
                     vm.playNextEpisode()
+                    return@onPreviewKeyEvent true
+                }
+                if (controls && delayEdit != null) {
+                    // The delay buttons: Left/Right move, OK applies at once (focus stays), Up/Down
+                    // go back to the options row.
+                    when (code) {
+                        AndroidKeyEvent.KEYCODE_DPAD_LEFT -> delaySel = (delaySel - 1).coerceAtLeast(0)
+                        AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> delaySel = (delaySel + 1).coerceAtMost(DELAY_STEPS.lastIndex)
+                        AndroidKeyEvent.KEYCODE_DPAD_CENTER, AndroidKeyEvent.KEYCODE_ENTER -> applyDelayStep()
+                        AndroidKeyEvent.KEYCODE_DPAD_UP, AndroidKeyEvent.KEYCODE_DPAD_DOWN -> delayEdit = null
+                        else -> return@onPreviewKeyEvent false
+                    }
                     return@onPreviewKeyEvent true
                 }
                 if (controls) {
@@ -358,7 +394,22 @@ fun PlayerScreen(vm: MainViewModel) {
                     Text(it, color = ErrorRed, fontSize = 16.sp)
                     Text("OK to try again" + (pb.errorDetail?.let { d -> "  ·  $d" } ?: ""), color = Muted, fontSize = 12.sp)
                 }
-                if (controls) {
+                val editing = delayEdit
+                if (controls && editing != null) {
+                    Spacer(Modifier.height(14.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("${editing.title}  ${delayLabel(delayValue())}", color = Color.White, fontSize = 16.sp, modifier = Modifier.padding(end = 8.dp))
+                        DELAY_STEPS.forEachIndexed { i, step ->
+                            val icon = when {
+                                step == 0 -> Icons.Filled.Refresh
+                                step < 0 -> Icons.Filled.Remove
+                                else -> Icons.Filled.Add
+                            }
+                            ControlChip(Control(icon, if (step == 0) "Reset" else delayLabel(step)) {}, i == delaySel)
+                        }
+                        Text(if (editing == DelayEdit.Subtitles) "+ = subtitles later" else "+ = sound later", color = Muted, fontSize = 12.sp, maxLines = 1, softWrap = false)
+                    }
+                } else if (controls) {
                     Spacer(Modifier.height(14.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         // Films have up to eight options: then only the highlighted one shows its label.
@@ -389,7 +440,6 @@ fun PlayerScreen(vm: MainViewModel) {
         )
         Picker.Speed -> PickerDialog("Speed", SPEEDS.map { it to speedLabel(it) }, pb.speed, { pb.changeSpeed(it) }) { pickerClosed() }
         Picker.Picture -> PickerDialog("Picture size", PictureSize.entries.map { it to it.label }, pb.pictureSize, { pb.pictureSize = it }) { pickerClosed() }
-        Picker.AudioDelay -> AudioDelayDialog({ pb.audioDelayMs }, { pb.changeAudioDelay(it) }) { pickerClosed() }
         null -> {}
     }
     if (styling) SubtitleStyleDialog(vm) { styling = false }

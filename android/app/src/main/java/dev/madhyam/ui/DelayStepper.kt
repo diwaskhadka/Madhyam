@@ -60,24 +60,3 @@ fun DelayStepper(value: () -> Int, armed: () -> Boolean, onChange: (Int) -> Unit
         }
     }
 }
-
-/** Audio delay from the player's options: the delay buttons in a small panel. Back closes it. */
-@Composable
-fun AudioDelayDialog(value: () -> Int, onChange: (Int) -> Unit, onDismiss: () -> Unit) {
-    // Holding or lifting the OK that opened the panel must not press a button.
-    var armed by remember { mutableStateOf(false) }
-    Dialog(onDismissRequest = onDismiss) {
-        Column(
-            Modifier.width(560.dp).background(Panel, RoundedCornerShape(16.dp)).padding(20.dp)
-                .onPreviewKeyEvent {
-                    if (it.type == KeyEventType.KeyDown && it.nativeKeyEvent.repeatCount == 0) armed = true
-                    false
-                },
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Text("Audio delay", fontSize = 22.sp)
-            Text("+ plays the sound later · Back closes", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 10.dp))
-            DelayStepper(value, { armed }, onChange)
-        }
-    }
-}
