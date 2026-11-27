@@ -30,6 +30,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -217,6 +219,9 @@ fun CategoryStrip(vm: MainViewModel, modifier: Modifier = Modifier) {
 @Composable
 fun CategoryPanel(vm: MainViewModel, modifier: Modifier = Modifier) {
     val wrap = rememberWrap()
+    val scope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
+    var entering by remember { mutableStateOf(false) }
     val list = rememberLazyListState(initialFirstVisibleItemIndex = (vm.categories.indexOfFirst { if (it.isAll) vm.group == null else vm.group == it.name } - 3).coerceAtLeast(0))
     Column(
         modifier.fillMaxHeight().background(Panel.copy(alpha = 0.55f)).padding(vertical = 16.dp, horizontal = 8.dp)
@@ -246,7 +251,25 @@ fun CategoryPanel(vm: MainViewModel, modifier: Modifier = Modifier) {
         }
         LazyColumn(
             state = list,
-            modifier = Modifier.focusProperties {
+            // Right while the focused category is still loading: wait for it, then go in (going in
+            // at once would land in the old list, which is then replaced under the focus).
+            modifier = Modifier.onPreviewKeyEvent {
+                if (it.type != KeyEventType.KeyDown || it.nativeKeyEvent.keyCode != android.view.KeyEvent.KEYCODE_DPAD_RIGHT) return@onPreviewKeyEvent false
+                if (entering) return@onPreviewKeyEvent true
+                if (!vm.categoryPending) return@onPreviewKeyEvent false
+                entering = true
+                scope.launch {
+                    try {
+                        vm.awaitCategory()
+                        withFrameNanos { }
+                        withFrameNanos { }
+                        focusManager.moveFocus(FocusDirection.Right)
+                    } finally {
+                        entering = false
+                    }
+                }
+                true
+            }.focusProperties {
                 enter = { if (!wrap.active && list.layoutInfo.visibleItemsInfo.any { it.index == selectedIndex }) current else FocusRequester.Default }
             }.focusGroup(),
             verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -262,6 +285,7 @@ fun CategoryPanel(vm: MainViewModel, modifier: Modifier = Modifier) {
 private fun CategoryRow(vm: MainViewModel, c: Category, modifier: Modifier = Modifier) {
     val selected = if (c.isAll) vm.group == null else vm.group == c.name
     val focusManager = LocalFocusManager.current
+    val scope = rememberCoroutineScope()
     val src = vm.source
     val kind = vm.section.kind
     // Parental controls: a lock (and "Adult" when it was locked for its name).
@@ -274,12 +298,19 @@ private fun CategoryRow(vm: MainViewModel, c: Category, modifier: Modifier = Mod
                 vm.selectCategory(c, fromClick = true)
             } else {
                 vm.selectCategory(c)
-                focusManager.moveFocus(FocusDirection.Right)
+                // Into its list once its items are in (see CategoryPanel's Right).
+                scope.launch {
+                    vm.awaitCategory()
+                    withFrameNanos { }
+                    withFrameNanos { }
+                    focusManager.moveFocus(FocusDirection.Right)
+                }
             }
         },
         onLongClick = if (c.isAll) null else ({ vm.showOptions(c) }),
-        // Moving the focus over a category shows its contents, as on most TV apps.
-        modifier = modifier.onFocusChanged { if (it.isFocused) vm.selectCategory(c) },
+        // Resting the focus on a category shows its contents, as on most TV apps (passing over
+        // categories with Down loads nothing).
+        modifier = modifier.onFocusChanged { if (it.isFocused) vm.previewCategory(c) },
         headlineContent = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (lockReason != null) CategoryLockIcon(!vm.unlocked, Modifier.padding(end = 6.dp))
@@ -359,7 +390,7 @@ private fun ChannelList(vm: MainViewModel, now: Long, channels: FocusRequester, 
         // moving through the categories must not pull the focus into each list they open.
         var focusedOnce by remember { mutableStateOf(false) }
         // Each category is a list of its own: its scroll and its remembered row start fresh.
-        key(vm.group) {
+        key(vm.listGroup) {
         val start = remember { FocusRequester() }
         val startIndex = remember {
             val id = vm.playback.current?.id ?: vm.focused?.id
