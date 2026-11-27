@@ -389,7 +389,7 @@ fun PlayerScreen(vm: MainViewModel) {
         )
         Picker.Speed -> PickerDialog("Speed", SPEEDS.map { it to speedLabel(it) }, pb.speed, { pb.changeSpeed(it) }) { pickerClosed() }
         Picker.Picture -> PickerDialog("Picture size", PictureSize.entries.map { it to it.label }, pb.pictureSize, { pb.pictureSize = it }) { pickerClosed() }
-        Picker.AudioDelay -> PickerDialog("Audio delay (+ = sound later)", DELAYS.map { it to delayLabel(it) }, pb.audioDelayMs, { pb.changeAudioDelay(it) }) { pickerClosed() }
+        Picker.AudioDelay -> AudioDelayDialog({ pb.audioDelayMs }, { pb.changeAudioDelay(it) }) { pickerClosed() }
         null -> {}
     }
     if (styling) SubtitleStyleDialog(vm) { styling = false }
@@ -402,8 +402,6 @@ fun PlayerScreen(vm: MainViewModel) {
 }
 
 private val SPEEDS = listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f)
-
-internal val DELAYS = (-12..12).map { it * 250 } // −3 s … +3 s
 
 /** 250 → "+0.25 s", -1500 → "−1.5 s". */
 internal fun delayLabel(ms: Int): String {

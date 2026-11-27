@@ -6,6 +6,11 @@ so. The engine (`crates/madhyam-core`) keeps its own version, given in each sect
 
 How to cut a release and how to add a platform: [docs/RELEASING.md](docs/RELEASING.md).
 
+## Unreleased
+
+### Android TV
+- **Audio and subtitle delay as buttons:** −1 s, −0.25 s, Reset, +0.25 s and +1 s, like the player's −10 s / +10 s. Each press changes the delay at once and the panel stays open, so pressing again keeps going (up to ±10 s instead of ±3 s).
+
 ## 1.1.1
 
 Parental controls, subtitle style like YouTube's and Buy me a coffee on every platform. Adding a playlist shows each step and how many live channels, movies and series it brought, and confirmations use the app's own look. Android TV starts in about 5 s, stops streams you leave and needs half the memory, moves like TiviMate, offers Up next for episodes and shows what the stream is (4K, HDR, Atmos); Windows full screen is black edge to edge; Linux plays trailers in the app.

@@ -105,13 +105,9 @@ fun SubtitlesPanel(vm: MainViewModel, canSearch: Boolean, onStyle: () -> Unit, o
                     PanelList(rows.size, start, armed = { armed }, isChecked = { rows[it].checked }, divider = { rows[it].divider }, label = { rows[it].label }, icon = { rows[it].icon }) { rows[it].onPick() }
                 }
                 SubPage.Delay -> {
-                    val start = DELAYS.indexOf(pb.subtitleDelayMs).coerceAtLeast(0)
                     Text("Subtitle delay", fontSize = 22.sp)
                     Text("+ shows subtitles later · Back returns to the list", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(bottom = 10.dp))
-                    PanelList(DELAYS.size, start, armed = { armed }, isChecked = { DELAYS[it] == pb.subtitleDelayMs }, divider = { false }, label = { delayLabel(DELAYS[it]) }, icon = { null }) {
-                        pb.changeSubtitleDelay(DELAYS[it])
-                        page = SubPage.List
-                    }
+                    DelayStepper({ pb.subtitleDelayMs }, { armed }) { pb.changeSubtitleDelay(it) }
                 }
                 SubPage.Online -> SubtitleSearchPage(vm) { armed }
             }
