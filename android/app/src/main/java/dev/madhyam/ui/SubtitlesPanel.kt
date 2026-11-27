@@ -87,10 +87,13 @@ fun SubtitlesPanel(vm: MainViewModel, canSearch: Boolean, onStyle: () -> Unit, o
             when (page) {
                 SubPage.List -> {
                     val tracks = pb.subtitleTracks()
-                    val off = pb.subtitlesOff || tracks.none { it.selected }
+                    val ext = pb.activeExternal
+                    val off = ext == null && (pb.subtitlesOff || tracks.none { it.selected })
                     val rows = buildList {
                         add(Row("Off", null, off) { pb.turnSubtitlesOff(); onDismiss() })
-                        tracks.forEach { t: TrackChoice -> add(Row(t.label, null, !off && t.selected) { pb.select(t); onDismiss() }) }
+                        tracks.forEach { t: TrackChoice -> add(Row(t.label, null, !off && ext == null && t.selected) { pb.select(t); onDismiss() }) }
+                        // Downloaded with Find online (drawn by the app, so picking one never restarts the video).
+                        pb.externalSubtitles.forEach { s -> add(Row(s.label, null, ext == s) { pb.useExternal(s); onDismiss() }) }
                         var divider = true
                         if (canSearch) {
                             add(Row("Find online…", Icons.Filled.Search, false, divider = true) { vm.openSubtitleSearch(); page = SubPage.Online })

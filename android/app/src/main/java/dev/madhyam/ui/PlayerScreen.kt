@@ -285,7 +285,7 @@ fun PlayerScreen(vm: MainViewModel) {
             overlayVisible -> 0.14f
             else -> 0f
         }
-        VideoSurface(pb.player, Modifier.fillMaxSize(), pb.pictureSize.resizeMode, subtitleLift = lift, style = vm.settings)
+        VideoSurface(pb.player, Modifier.fillMaxSize(), pb.pictureSize.resizeMode, subtitleLift = lift, style = vm.settings, playback = pb)
 
         if (overlayVisible || controls || pb.error != null) {
             val strip = vm.settings.stripPrefixes

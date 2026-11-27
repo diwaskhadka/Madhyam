@@ -30,6 +30,13 @@ import androidx.media3.exoplayer.text.TextOutput
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import java.util.Locale
+import androidx.media3.common.text.Cue
+import androidx.media3.extractor.text.CuesWithTiming
+import androidx.media3.extractor.text.DefaultSubtitleParserFactory
+import androidx.media3.extractor.text.SubtitleParser
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
 
 /** One audio or subtitle track the stream offers. */
 data class TrackChoice(val group: Tracks.Group, val index: Int, val label: String, val selected: Boolean)
@@ -186,6 +193,9 @@ class Playback(private val context: Context, private val settings: AppSettings) 
         errorDetail = null
         current = item
         externalSubtitles = emptyList()
+        activeExternal = null
+        externalTimed = emptyList()
+        parsed.clear()
         changeAudioDelay(0)
         changeSubtitleDelay(0)
         // Per-stream choices start over; the Settings preferences apply again.
@@ -205,17 +215,8 @@ class Playback(private val context: Context, private val settings: AppSettings) 
         item.referrer?.let { http.setDefaultRequestProperties(mapOf("Referer" to it)) }
         val media = MediaItem.Builder()
             .setUri(streamUrl(item))
-            .setSubtitleConfigurations(
-                externalSubtitles.map { s ->
-                    MediaItem.SubtitleConfiguration.Builder(android.net.Uri.fromFile(s.file))
-                        .setMimeType(subtitleMime(s.file.name))
-                        .setLanguage(s.language)
-                        .setLabel(s.label)
-                        .build()
-                },
-            )
             .build()
-        // DefaultDataSource reads the stream over HTTP and downloaded subtitle files from disk.
+        // Downloaded subtitles are not part of the stream: the app draws them (see [addSubtitle]).
         val source = DefaultMediaSourceFactory(context)
             .setDataSourceFactory(DefaultDataSource.Factory(context, http))
             .createMediaSource(media)
@@ -229,17 +230,64 @@ class Playback(private val context: Context, private val settings: AppSettings) 
     var externalSubtitles by mutableStateOf<List<ExternalSubtitle>>(emptyList())
         private set
 
-    /** Attach a downloaded subtitle to the playing stream and switch to it (restarts at the same position). */
-    fun addSubtitle(sub: ExternalSubtitle) {
-        val item = current ?: return
+    /**
+     * The downloaded subtitle on screen, or null. The app draws it over the picture (the video
+     * view asks [externalCuesNow]): adding it to the stream would restart the stream.
+     */
+    var activeExternal by mutableStateOf<ExternalSubtitle?>(null)
+        private set
+    private var externalTimed: List<CuesWithTiming> = emptyList()
+    private val parsed = HashMap<File, List<CuesWithTiming>>()
+
+    /** Read a downloaded subtitle and show it, without touching the stream. */
+    suspend fun addSubtitle(sub: ExternalSubtitle) {
+        if (current == null) return
+        parsed[sub.file] = withContext(Dispatchers.IO) { parseSubtitle(sub.file) }
         externalSubtitles = externalSubtitles.filter { it.file != sub.file } + sub
-        val pos = player.currentPosition
+        useExternal(sub)
+    }
+
+    /** Show a downloaded subtitle instead of the stream's own. */
+    fun useExternal(sub: ExternalSubtitle) {
+        externalTimed = parsed[sub.file] ?: return
+        activeExternal = sub
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
-            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-            .setPreferredTextLanguage(sub.language.ifBlank { null })
+            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
             .build()
-        prepare(item, pos)
+        tracksVersion++
+    }
+
+    /** The lines of the downloaded subtitle at the playing position (after the subtitle delay). */
+    fun externalCuesNow(): List<Cue> {
+        val list = externalTimed
+        if (activeExternal == null || list.isEmpty()) return emptyList()
+        val t = player.currentPosition * 1000 - subtitleDelayUs
+        // The last line that starts by now, then the few before it that may still be showing.
+        var lo = 0
+        var hi = list.size - 1
+        var at = -1
+        while (lo <= hi) {
+            val mid = (lo + hi) ushr 1
+            if (list[mid].startTimeUs <= t) { at = mid; lo = mid + 1 } else hi = mid - 1
+        }
+        val out = ArrayList<Cue>()
+        var i = at
+        while (i >= 0 && i > at - 20) {
+            val c = list[i]
+            val end = if (c.durationUs == C.TIME_UNSET) Long.MAX_VALUE else c.endTimeUs
+            if (t < end) out.addAll(0, c.cues)
+            i--
+        }
+        return out
+    }
+
+    private fun parseSubtitle(file: File): List<CuesWithTiming> {
+        val format = Format.Builder().setSampleMimeType(subtitleMime(file.name)).build()
+        val factory = DefaultSubtitleParserFactory()
+        if (!factory.supportsFormat(format)) return emptyList()
+        val out = ArrayList<CuesWithTiming>()
+        factory.create(format).parse(file.readBytes(), SubtitleParser.OutputOptions.allCues()) { out.add(it) }
+        return out.sortedBy { it.startTimeUs }
     }
 
     /**
@@ -389,6 +437,7 @@ class Playback(private val context: Context, private val settings: AppSettings) 
     }
 
     fun select(t: TrackChoice) {
+        if (t.group.type == C.TRACK_TYPE_TEXT) activeExternal = null
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
             .setTrackTypeDisabled(t.group.type, false)
             .setOverrideForType(TrackSelectionOverride(t.group.mediaTrackGroup, t.index))
@@ -396,6 +445,7 @@ class Playback(private val context: Context, private val settings: AppSettings) 
     }
 
     fun turnSubtitlesOff() {
+        activeExternal = null
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
             .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
             .build()

@@ -10,6 +10,7 @@ How to cut a release and how to add a platform: [docs/RELEASING.md](docs/RELEASI
 
 ### Android TV
 - **Audio and subtitle delay as buttons:** −1 s, −0.25 s, Reset, +0.25 s and +1 s, like the player's −10 s / +10 s. Each press changes the delay at once and the panel stays open, so pressing again keeps going (up to ±10 s instead of ±3 s).
+- **Find online no longer restarts the video:** a downloaded subtitle shows at once while the film keeps playing (the app draws it over the picture), and switching between it and the stream's own subtitles never reloads.
 
 ## 1.1.1
 
