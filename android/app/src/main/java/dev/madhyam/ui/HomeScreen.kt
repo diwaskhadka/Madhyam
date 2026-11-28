@@ -217,13 +217,20 @@ internal fun PosterRow(vm: MainViewModel, title: String, list: List<Item>, resum
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 internal fun ChannelRow(vm: MainViewModel, title: String, list: List<Item>) {
-    val strip = vm.settings.stripPrefixes
-    val now = System.currentTimeMillis() / 1000
     Column {
         RowTitle(title, list.size)
         LazyRow(endStopsRow(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            items(list, key = { it.id }) { ch ->
-                Column(Modifier.width(196.dp)) {
+            items(list, key = { it.id }) { ch -> ChannelTile(vm, ch, list, Modifier.width(196.dp)) }
+        }
+    }
+}
+
+/** A channel as a card: its logo, name and what's on now; OK watches it with [list] to zap through. */
+@Composable
+internal fun ChannelTile(vm: MainViewModel, ch: Item, list: List<Item>, modifier: Modifier = Modifier) {
+    val strip = vm.settings.stripPrefixes
+    val now = System.currentTimeMillis() / 1000
+                Column(modifier) {
                     Surface(
                         onClick = { vm.pick(ch) { vm.watchChannel(ch, list) } },
                         onLongClick = { vm.showOptions(ch) },
@@ -245,7 +252,4 @@ internal fun ChannelRow(vm: MainViewModel, title: String, list: List<Item>) {
                         ProgressBar(p.progress(now))
                     }
                 }
-            }
-        }
-    }
 }

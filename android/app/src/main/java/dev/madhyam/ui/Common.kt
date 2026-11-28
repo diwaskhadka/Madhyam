@@ -178,7 +178,7 @@ fun dayLabel(unixSeconds: Long): String {
  * Use with `KeyboardOptions(showKeyboardOnFocus = false)`.
  */
 @Composable
-fun Modifier.tvTextField(atStart: () -> Boolean = { true }, onOk: () -> Unit = {}): Modifier {
+fun Modifier.tvTextField(atStart: () -> Boolean = { true }, atEnd: () -> Boolean = { false }, onOk: () -> Unit = {}): Modifier {
     val fm = androidx.compose.ui.platform.LocalFocusManager.current
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     return onPreviewKeyEvent { ev ->
@@ -195,6 +195,7 @@ fun Modifier.tvTextField(atStart: () -> Boolean = { true }, onOk: () -> Unit = {
             android.view.KeyEvent.KEYCODE_DPAD_DOWN -> fm.moveFocus(androidx.compose.ui.focus.FocusDirection.Down)
             android.view.KeyEvent.KEYCODE_DPAD_UP -> fm.moveFocus(androidx.compose.ui.focus.FocusDirection.Up)
             android.view.KeyEvent.KEYCODE_DPAD_LEFT -> atStart() && fm.moveFocus(androidx.compose.ui.focus.FocusDirection.Left)
+            android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> atEnd() && fm.moveFocus(androidx.compose.ui.focus.FocusDirection.Right)
             else -> false
         }
     }

@@ -10,6 +10,7 @@ How to cut a release and how to add a platform: [docs/RELEASING.md](docs/RELEASI
 
 ### Android TV
 - **Search results by quality:** a row of chips over the results, All · 4K · Full HD · HD · Other, with how many results each has. Moving onto a chip filters at once, with no new search; Down goes into the results. The quality comes from tags in the name and the category (4K, UHD, 3840P, FHD, 1080P, BluRay, HD, 720P …), so it works for Live TV, Movies and Series, in Search and in a section's own search.
+- **Search results as tiles or rows:** results now wrap onto new lines as tiles, like the Movies grid. The Tiles / Rows button at the top switches to one sliding row per kind and is remembered. Right from the search box now reaches it (and the gear).
 
 ## 1.1.1
 

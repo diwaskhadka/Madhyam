@@ -54,6 +54,7 @@ class AppSettings private constructor(private val file: File) {
     var searchMovies by mutableStateOf(true)
     var searchSeries by mutableStateOf(true)
     var searchAllSources by mutableStateOf(true)
+    var searchTiles by mutableStateOf(true)                  // search results as wrapping tiles, or as rows
 
     // -------------------------------------------------------------- guide
     var epgRefreshHours by mutableStateOf(12)
@@ -176,6 +177,7 @@ class AppSettings private constructor(private val file: File) {
             .put("searchMovies", searchMovies)
             .put("searchSeries", searchSeries)
             .put("searchAllSources", searchAllSources)
+            .put("searchTiles", searchTiles)
             .put("epgRefreshHours", epgRefreshHours)
             .put("freeTvSourceId", freeTvSourceId ?: JSONObject.NULL)
             .put("freeTvGroupBy", freeTvGroupBy)
@@ -262,6 +264,7 @@ class AppSettings private constructor(private val file: File) {
             searchMovies = o.optBoolean("searchMovies", searchMovies)
             searchSeries = o.optBoolean("searchSeries", searchSeries)
             searchAllSources = o.optBoolean("searchAllSources", searchAllSources)
+            searchTiles = o.optBoolean("searchTiles", searchTiles)
             epgRefreshHours = o.optInt("epgRefreshHours", epgRefreshHours)
             freeTvSourceId = o.optIntOrNull("freeTvSourceId")
             freeTvGroupBy = o.optString("freeTvGroupBy", freeTvGroupBy)

@@ -12,7 +12,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -203,15 +208,40 @@ fun SearchCards(vm: MainViewModel, results: List<Item>) {
     val movies = results.filter { it.kind == "movie" }
     val series = results.filter { it.isSeries }
     val episodes = results.filter { it.isEpisode }
-    LazyColumn(
-        Modifier.focusRestorer(),
+    @Suppress("UNUSED_EXPRESSION") vm.settingsVersion
+    if (!vm.settings.searchTiles) {
+        // One sliding row per kind, like Home.
+        LazyColumn(
+            Modifier.focusRestorer(),
+            contentPadding = PaddingValues(top = 6.dp, bottom = 40.dp),
+            verticalArrangement = Arrangement.spacedBy(22.dp),
+        ) {
+            if (live.isNotEmpty()) item(key = "live") { ChannelRow(vm, "Live TV", live) }
+            if (movies.isNotEmpty()) item(key = "movies") { PosterRow(vm, "Movies", movies) }
+            if (series.isNotEmpty()) item(key = "series") { PosterRow(vm, "Series", series) }
+            if (episodes.isNotEmpty()) item(key = "episodes") { PosterRow(vm, "Episodes", episodes) }
+        }
+        return
+    }
+    // Tiles that wrap onto the next line, like the Movies grid; a channel takes two poster widths.
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(coverWidth(vm.settings.coverSize)),
+        modifier = Modifier.focusRestorer(),
         contentPadding = PaddingValues(top = 6.dp, bottom = 40.dp),
-        verticalArrangement = Arrangement.spacedBy(22.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        if (live.isNotEmpty()) item(key = "live") { ChannelRow(vm, "Live TV", live) }
-        if (movies.isNotEmpty()) item(key = "movies") { PosterRow(vm, "Movies", movies) }
-        if (series.isNotEmpty()) item(key = "series") { PosterRow(vm, "Series", series) }
-        if (episodes.isNotEmpty()) item(key = "episodes") { PosterRow(vm, "Episodes", episodes) }
+        fun header(key: String, title: String, count: Int) =
+            item(key = key, span = { GridItemSpan(maxLineSpan) }) { Box(Modifier.padding(top = 8.dp)) { RowTitle(title, count) } }
+        if (live.isNotEmpty()) {
+            header("live", "Live TV", live.size)
+            items(live, key = { "l" + it.id }, span = { GridItemSpan(minOf(2, maxLineSpan)) }) { ChannelTile(vm, it, live, Modifier.fillMaxWidth()) }
+        }
+        for ((key, title, list) in listOf(Triple("movies", "Movies", movies), Triple("series", "Series", series), Triple("episodes", "Episodes", episodes))) {
+            if (list.isEmpty()) continue
+            header(key, title, list.size)
+            items(list, key = { key + it.id }) { PosterCard(vm, it) }
+        }
     }
 }
 

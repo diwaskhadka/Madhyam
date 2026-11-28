@@ -27,7 +27,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.OutlinedTextField
@@ -224,9 +226,19 @@ fun SearchPage(vm: MainViewModel) {
                     }),
                     modifier = Modifier.padding(start = 32.dp).width(600.dp)
                         .onFocusChanged { if (it.hasFocus) speech.stop() }
-                        .tvTextField(atStart = { vm.query.isEmpty() }),
+                        // Right goes on to the Tiles / Rows button and the gear (the text is edited with the keyboard).
+                        .tvTextField(atStart = { vm.query.isEmpty() }, atEnd = { true }),
                 )
                 Spacer(Modifier.weight(1f))
+                // Tiles that wrap, or one sliding row per kind; remembered.
+                @Suppress("UNUSED_EXPRESSION") vm.settingsVersion
+                val tiles = vm.settings.searchTiles
+                SearchIcon(
+                    if (tiles) "Tiles" else "Rows",
+                    if (tiles) "Show results as rows" else "Show results as tiles",
+                    Modifier.padding(end = 12.dp),
+                    if (tiles) Icons.Filled.GridView else Icons.AutoMirrored.Filled.ViewList,
+                ) { vm.changeSettings { searchTiles = !searchTiles } }
                 if (!vm.searchScoped) SearchIcon("", "Search settings", Modifier, Icons.Filled.Settings) { filters = true }
             }
             Spacer(Modifier.height(20.dp))
