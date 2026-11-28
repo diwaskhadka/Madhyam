@@ -18,6 +18,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 /** Top-level pages of the app. */
@@ -686,6 +687,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     var searchResults by mutableStateOf<List<Item>>(emptyList())
         private set
 
+    /** Each result's picture quality, guessed from its name and category tags (see [Quality]). */
+    var searchQualities by mutableStateOf<Map<String, Quality>>(emptyMap())
+        private set
+
+    /** The quality chip picked over the results; null = All. */
+    var searchQuality by mutableStateOf<Quality?>(null)
+
+    /** [searchResults] narrowed to the picked quality chip (all of them when it has none left). */
+    val shownSearchResults: List<Item>
+        get() {
+            val q = searchQuality ?: return searchResults
+            val hits = searchResults.filter { searchQualities[it.id] == q }
+            return hits.ifEmpty { searchResults }
+        }
+
     /** The text [searchResults] are for, so "No results" doesn't flash while typing. */
     var searchedFor by mutableStateOf("")
         private set
@@ -696,6 +712,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         query = ""
         searchedFor = ""
         searchResults = emptyList()
+        searchQualities = emptyMap()
+        searchQuality = null
         searchOpen = true
     }
 
@@ -711,6 +729,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         searchJob = viewModelScope.launch {
             delay(300)
             val hits = if (searchScoped) sectionHits(q) else searchHits(q)
+            searchQualities = withContext(Dispatchers.Default) { hits.associate { it.id to Quality.of(it) } }
             searchResults = hits
             searchedFor = q
             fetchNowNext(hits.take(300))
@@ -758,7 +777,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             item.isLive && playback.current?.id == item.id -> screen = Screen.Player
             else -> viewModelScope.launch {
-                playback.play(item, (if (searchOpen) searchResults else items).filter { it.isLive })
+                playback.play(item, (if (searchOpen) shownSearchResults else items).filter { it.isLive })
                 repo.recordPlay(item.id)
                 screen = Screen.Player
             }
@@ -981,7 +1000,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun watchFromOptions(item: Item) {
         if (searchOpen) addSearchHistory(query)
-        val list = (if (searchOpen) searchResults else items).filter { it.isLive }
+        val list = (if (searchOpen) shownSearchResults else items).filter { it.isLive }
         watchChannel(item, list.ifEmpty { listOf(item) })
     }
 

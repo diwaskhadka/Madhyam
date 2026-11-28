@@ -27,7 +27,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ViewList
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.OutlinedTextField
@@ -42,10 +44,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -63,6 +68,7 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import dev.madhyam.MainViewModel
+import dev.madhyam.Quality
 import kotlinx.coroutines.delay
 
 /** In-app speech recognition; [listening] is true between start and the final result. */
@@ -220,19 +226,78 @@ fun SearchPage(vm: MainViewModel) {
                     }),
                     modifier = Modifier.padding(start = 32.dp).width(600.dp)
                         .onFocusChanged { if (it.hasFocus) speech.stop() }
-                        .tvTextField(atStart = { vm.query.isEmpty() }),
+                        // Right goes on to the Tiles / Rows button and the gear (the text is edited with the keyboard).
+                        .tvTextField(atStart = { vm.query.isEmpty() }, atEnd = { true }),
                 )
                 Spacer(Modifier.weight(1f))
+                // Tiles that wrap, or one sliding row per kind; remembered.
+                @Suppress("UNUSED_EXPRESSION") vm.settingsVersion
+                val tiles = vm.settings.searchTiles
+                SearchIcon(
+                    if (tiles) "Tiles" else "Rows",
+                    if (tiles) "Show results as rows" else "Show results as tiles",
+                    Modifier.padding(end = 12.dp),
+                    if (tiles) Icons.Filled.GridView else Icons.AutoMirrored.Filled.ViewList,
+                ) { vm.changeSettings { searchTiles = !searchTiles } }
                 if (!vm.searchScoped) SearchIcon("", "Search settings", Modifier, Icons.Filled.Settings) { filters = true }
             }
             Spacer(Modifier.height(20.dp))
             when {
                 vm.query.isBlank() -> SearchHistory(vm)
-                vm.searchResults.isNotEmpty() -> SearchCards(vm, vm.searchResults)
+                vm.searchResults.isNotEmpty() -> {
+                    QualityChips(vm)
+                    SearchCards(vm, vm.shownSearchResults)
+                }
                 vm.searchedFor == vm.query -> EmptyNote("No results.")
             }
         }
         if (filters) SearchFilters(vm) { filters = false }
+    }
+}
+
+/**
+ * All · 4K · Full HD · HD · Other over the results, with counts; only the qualities that have
+ * results show. Moving onto a chip filters at once (no new search); Down goes into the results.
+ */
+@OptIn(ExperimentalComposeUiApi::class)
+@Composable
+private fun QualityChips(vm: MainViewModel) {
+    val counts = vm.searchQualities.values.groupingBy { it }.eachCount()
+    val present = Quality.entries.filter { (counts[it] ?: 0) > 0 }
+    // A picked quality with no results left goes back to All.
+    LaunchedEffect(present) { if (vm.searchQuality != null && vm.searchQuality !in present) vm.searchQuality = null }
+    // One quality only: nothing to choose between.
+    if (present.size < 2) return
+    // Coming into the row (Down from the box, Up from the results) lands on the picked chip.
+    val all = remember { FocusRequester() }
+    val each = remember { Quality.entries.associateWith { FocusRequester() } }
+    val picked = vm.searchQuality?.let { each[it] } ?: all
+    Row(
+        Modifier.padding(start = 88.dp, bottom = 14.dp)
+            .focusProperties { enter = { picked } }
+            .focusGroup(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        QualityChip("All", vm.searchResults.size, vm.searchQuality == null, Modifier.focusRequester(all)) { vm.searchQuality = null }
+        for (q in present) QualityChip(q.label, counts[q] ?: 0, vm.searchQuality == q, Modifier.focusRequester(each.getValue(q))) { vm.searchQuality = q }
+    }
+}
+
+@Composable
+private fun QualityChip(label: String, count: Int, on: Boolean, modifier: Modifier, pick: () -> Unit) {
+    Surface(
+        onClick = pick,
+        modifier = modifier.onFocusChanged { if (it.isFocused) pick() },
+        shape = ClickableSurfaceDefaults.shape(RoundedCornerShape(16.dp)),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = if (on) Accent else Panel,
+            contentColor = if (on) Color.White else Muted,
+            focusedContainerColor = TextColor,
+            focusedContentColor = Background,
+        ),
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
+    ) {
+        Text("$label  $count", fontSize = 13.sp, maxLines = 1, modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp))
     }
 }
 

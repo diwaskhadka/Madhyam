@@ -6,6 +6,12 @@ so. The engine (`crates/madhyam-core`) keeps its own version, given in each sect
 
 How to cut a release and how to add a platform: [docs/RELEASING.md](docs/RELEASING.md).
 
+## Unreleased
+
+### Android TV
+- **Search results by quality:** a row of chips over the results, All · 4K · Full HD · HD · Other, with how many results each has. Moving onto a chip filters at once, with no new search; Down goes into the results. The quality comes from tags in the name and the category (4K, UHD, 3840P, FHD, 1080P, BluRay, HD, 720P …), so it works for Live TV, Movies and Series, in Search and in a section's own search.
+- **Search results as tiles or rows:** results now wrap onto new lines as tiles, like the Movies grid. The Tiles / Rows button at the top switches to one sliding row per kind and is remembered. Right from the search box now reaches it (and the gear).
+
 ## 1.1.1
 
 Parental controls, subtitle style like YouTube's and Buy me a coffee on every platform. Adding a playlist shows each step and how many live channels, movies and series it brought, and confirmations use the app's own look. Android TV starts in about 5 s, stops streams you leave and needs half the memory, moves like TiviMate, offers Up next for episodes and shows what the stream is (4K, HDR, Atmos); Windows full screen is black edge to edge; Linux plays trailers in the app.
